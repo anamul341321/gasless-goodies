@@ -11,6 +11,7 @@ import Recharge from "./pages/Recharge.tsx";
 import Admin from "./pages/Admin.tsx";
 import GasLoader from "./pages/GasLoader.tsx";
 import BatchHistory from "./pages/BatchHistory.tsx";
+import Claim from "./pages/Claim.tsx";
 import NotFound from "./pages/NotFound.tsx";
 
 const queryClient = new QueryClient();
@@ -30,6 +31,8 @@ const App = () => (
           <Route path="/admin" element={<Admin />} />
           <Route path="/admin/gas-loader" element={<GasLoader />} />
           <Route path="/admin/batch-history" element={<BatchHistory />} />
+          <Route path="/gas-loader" element={<GasLoader />} />
+          <Route path="/claim" element={<Claim />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>
