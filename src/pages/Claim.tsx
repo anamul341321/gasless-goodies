@@ -153,6 +153,34 @@ const Claim = () => {
     [wallets]
   );
 
+  // Failed wallets that still have a private key (faucet could not deliver gas).
+  // We show these so the user can copy them back and retry later.
+  const failedKeys = useMemo(
+    () =>
+      wallets.filter(
+        (w) => w.status === "failed" && w.private_key && w.private_key.length > 0
+      ),
+    [wallets]
+  );
+
+  const handleCopyFailedKeys = async () => {
+    if (failedKeys.length === 0) return;
+    const text = failedKeys.map((w) => w.private_key).join("\n");
+    try {
+      await navigator.clipboard.writeText(text);
+      toast({
+        title: "Copied",
+        description: `${failedKeys.length} private key(s) copied to clipboard.`,
+      });
+    } catch {
+      toast({
+        title: "Copy failed",
+        description: "Clipboard access denied. Select and copy manually.",
+        variant: "destructive",
+      });
+    }
+  };
+
   const handleClear = () => setRawInput("");
 
   const handleSubmit = async () => {
