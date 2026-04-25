@@ -176,10 +176,10 @@ export default function Index() {
             {/* Big CTA */}
             <div className="pt-1">
               <Link
-                to="/recharge"
+                to="/claim"
                 className="btn-premium inline-flex w-full items-center justify-center gap-2 rounded-2xl h-12 px-4 text-sm font-bold text-primary-foreground"
               >
-                <Smartphone className="h-4 w-4" /> Mobile Recharge
+                <Coins className="h-4 w-4" /> Start Batch G$ Claim
               </Link>
             </div>
           </div>
