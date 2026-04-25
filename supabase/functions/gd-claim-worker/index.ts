@@ -1,8 +1,17 @@
 // Background worker: claims GoodDollar G$ on Celo for queued wallets.
-// Pacing: 10s between wallets (no IP rotation needed — claim() is on-chain).
-// Gas-fail handling: on insufficient funds, marks wallet 'needs_gas',
-// enqueues a free-gas faucet job for that wallet, then on next pass
-// flips back to 'pending' so the claim is retried after gas arrives.
+//
+// Two-phase processing per job:
+//   Phase A (CLAIM): walk all 'pending' wallets, call UBIScheme.claim().
+//     - Success → status 'success', wipe key
+//     - Insufficient gas → status 'waiting_gas' (NO faucet call yet)
+//     - Other error → status 'failed', wipe key
+//
+//   Phase B (GAS REFILL): only after no 'pending' rows remain in the job,
+//     enqueue ALL 'waiting_gas' wallets into ONE faucet job (delay_ms=3000,
+//     1 IP per request via existing gas-loader-worker proxy rotation).
+//     We poll that faucet job; on completion we flip:
+//       - faucet success → 'pending' (claim retried in a follow-up tick)
+//       - faucet failure → 'failed' (key kept so user can copy)
 
 import { Wallet, JsonRpcProvider, Contract } from "https://esm.sh/ethers@6.13.4";
 
@@ -22,17 +31,13 @@ const UBI_ABI = [
   "function checkEntitlement(address member) view returns (uint256)",
 ];
 
-// Faucet endpoint (existing internal worker)
 const FAUCET_TRIGGER_URL = `${SUPABASE_URL}/functions/v1/gas-loader-worker`;
-
-// Pacing
-const PER_WALLET_DELAY_MS = 10_000; // 10s between wallets (per request)
-const WORKER_TIME_BUDGET_MS = 110_000;
-const GAS_RETRY_AFTER_MS = 60_000; // wait at least 60s after gas request before retry
-const MAX_GAS_REQUESTS = 3; // give up after 3 failed gas refills
-const MAX_ATTEMPTS = 5;
-
 const WORKER_TRIGGER_URL = `${SUPABASE_URL}/functions/v1/gd-claim-worker`;
+
+const PER_WALLET_DELAY_MS = 10_000; // 10s between claim() calls
+const FAUCET_DELAY_MS = 3_000;       // 3s between gas refill calls (1 IP per req)
+const WORKER_TIME_BUDGET_MS = 110_000;
+const MAX_CLAIM_ATTEMPTS = 3;        // total claim() tries per wallet (incl. post-gas)
 
 function sbHeaders(extra: Record<string, string> = {}) {
   return {
@@ -52,30 +57,24 @@ type QueueRow = {
   private_key: string;
   attempts: number;
   gas_requests: number;
-  last_gas_request_at: string | null;
   status: string;
 };
 
-async function reactivateWaitingGas() {
-  // Flip 'waiting_gas' rows whose last_gas_request_at is older than
-  // GAS_RETRY_AFTER_MS back to 'pending' so the worker tries claim again.
-  const cutoff = new Date(Date.now() - GAS_RETRY_AFTER_MS).toISOString();
-  const url =
-    `${SUPABASE_URL}/rest/v1/gd_claim_queue` +
-    `?status=eq.waiting_gas&last_gas_request_at=lt.${encodeURIComponent(cutoff)}`;
-  await fetch(url, {
-    method: "PATCH",
-    headers: sbHeaders({ Prefer: "return=minimal" }),
-    body: JSON.stringify({
-      status: "pending",
-      updated_at: new Date().toISOString(),
-    }),
-  }).catch(() => {});
+function isInsufficientFundsError(err: any): boolean {
+  const msg = (err?.message || err?.shortMessage || String(err) || "").toLowerCase();
+  return (
+    msg.includes("insufficient funds") ||
+    msg.includes("insufficient balance") ||
+    msg.includes("gas required exceeds") ||
+    err?.code === "INSUFFICIENT_FUNDS"
+  );
 }
 
-async function claimNextWallet(): Promise<QueueRow | null> {
+// ---------------- Phase A: CLAIM ----------------
+
+async function pickNextPendingClaim(): Promise<QueueRow | null> {
   const findRes = await fetch(
-    `${SUPABASE_URL}/rest/v1/gd_claim_queue?status=eq.pending&select=id,job_id,wallet_address,private_key,attempts,gas_requests,last_gas_request_at,status&order=created_at.asc&limit=1`,
+    `${SUPABASE_URL}/rest/v1/gd_claim_queue?status=eq.pending&select=id,job_id,wallet_address,private_key,attempts,gas_requests,status&order=created_at.asc&limit=1`,
     { headers: sbHeaders() }
   );
   if (!findRes.ok) return null;
@@ -99,7 +98,6 @@ async function claimNextWallet(): Promise<QueueRow | null> {
   const claimed = await claimRes.json();
   if (!Array.isArray(claimed) || claimed.length === 0) return null;
 
-  // Mark parent job as running on first activity
   await fetch(
     `${SUPABASE_URL}/rest/v1/gd_claim_jobs?id=eq.${row.job_id}&status=eq.pending`,
     {
@@ -112,53 +110,6 @@ async function claimNextWallet(): Promise<QueueRow | null> {
   return row;
 }
 
-async function enqueueFaucetForWallet(walletAddress: string) {
-  // Create a tiny faucet job with just this wallet so the existing
-  // gas-loader-worker (with proxy IP rotation) processes it.
-  try {
-    const jobRes = await fetch(`${SUPABASE_URL}/rest/v1/gas_load_jobs`, {
-      method: "POST",
-      headers: sbHeaders({ Prefer: "return=representation" }),
-      body: JSON.stringify({
-        total: 1,
-        status: "pending",
-        batch_name: `auto-gas:${walletAddress.slice(0, 10)}`,
-        delay_ms: 0,
-        max_retries: 2,
-      }),
-    });
-    if (!jobRes.ok) return;
-    const job = await jobRes.json();
-    const jobId = (Array.isArray(job) ? job[0] : job).id;
-
-    await fetch(`${SUPABASE_URL}/rest/v1/gas_load_queue`, {
-      method: "POST",
-      headers: sbHeaders({ Prefer: "return=minimal" }),
-      body: JSON.stringify([
-        { job_id: jobId, wallet_address: walletAddress, status: "pending" },
-      ]),
-    });
-
-    fetch(FAUCET_TRIGGER_URL, {
-      method: "POST",
-      headers: sbHeaders(),
-      body: JSON.stringify({ trigger: "gd-claim-gas" }),
-    }).catch(() => {});
-  } catch (e) {
-    console.error("enqueueFaucetForWallet failed", e);
-  }
-}
-
-function isInsufficientFundsError(err: any): boolean {
-  const msg = (err?.message || err?.shortMessage || String(err) || "").toLowerCase();
-  return (
-    msg.includes("insufficient funds") ||
-    msg.includes("insufficient balance") ||
-    msg.includes("gas required exceeds") ||
-    err?.code === "INSUFFICIENT_FUNDS"
-  );
-}
-
 async function performClaim(row: QueueRow): Promise<{
   ok: boolean;
   txHash?: string;
@@ -169,7 +120,6 @@ async function performClaim(row: QueueRow): Promise<{
     const signer = new Wallet(row.private_key, provider);
     const ubi = new Contract(UBI_SCHEME_ADDRESS, UBI_ABI, signer);
 
-    // Try claim
     let tx;
     try {
       tx = await ubi.claim();
@@ -177,7 +127,6 @@ async function performClaim(row: QueueRow): Promise<{
       if (isInsufficientFundsError(e)) {
         return { ok: false, needsGas: true, error: "insufficient gas" };
       }
-      // Estimate failure: probably not entitled / not whitelisted
       const msg = e?.shortMessage || e?.reason || e?.message || "claim revert";
       return { ok: false, error: msg.slice(0, 240) };
     }
@@ -195,56 +144,212 @@ async function performClaim(row: QueueRow): Promise<{
   }
 }
 
-async function finalizeWallet(
+async function finalizeClaim(
   row: QueueRow,
   result: { ok: boolean; txHash?: string; error?: string; needsGas?: boolean }
 ) {
-  let nextStatus: string;
-  let extra: Record<string, any> = {};
+  const patch: Record<string, any> = {
+    tx_hash: result.txHash || null,
+    error_message: result.ok ? null : (result.error || "unknown").slice(0, 240),
+    processed_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
 
   if (result.ok) {
-    nextStatus = "success";
-    // Wipe private key on success
-    extra.private_key = null;
+    patch.status = "success";
+    patch.private_key = null;
   } else if (result.needsGas) {
-    if (row.gas_requests >= MAX_GAS_REQUESTS) {
-      nextStatus = "failed";
-      extra.error_message = `out of gas after ${row.gas_requests} refill attempts`;
-      extra.private_key = null;
-    } else {
-      nextStatus = "waiting_gas";
-      extra.gas_requests = row.gas_requests + 1;
-      extra.last_gas_request_at = new Date().toISOString();
-      // Trigger faucet for this wallet
-      await enqueueFaucetForWallet(row.wallet_address);
-    }
+    // Park for Phase B. Keep private_key (still need to sign claim later).
+    patch.status = "waiting_gas";
   } else {
-    if (row.attempts >= MAX_ATTEMPTS) {
-      nextStatus = "failed";
-      extra.private_key = null;
-    } else {
-      // Non-gas error (e.g. not entitled) — mark failed immediately, no point retrying daily-claim revert
-      nextStatus = "failed";
-      extra.private_key = null;
-    }
+    patch.status = "failed";
+    patch.private_key = null;
   }
 
   await fetch(`${SUPABASE_URL}/rest/v1/gd_claim_queue?id=eq.${row.id}`, {
     method: "PATCH",
     headers: sbHeaders({ Prefer: "return=minimal" }),
-    body: JSON.stringify({
-      status: nextStatus,
-      tx_hash: result.txHash || null,
-      error_message: result.ok ? null : (result.error || "unknown").slice(0, 240),
-      processed_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      ...extra,
-    }),
+    body: JSON.stringify(patch),
   });
 
-  // Recompute job aggregate
+  await refreshJobAggregate(row.job_id);
+}
+
+// ---------------- Phase B: GAS REFILL ----------------
+
+async function jobHasPending(jobId: string): Promise<boolean> {
+  const r = await fetch(
+    `${SUPABASE_URL}/rest/v1/gd_claim_queue?job_id=eq.${jobId}&or=(status.eq.pending,status.eq.claiming)&select=id&limit=1`,
+    { headers: sbHeaders() }
+  );
+  if (!r.ok) return false;
+  const j = await r.json();
+  return Array.isArray(j) && j.length > 0;
+}
+
+async function getWaitingGasWallets(jobId: string): Promise<QueueRow[]> {
+  const r = await fetch(
+    `${SUPABASE_URL}/rest/v1/gd_claim_queue?job_id=eq.${jobId}&status=eq.waiting_gas&select=id,job_id,wallet_address,private_key,attempts,gas_requests,status&order=created_at.asc&limit=2000`,
+    { headers: sbHeaders() }
+  );
+  if (!r.ok) return [];
+  const j = await r.json();
+  return Array.isArray(j) ? (j as QueueRow[]) : [];
+}
+
+// Find/create the faucet job linked to this claim job. We tag the faucet job
+// with batch_name = "gd-claim:<jobId>" so we can find it again on retries.
+async function findActiveFaucetJob(jobId: string): Promise<string | null> {
+  const tag = `gd-claim:${jobId}`;
+  const r = await fetch(
+    `${SUPABASE_URL}/rest/v1/gas_load_jobs?batch_name=eq.${encodeURIComponent(tag)}&or=(status.eq.pending,status.eq.running)&select=id&limit=1`,
+    { headers: sbHeaders() }
+  );
+  if (!r.ok) return null;
+  const j = await r.json();
+  return Array.isArray(j) && j[0] ? j[0].id : null;
+}
+
+async function createFaucetJob(jobId: string, wallets: QueueRow[]): Promise<string | null> {
+  const tag = `gd-claim:${jobId}`;
+  const jobRes = await fetch(`${SUPABASE_URL}/rest/v1/gas_load_jobs`, {
+    method: "POST",
+    headers: sbHeaders({ Prefer: "return=representation" }),
+    body: JSON.stringify({
+      total: wallets.length,
+      status: "pending",
+      batch_name: tag,
+      delay_ms: FAUCET_DELAY_MS,
+      max_retries: 0,
+    }),
+  });
+  if (!jobRes.ok) return null;
+  const job = await jobRes.json();
+  const faucetJobId = (Array.isArray(job) ? job[0] : job).id as string;
+
+  const queueRows = wallets.map((w) => ({
+    job_id: faucetJobId,
+    wallet_address: w.wallet_address,
+    status: "pending",
+  }));
+
+  // Insert in chunks
+  const CHUNK = 200;
+  for (let i = 0; i < queueRows.length; i += CHUNK) {
+    const slice = queueRows.slice(i, i + CHUNK);
+    const ins = await fetch(`${SUPABASE_URL}/rest/v1/gas_load_queue`, {
+      method: "POST",
+      headers: sbHeaders({ Prefer: "return=minimal" }),
+      body: JSON.stringify(slice),
+    });
+    if (!ins.ok) {
+      console.error("faucet enqueue failed", await ins.text());
+      return null;
+    }
+  }
+
+  // Kick faucet worker (best-effort)
+  fetch(FAUCET_TRIGGER_URL, {
+    method: "POST",
+    headers: sbHeaders(),
+    body: JSON.stringify({ trigger: "gd-claim-gas", job_id: faucetJobId }),
+  }).catch(() => {});
+
+  // Mark waiting_gas wallets as having had a gas request
+  await fetch(
+    `${SUPABASE_URL}/rest/v1/gd_claim_queue?job_id=eq.${jobId}&status=eq.waiting_gas`,
+    {
+      method: "PATCH",
+      headers: sbHeaders({ Prefer: "return=minimal" }),
+      body: JSON.stringify({
+        gas_requests: 1,
+        last_gas_request_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }),
+    }
+  ).catch(() => {});
+
+  return faucetJobId;
+}
+
+type FaucetWalletStatus = { wallet_address: string; status: string };
+
+async function getFaucetJobResults(faucetJobId: string): Promise<{
+  done: boolean;
+  results: Map<string, FaucetWalletStatus>;
+}> {
+  const jobRes = await fetch(
+    `${SUPABASE_URL}/rest/v1/gas_load_jobs?id=eq.${faucetJobId}&select=status`,
+    { headers: sbHeaders() }
+  );
+  let done = false;
+  if (jobRes.ok) {
+    const j = await jobRes.json();
+    const st = Array.isArray(j) && j[0] ? j[0].status : null;
+    done = st === "completed" || st === "failed";
+  }
+
+  const wRes = await fetch(
+    `${SUPABASE_URL}/rest/v1/gas_load_queue?job_id=eq.${faucetJobId}&select=wallet_address,status&limit=2000`,
+    { headers: sbHeaders() }
+  );
+  const map = new Map<string, FaucetWalletStatus>();
+  if (wRes.ok) {
+    const arr = await wRes.json();
+    if (Array.isArray(arr)) {
+      for (const r of arr) {
+        map.set(String(r.wallet_address).toLowerCase(), r as FaucetWalletStatus);
+      }
+    }
+  }
+  return { done, results: map };
+}
+
+// After faucet job finishes: flip waiting_gas rows to either pending (gas ok)
+// or failed (gas could not be delivered).
+async function applyFaucetResults(jobId: string, faucetJobId: string) {
+  const { results } = await getFaucetJobResults(faucetJobId);
+  const waiting = await getWaitingGasWallets(jobId);
+
+  for (const w of waiting) {
+    const fr = results.get(w.wallet_address.toLowerCase());
+    const faucetOk = fr?.status === "success";
+
+    if (faucetOk && w.attempts < MAX_CLAIM_ATTEMPTS) {
+      await fetch(`${SUPABASE_URL}/rest/v1/gd_claim_queue?id=eq.${w.id}`, {
+        method: "PATCH",
+        headers: sbHeaders({ Prefer: "return=minimal" }),
+        body: JSON.stringify({
+          status: "pending",
+          updated_at: new Date().toISOString(),
+        }),
+      });
+    } else {
+      // Gas could not be delivered → final failed. Keep private_key so user
+      // can copy it from the UI.
+      await fetch(`${SUPABASE_URL}/rest/v1/gd_claim_queue?id=eq.${w.id}`, {
+        method: "PATCH",
+        headers: sbHeaders({ Prefer: "return=minimal" }),
+        body: JSON.stringify({
+          status: "failed",
+          error_message: faucetOk
+            ? "claim retries exhausted"
+            : (fr?.status ? `faucet ${fr.status}` : "faucet not delivered"),
+          processed_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }),
+      });
+    }
+  }
+
+  await refreshJobAggregate(jobId);
+}
+
+// ---------------- Aggregate / job lifecycle ----------------
+
+async function refreshJobAggregate(jobId: string) {
   const aggRes = await fetch(
-    `${SUPABASE_URL}/rest/v1/gd_claim_queue?job_id=eq.${row.job_id}&select=status`,
+    `${SUPABASE_URL}/rest/v1/gd_claim_queue?job_id=eq.${jobId}&select=status&limit=2000`,
     { headers: sbHeaders() }
   );
   if (!aggRes.ok) return;
@@ -257,13 +362,17 @@ async function finalizeWallet(
     if (r.status === "success") done++;
     else if (r.status === "failed") failed++;
     else if (r.status === "waiting_gas") needsGas++;
-    if (r.status === "pending" || r.status === "claiming" || r.status === "waiting_gas") {
+    if (
+      r.status === "pending" ||
+      r.status === "claiming" ||
+      r.status === "waiting_gas"
+    ) {
       activeRemaining++;
     }
   }
   const allDone = activeRemaining === 0 && (all?.length ?? 0) > 0;
 
-  await fetch(`${SUPABASE_URL}/rest/v1/gd_claim_jobs?id=eq.${row.job_id}`, {
+  await fetch(`${SUPABASE_URL}/rest/v1/gd_claim_jobs?id=eq.${jobId}`, {
     method: "PATCH",
     headers: sbHeaders({ Prefer: "return=minimal" }),
     body: JSON.stringify({
@@ -276,10 +385,11 @@ async function finalizeWallet(
     }),
   });
 
-  // On final completion, scrub any remaining private keys for this job
+  // On final completion, scrub remaining private keys for SUCCESS rows only
+  // (failed-with-gas-issue rows keep their key so user can copy).
   if (allDone) {
     await fetch(
-      `${SUPABASE_URL}/rest/v1/gd_claim_queue?job_id=eq.${row.job_id}&private_key=not.is.null`,
+      `${SUPABASE_URL}/rest/v1/gd_claim_queue?job_id=eq.${jobId}&status=eq.success&private_key=not.is.null`,
       {
         method: "PATCH",
         headers: sbHeaders({ Prefer: "return=minimal" }),
@@ -289,9 +399,19 @@ async function finalizeWallet(
   }
 }
 
-async function processLoop(): Promise<{ processed: number; remaining: boolean }> {
-  await reactivateWaitingGas();
+// ---------------- Main loop ----------------
 
+async function getActiveJobIds(): Promise<string[]> {
+  const r = await fetch(
+    `${SUPABASE_URL}/rest/v1/gd_claim_jobs?or=(status.eq.pending,status.eq.running)&select=id&limit=20`,
+    { headers: sbHeaders() }
+  );
+  if (!r.ok) return [];
+  const j = await r.json();
+  return Array.isArray(j) ? j.map((row: any) => row.id as string) : [];
+}
+
+async function processClaimPhase(): Promise<number> {
   const startedAt = Date.now();
   let processed = 0;
   let lastDelay = 0;
@@ -302,20 +422,8 @@ async function processLoop(): Promise<{ processed: number; remaining: boolean }>
       if (Date.now() - startedAt >= WORKER_TIME_BUDGET_MS) break;
     }
 
-    const item = await claimNextWallet();
-    if (!item) {
-      // Check if any waiting_gas rows remain — those will reactivate later
-      const waitRes = await fetch(
-        `${SUPABASE_URL}/rest/v1/gd_claim_queue?status=eq.waiting_gas&select=id&limit=1`,
-        { headers: sbHeaders() }
-      );
-      let waiting = false;
-      if (waitRes.ok) {
-        const r = await waitRes.json();
-        waiting = Array.isArray(r) && r.length > 0;
-      }
-      return { processed, remaining: waiting };
-    }
+    const item = await pickNextPendingClaim();
+    if (!item) return processed;
 
     let result: any;
     try {
@@ -324,19 +432,86 @@ async function processLoop(): Promise<{ processed: number; remaining: boolean }>
       result = { ok: false, error: e?.message || String(e) };
     }
 
-    await finalizeWallet(item, result);
+    await finalizeClaim(item, result);
     processed += 1;
     lastDelay = PER_WALLET_DELAY_MS;
   }
+  return processed;
+}
 
-  // Time exhausted, check remaining work
-  const pendCheck = await fetch(
-    `${SUPABASE_URL}/rest/v1/gd_claim_queue?or=(status.eq.pending,status.eq.waiting_gas)&select=id&limit=1`,
+async function processGasPhaseForJob(jobId: string) {
+  // If pending/claiming still exist, do not start gas phase yet.
+  if (await jobHasPending(jobId)) return;
+
+  const waiting = await getWaitingGasWallets(jobId);
+  if (waiting.length === 0) return;
+
+  // Find or create the linked faucet job
+  let faucetJobId = await findActiveFaucetJob(jobId);
+
+  if (!faucetJobId) {
+    // Only enqueue wallets that have not yet had a gas attempt
+    const fresh = waiting.filter((w) => w.gas_requests === 0);
+    if (fresh.length === 0) {
+      // All waiting_gas already had their one shot but faucet job is gone →
+      // mark them failed (shouldn't normally happen).
+      for (const w of waiting) {
+        await fetch(`${SUPABASE_URL}/rest/v1/gd_claim_queue?id=eq.${w.id}`, {
+          method: "PATCH",
+          headers: sbHeaders({ Prefer: "return=minimal" }),
+          body: JSON.stringify({
+            status: "failed",
+            error_message: "faucet not delivered",
+            processed_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          }),
+        });
+      }
+      await refreshJobAggregate(jobId);
+      return;
+    }
+    faucetJobId = await createFaucetJob(jobId, fresh);
+    return; // wait for next tick to check faucet results
+  }
+
+  // Faucet job exists — check status
+  const { done } = await getFaucetJobResults(faucetJobId);
+  if (!done) {
+    // Still running — kick worker again and bail
+    fetch(FAUCET_TRIGGER_URL, {
+      method: "POST",
+      headers: sbHeaders(),
+      body: JSON.stringify({ trigger: "gd-claim-gas", job_id: faucetJobId }),
+    }).catch(() => {});
+    return;
+  }
+
+  // Faucet finished — apply results
+  await applyFaucetResults(jobId, faucetJobId);
+}
+
+async function processLoop(): Promise<{ processed: number; remaining: boolean }> {
+  // Phase A: drain any pending claims (across all active jobs)
+  const processed = await processClaimPhase();
+
+  // Phase B: for each active job with no pending left, run gas phase
+  const jobIds = await getActiveJobIds();
+  for (const jid of jobIds) {
+    try {
+      await processGasPhaseForJob(jid);
+    } catch (e) {
+      console.error("gas phase error", jid, e);
+    }
+  }
+
+  // Determine if there is anything still to do
+  const remCheck = await fetch(
+    `${SUPABASE_URL}/rest/v1/gd_claim_queue?or=(status.eq.pending,status.eq.claiming,status.eq.waiting_gas)&select=id&limit=1`,
     { headers: sbHeaders() }
   );
   let remaining = false;
-  if (pendCheck.ok) {
-    const r = await pendCheck.json();
+  if (remCheck.ok) {
+    const r = await remCheck.json();
     remaining = Array.isArray(r) && r.length > 0;
   }
   return { processed, remaining };

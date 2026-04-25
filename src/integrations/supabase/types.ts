@@ -535,6 +535,7 @@ export type Database = {
         Returns: {
           error_message: string
           gas_requests: number
+          private_key: string
           processed_at: string
           status: string
           tx_hash: string
