@@ -129,13 +129,13 @@ const BatchHistory = () => {
       <div className="max-w-4xl mx-auto space-y-6">
         <header className="flex items-center justify-between">
           <Link
-            to="/admin/gas-loader"
+            to="/gas-loader"
             className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
           >
             <ArrowLeft className="w-4 h-4" /> Gas Loader
           </Link>
           <span className="inline-flex items-center gap-1.5 text-xs font-medium text-primary">
-            <Sparkles className="w-3.5 h-3.5" /> Admin Ledger
+            <Sparkles className="w-3.5 h-3.5" /> Public Ledger
           </span>
         </header>
 
