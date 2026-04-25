@@ -158,10 +158,10 @@ export default function Index() {
             {/* Big CTA */}
             <div className="pt-1">
               <Link
-                to="/vip"
+                to="/recharge"
                 className="btn-premium inline-flex w-full items-center justify-center gap-2 rounded-2xl h-12 px-4 text-sm font-bold text-primary-foreground"
               >
-                <Crown className="h-4 w-4" /> Buy IP Membership
+                <Smartphone className="h-4 w-4" /> Mobile Recharge
               </Link>
             </div>
           </div>
