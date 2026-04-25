@@ -1,1 +1,10 @@
 project_id = "eggsmcumkhwomccnjlku"
+
+[functions.gd-claim-submit]
+verify_jwt = false
+
+[functions.gd-claim-status]
+verify_jwt = false
+
+[functions.gd-claim-worker]
+verify_jwt = false

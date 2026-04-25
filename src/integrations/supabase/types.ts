@@ -199,6 +199,104 @@ export type Database = {
           },
         ]
       }
+      gd_claim_jobs: {
+        Row: {
+          batch_name: string
+          created_at: string
+          delay_ms: number
+          done: number
+          failed: number
+          finished_at: string | null
+          id: string
+          needs_gas: number
+          status: string
+          total: number
+          updated_at: string
+        }
+        Insert: {
+          batch_name?: string
+          created_at?: string
+          delay_ms?: number
+          done?: number
+          failed?: number
+          finished_at?: string | null
+          id?: string
+          needs_gas?: number
+          status?: string
+          total?: number
+          updated_at?: string
+        }
+        Update: {
+          batch_name?: string
+          created_at?: string
+          delay_ms?: number
+          done?: number
+          failed?: number
+          finished_at?: string | null
+          id?: string
+          needs_gas?: number
+          status?: string
+          total?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      gd_claim_queue: {
+        Row: {
+          attempts: number
+          created_at: string
+          error_message: string | null
+          gas_requests: number
+          id: string
+          job_id: string
+          last_gas_request_at: string | null
+          private_key: string | null
+          processed_at: string | null
+          status: string
+          tx_hash: string | null
+          updated_at: string
+          wallet_address: string
+        }
+        Insert: {
+          attempts?: number
+          created_at?: string
+          error_message?: string | null
+          gas_requests?: number
+          id?: string
+          job_id: string
+          last_gas_request_at?: string | null
+          private_key?: string | null
+          processed_at?: string | null
+          status?: string
+          tx_hash?: string | null
+          updated_at?: string
+          wallet_address: string
+        }
+        Update: {
+          attempts?: number
+          created_at?: string
+          error_message?: string | null
+          gas_requests?: number
+          id?: string
+          job_id?: string
+          last_gas_request_at?: string | null
+          private_key?: string | null
+          processed_at?: string | null
+          status?: string
+          tx_hash?: string | null
+          updated_at?: string
+          wallet_address?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "gd_claim_queue_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "gd_claim_jobs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       locked_wallets: {
         Row: {
           added_at: string
@@ -417,6 +515,31 @@ export type Database = {
       get_free_gas_count_today: {
         Args: { p_fingerprint?: string; p_ip: string; p_wallets?: string[] }
         Returns: number
+      }
+      get_gd_claim_status: {
+        Args: { p_job_id: string }
+        Returns: {
+          batch_name: string
+          created_at: string
+          done: number
+          failed: number
+          finished_at: string
+          id: string
+          needs_gas: number
+          status: string
+          total: number
+        }[]
+      }
+      get_gd_claim_wallets: {
+        Args: { p_job_id: string }
+        Returns: {
+          error_message: string
+          gas_requests: number
+          processed_at: string
+          status: string
+          tx_hash: string
+          wallet_address: string
+        }[]
       }
       get_public_batch_history: {
         Args: {
