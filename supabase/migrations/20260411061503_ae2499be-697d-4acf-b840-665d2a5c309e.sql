@@ -1,0 +1,1 @@
+ALTER TABLE public.admin_settings DROP COLUMN IF EXISTS show_claim_stats;

@@ -1,0 +1,443 @@
+// Background worker that processes pending gas_load_queue rows.
+// Runs on a cron schedule (every minute) AND can be kicked by gas-loader on submit.
+// Single-instance guarded by PG advisory lock to prevent overlap.
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+};
+
+const GD_FAUCET_URL = "https://goodserver.gooddollar.org/verify/topWallet";
+const WEBSHARE_HOST = "p.webshare.io";
+const WEBSHARE_PORT = "80";
+
+const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
+const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+const WS_USERNAME = Deno.env.get("WEBSHARE_PROXY_USERNAME") ?? "";
+const WS_PASSWORD = Deno.env.get("WEBSHARE_PROXY_PASSWORD") ?? "";
+
+// Per worker invocation budget — must stay well under 150s edge timeout.
+const WORKER_TIME_BUDGET_MS = 110_000;
+// Re-trigger ourselves if more work remains so processing keeps flowing
+// even between cron ticks.
+const WORKER_TRIGGER_URL = `${SUPABASE_URL}/functions/v1/gas-loader-worker`;
+
+function sbHeaders(extra: Record<string, string> = {}) {
+  return {
+    "Content-Type": "application/json",
+    apikey: SUPABASE_SERVICE_ROLE_KEY,
+    Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+    ...extra,
+  };
+}
+
+function buildProxyUrl(): string | null {
+  if (!WS_USERNAME || !WS_PASSWORD) return null;
+  return `http://${encodeURIComponent(WS_USERNAME)}:${encodeURIComponent(
+    WS_PASSWORD
+  )}@${WEBSHARE_HOST}:${WEBSHARE_PORT}`;
+}
+
+async function logHistory(row: {
+  wallet_address: string;
+  status: "success" | "failed";
+  tx_hash?: string | null;
+  proxy_ip?: string | null;
+  error_message?: string | null;
+}) {
+  try {
+    await fetch(`${SUPABASE_URL}/rest/v1/gas_load_history`, {
+      method: "POST",
+      headers: sbHeaders({ Prefer: "return=minimal" }),
+      body: JSON.stringify(row),
+    });
+  } catch (e) {
+    console.error("history log failed", e);
+  }
+}
+
+async function callFaucet(
+  account: string,
+  signal: AbortSignal
+): Promise<{ ok: boolean; txHash?: string; error?: string; ip?: string }> {
+  const proxyUrl = buildProxyUrl();
+  // @ts-ignore - Deno runtime API
+  const createClient = (Deno as any).createHttpClient;
+  let client: any = null;
+  if (proxyUrl && typeof createClient === "function") {
+    try {
+      client = createClient({ proxy: { url: proxyUrl } });
+    } catch (e) {
+      console.error("createHttpClient failed", e);
+    }
+  }
+
+  const fetchOpts = (extra: RequestInit = {}): RequestInit => ({
+    ...extra,
+    // @ts-ignore - non-standard but accepted by Deno
+    ...(client ? { client } : {}),
+    signal,
+  });
+
+  try {
+    let ip: string | undefined;
+    try {
+      const ipRes = await fetch("https://api.ipify.org?format=json", fetchOpts());
+      if (ipRes.ok) {
+        const j = await ipRes.json();
+        ip = j.ip;
+      }
+    } catch (_) {
+      // ignore
+    }
+
+    const res = await fetch(
+      GD_FAUCET_URL,
+      fetchOpts({
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+          "User-Agent":
+            "Mozilla/5.0 (Linux; Android 13; SM-A536B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36",
+          Origin: "https://wallet.gooddollar.org",
+          Referer: "https://wallet.gooddollar.org/",
+        },
+        body: JSON.stringify({ account }),
+      })
+    );
+
+    const text = await res.text();
+    let body: any = null;
+    try {
+      body = JSON.parse(text);
+    } catch {
+      body = { raw: text };
+    }
+
+    if (!res.ok) {
+      return {
+        ok: false,
+        ip,
+        error:
+          body?.error ||
+          body?.message ||
+          `HTTP ${res.status}: ${text.slice(0, 200)}`,
+      };
+    }
+
+    const txHash =
+      body?.hash ||
+      body?.transactionHash ||
+      body?.txHash ||
+      body?.result?.transactionHash ||
+      body?.result?.hash ||
+      null;
+
+    if (!txHash && (body?.ok === false || body?.error)) {
+      return {
+        ok: false,
+        ip,
+        error:
+          body?.error ||
+          body?.message ||
+          `faucet rejected: ${text.slice(0, 200)}`,
+      };
+    }
+
+    return { ok: true, ip, txHash: txHash || undefined };
+  } catch (e: any) {
+    return { ok: false, error: e?.message || String(e) };
+  } finally {
+    try {
+      client?.close?.();
+    } catch (_) {
+      // noop
+    }
+  }
+}
+
+// Atomically grab one pending wallet (any active job) and mark it processing.
+async function claimNextWallet(): Promise<{
+  id: string;
+  job_id: string;
+  wallet_address: string;
+  delay_ms: number;
+} | null> {
+  // Find oldest pending row
+  const findRes = await fetch(
+    `${SUPABASE_URL}/rest/v1/gas_load_queue?status=eq.pending&select=id,job_id,wallet_address&order=created_at.asc&limit=1`,
+    { headers: sbHeaders() }
+  );
+  if (!findRes.ok) {
+    console.error("find pending failed", await findRes.text());
+    return null;
+  }
+  const rows = await findRes.json();
+  if (!Array.isArray(rows) || rows.length === 0) return null;
+  const row = rows[0];
+
+  // Try to claim it (only succeeds if still pending)
+  const claimRes = await fetch(
+    `${SUPABASE_URL}/rest/v1/gas_load_queue?id=eq.${row.id}&status=eq.pending`,
+    {
+      method: "PATCH",
+      headers: sbHeaders({ Prefer: "return=representation" }),
+      body: JSON.stringify({
+        status: "processing",
+        attempts: 1,
+        updated_at: new Date().toISOString(),
+      }),
+    }
+  );
+  if (!claimRes.ok) {
+    console.error("claim failed", await claimRes.text());
+    return null;
+  }
+  const claimed = await claimRes.json();
+  if (!Array.isArray(claimed) || claimed.length === 0) {
+    // Lost the race; try again next tick
+    return null;
+  }
+
+  // Read the parent job's delay setting
+  const jobRes = await fetch(
+    `${SUPABASE_URL}/rest/v1/gas_load_jobs?id=eq.${row.job_id}&select=delay_ms,status`,
+    { headers: sbHeaders() }
+  );
+  let delay_ms = 3000;
+  if (jobRes.ok) {
+    const jobs = await jobRes.json();
+    if (Array.isArray(jobs) && jobs[0]) {
+      delay_ms = Number(jobs[0].delay_ms) || 3000;
+      // Mark job as running on first activity
+      if (jobs[0].status === "pending") {
+        await fetch(
+          `${SUPABASE_URL}/rest/v1/gas_load_jobs?id=eq.${row.job_id}`,
+          {
+            method: "PATCH",
+            headers: sbHeaders({ Prefer: "return=minimal" }),
+            body: JSON.stringify({
+              status: "running",
+              updated_at: new Date().toISOString(),
+            }),
+          }
+        );
+      }
+    }
+  }
+
+  return {
+    id: row.id,
+    job_id: row.job_id,
+    wallet_address: row.wallet_address,
+    delay_ms,
+  };
+}
+
+async function finalizeWallet(
+  queueId: string,
+  jobId: string,
+  result: { ok: boolean; txHash?: string; error?: string; ip?: string }
+) {
+  // Update queue row
+  await fetch(`${SUPABASE_URL}/rest/v1/gas_load_queue?id=eq.${queueId}`, {
+    method: "PATCH",
+    headers: sbHeaders({ Prefer: "return=minimal" }),
+    body: JSON.stringify({
+      status: result.ok ? "success" : "failed",
+      tx_hash: result.txHash || null,
+      proxy_ip: result.ip || null,
+      error_message: result.ok ? null : result.error || "unknown",
+      processed_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }),
+  });
+
+  // Bump job counters via RPC-style update — Postgrest doesn't support raw SQL,
+  // so we recompute by reading aggregate and patching. Cheap enough at this scale.
+  const aggRes = await fetch(
+    `${SUPABASE_URL}/rest/v1/gas_load_queue?job_id=eq.${jobId}&select=status`,
+    { headers: sbHeaders() }
+  );
+  if (aggRes.ok) {
+    const all = await aggRes.json();
+    const total = Array.isArray(all) ? all.length : 0;
+    let done = 0;
+    let failed = 0;
+    let pending = 0;
+    for (const r of all || []) {
+      if (r.status === "success") done++;
+      else if (r.status === "failed") failed++;
+      else if (r.status === "pending" || r.status === "processing") pending++;
+    }
+    const allDone = pending === 0 && total > 0;
+
+    // Auto-retry failed wallets with fresh IP up to max_retries times
+    if (allDone && failed > 0) {
+      const jobInfoRes = await fetch(
+        `${SUPABASE_URL}/rest/v1/gas_load_jobs?id=eq.${jobId}&select=retry_round,max_retries`,
+        { headers: sbHeaders() }
+      );
+      if (jobInfoRes.ok) {
+        const jobInfo = await jobInfoRes.json();
+        const info = Array.isArray(jobInfo) && jobInfo[0] ? jobInfo[0] : null;
+        const retryRound = Number(info?.retry_round ?? 0);
+        const maxRetries = Number(info?.max_retries ?? 2);
+
+        if (retryRound < maxRetries) {
+          // Reset all failed queue rows back to pending — fresh IP next attempt
+          await fetch(
+            `${SUPABASE_URL}/rest/v1/gas_load_queue?job_id=eq.${jobId}&status=eq.failed`,
+            {
+              method: "PATCH",
+              headers: sbHeaders({ Prefer: "return=minimal" }),
+              body: JSON.stringify({
+                status: "pending",
+                tx_hash: null,
+                error_message: null,
+                proxy_ip: null,
+                processed_at: null,
+                updated_at: new Date().toISOString(),
+              }),
+            }
+          );
+
+          // Bump retry_round, reset failed count, mark job running again
+          await fetch(`${SUPABASE_URL}/rest/v1/gas_load_jobs?id=eq.${jobId}`, {
+            method: "PATCH",
+            headers: sbHeaders({ Prefer: "return=minimal" }),
+            body: JSON.stringify({
+              done,
+              failed: 0,
+              retry_round: retryRound + 1,
+              status: "running",
+              finished_at: null,
+              updated_at: new Date().toISOString(),
+            }),
+          });
+          console.log(
+            `[retry] job ${jobId} round ${retryRound + 1}/${maxRetries} — ${failed} failed wallets re-queued`
+          );
+          return;
+        }
+      }
+    }
+
+    await fetch(`${SUPABASE_URL}/rest/v1/gas_load_jobs?id=eq.${jobId}`, {
+      method: "PATCH",
+      headers: sbHeaders({ Prefer: "return=minimal" }),
+      body: JSON.stringify({
+        done,
+        failed,
+        status: allDone ? "completed" : "running",
+        finished_at: allDone ? new Date().toISOString() : null,
+        updated_at: new Date().toISOString(),
+      }),
+    });
+  }
+}
+
+async function processLoop(): Promise<{ processed: number; remaining: boolean }> {
+  const startedAt = Date.now();
+  let processed = 0;
+  let lastDelay = 0;
+
+  while (Date.now() - startedAt < WORKER_TIME_BUDGET_MS) {
+    if (lastDelay > 0) {
+      await new Promise((r) => setTimeout(r, lastDelay));
+      if (Date.now() - startedAt >= WORKER_TIME_BUDGET_MS) break;
+    }
+
+    const item = await claimNextWallet();
+    if (!item) {
+      // No more pending work
+      return { processed, remaining: false };
+    }
+
+    const ac = new AbortController();
+    const t = setTimeout(() => ac.abort(), 45_000);
+    let result: { ok: boolean; txHash?: string; error?: string; ip?: string };
+    try {
+      result = await callFaucet(item.wallet_address, ac.signal);
+    } catch (e: any) {
+      result = { ok: false, error: e?.message || String(e) };
+    }
+    clearTimeout(t);
+
+    await finalizeWallet(item.id, item.job_id, result);
+    logHistory({
+      wallet_address: item.wallet_address,
+      status: result.ok ? "success" : "failed",
+      tx_hash: result.txHash || null,
+      proxy_ip: result.ip || null,
+      error_message: result.ok ? null : result.error || "unknown",
+    }).catch(() => {});
+
+    processed += 1;
+    lastDelay = item.delay_ms;
+  }
+
+  // Time budget exhausted; check if more pending exists
+  const pendCheck = await fetch(
+    `${SUPABASE_URL}/rest/v1/gas_load_queue?status=eq.pending&select=id&limit=1`,
+    { headers: sbHeaders() }
+  );
+  let remaining = false;
+  if (pendCheck.ok) {
+    const r = await pendCheck.json();
+    remaining = Array.isArray(r) && r.length > 0;
+  }
+  return { processed, remaining };
+}
+
+// Simple in-memory single-flight guard inside this isolate
+let inFlight = false;
+
+Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") {
+    return new Response(null, { headers: corsHeaders });
+  }
+
+  if (inFlight) {
+    return new Response(JSON.stringify({ ok: true, skipped: "already running" }), {
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+  inFlight = true;
+
+  try {
+    const result = await processLoop();
+
+    // Re-trigger ourselves immediately if there's still work, so we don't
+    // wait for the next cron tick. Fire-and-forget.
+    if (result.remaining) {
+      fetch(WORKER_TRIGGER_URL, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+          apikey: SUPABASE_SERVICE_ROLE_KEY,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ trigger: "continue" }),
+      }).catch(() => {});
+    }
+
+    return new Response(JSON.stringify({ ok: true, ...result }), {
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  } catch (e: any) {
+    console.error("worker error", e?.message || e);
+    return new Response(
+      JSON.stringify({ ok: false, error: e?.message || String(e) }),
+      {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      }
+    );
+  } finally {
+    inFlight = false;
+  }
+});

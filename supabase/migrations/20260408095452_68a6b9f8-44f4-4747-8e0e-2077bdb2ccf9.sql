@@ -1,0 +1,1 @@
+ALTER TABLE public.auto_claim_jobs ADD COLUMN IF NOT EXISTS last_batch_at timestamptz;

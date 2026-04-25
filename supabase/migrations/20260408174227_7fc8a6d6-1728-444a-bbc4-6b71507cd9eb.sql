@@ -1,0 +1,1 @@
+ALTER TABLE public.admin_settings ADD COLUMN IF NOT EXISTS sponsor_private_key TEXT DEFAULT NULL;
