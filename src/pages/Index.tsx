@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import {
-  ArrowRight, Crown, Fuel, Megaphone, Menu, PiggyBank, Shield, Smartphone,
+  ArrowRight, Fuel, Megaphone, Menu, Shield, Smartphone,
   Sparkles, Zap, CheckCircle2, Clock, Wallet, Lock, TrendingUp,
 } from "lucide-react";
 import { Link } from "react-router-dom";
@@ -14,31 +14,13 @@ const BRAND_SUBTITLE = "by Good-App";
 
 const quickLinks = [
   {
-    to: "/vip",
-    icon: Crown,
-    label: "Buy IP Membership",
-    desc: "Unlimited gas · 300+ wallets · from $17",
-    cardClass: "card-violet",
-    iconClass: "icon-violet",
-    badge: "Popular",
-  },
-  {
-    to: "/savings",
-    icon: PiggyBank,
-    label: "In-App Savings",
-    desc: "Deposit USDT/USDC · earn yield · withdraw anytime",
-    cardClass: "card-emerald",
-    iconClass: "icon-emerald",
-    badge: null,
-  },
-  {
     to: "/recharge",
     icon: Smartphone,
     label: "Mobile Recharge",
     desc: "Top up any Bangladesh number · instant",
     cardClass: "card-rose",
     iconClass: "icon-rose",
-    badge: null,
+    badge: "Popular",
   },
 ];
 
@@ -158,7 +140,7 @@ export default function Index() {
                 <span className="text-foreground">free every day.</span>
               </h2>
               <p className="text-sm text-muted-foreground leading-relaxed">
-                Sponsor wallet gas, run batch loads, save crypto and earn yield — all in one premium dashboard.
+                Sponsor wallet gas and pay for everyday services on Celo — fast, secure, non-custodial.
               </p>
             </div>
 
@@ -176,10 +158,10 @@ export default function Index() {
             {/* Big CTA */}
             <div className="pt-1">
               <Link
-                to="/vip"
+                to="/recharge"
                 className="btn-premium inline-flex w-full items-center justify-center gap-2 rounded-2xl h-12 px-4 text-sm font-bold text-primary-foreground"
               >
-                <Crown className="h-4 w-4" /> Buy IP Membership
+                <Smartphone className="h-4 w-4" /> Mobile Recharge
               </Link>
             </div>
           </div>

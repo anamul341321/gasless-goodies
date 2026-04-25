@@ -1,24 +1,10 @@
-import { ChevronRight, Crown, PiggyBank, Smartphone, Zap } from "lucide-react";
+import { ChevronRight, Smartphone, Zap } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { supabase } from "@/integrations/supabase/client";
 
 const services = [
-  {
-    to: "/vip",
-    icon: Crown,
-    label: "Buy IP Membership",
-    desc: "Unlimited gas load · 300+ wallets · from $17",
-    badge: "👑 NEW",
-  },
-  {
-    to: "/savings",
-    icon: PiggyBank,
-    label: "In-App Savings",
-    desc: "Deposit USDT/USDC · earn yield in your wallet",
-    badge: "🪙 NEW",
-  },
   {
     to: "/recharge",
     icon: Smartphone,

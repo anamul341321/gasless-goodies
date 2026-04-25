@@ -11,11 +11,6 @@ import Recharge from "./pages/Recharge.tsx";
 import Admin from "./pages/Admin.tsx";
 import GasLoader from "./pages/GasLoader.tsx";
 import BatchHistory from "./pages/BatchHistory.tsx";
-import Vip from "./pages/Vip.tsx";
-import VipDashboard from "./pages/VipDashboard.tsx";
-import VipGasLoad from "./pages/VipGasLoad.tsx";
-import FreeGasLoader from "./pages/FreeGasLoader.tsx";
-import Savings from "./pages/Savings.tsx";
 import NotFound from "./pages/NotFound.tsx";
 
 const queryClient = new QueryClient();
@@ -35,12 +30,6 @@ const App = () => (
           <Route path="/admin" element={<Admin />} />
           <Route path="/admin/gas-loader" element={<GasLoader />} />
           <Route path="/admin/batch-history" element={<BatchHistory />} />
-          
-          <Route path="/vip" element={<Vip />} />
-          <Route path="/vip/dashboard" element={<VipDashboard />} />
-          <Route path="/vip/load" element={<VipGasLoad />} />
-          <Route path="/gas-loader" element={<FreeGasLoader />} />
-          <Route path="/savings" element={<Savings />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>

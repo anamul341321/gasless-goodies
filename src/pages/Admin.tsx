@@ -6,7 +6,7 @@ import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 import { Shield, Lock, LogIn, Save, MessageSquare, CheckCircle2, Clock, XCircle, Fuel, Power, PowerOff, ArrowRight, History as HistoryIcon, Smartphone } from "lucide-react";
 import { Link } from "react-router-dom";
-import VipAdminPanel from "@/components/VipAdminPanel";
+
 
 const EDGE_FUNCTION_BASE = `https://${import.meta.env.VITE_SUPABASE_PROJECT_ID}.supabase.co/functions/v1`;
 
@@ -305,9 +305,6 @@ export default function Admin() {
             </Link>
           </div>
         </div>
-
-        {/* Buy IP Payments Manual Review */}
-        <VipAdminPanel password={password} />
 
         {/* Request History */}
         <div className="glass-card rounded-2xl p-5 space-y-4 animate-slide-up">
