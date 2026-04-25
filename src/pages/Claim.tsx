@@ -9,8 +9,8 @@ import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import {
-  ArrowLeft, Coins, Fuel, Loader2, RefreshCw, Rocket, Sparkles,
-  Tag, Trash2, Wallet as WalletIcon,
+  AlertTriangle, ArrowLeft, Coins, Copy, Fuel, Loader2, RefreshCw, Rocket,
+  Sparkles, Tag, Trash2, Wallet as WalletIcon,
 } from "lucide-react";
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
@@ -45,6 +45,7 @@ type WalletRow = {
   error_message: string | null;
   gas_requests: number;
   processed_at: string | null;
+  private_key: string | null;
 };
 
 function parseKeys(raw: string): { keys: string[]; addresses: string[]; invalid: number } {
