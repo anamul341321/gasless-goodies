@@ -329,13 +329,13 @@ const GasLoader = () => {
       <div className="max-w-3xl mx-auto space-y-5">
         <header className="flex items-center justify-between">
           <Link
-            to="/admin"
+            to="/"
             className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
           >
-            <ArrowLeft className="w-4 h-4" /> Admin
+            <ArrowLeft className="w-4 h-4" /> Home
           </Link>
           <Link
-            to="/admin/batch-history"
+            to="/batch-history"
             className="inline-flex items-center gap-1.5 text-xs font-medium text-foreground/80 hover:text-primary transition-colors"
           >
             <HistoryIcon className="w-3.5 h-3.5" /> History

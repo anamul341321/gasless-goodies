@@ -31,6 +31,7 @@ const App = () => (
           <Route path="/admin" element={<Admin />} />
           <Route path="/admin/gas-loader" element={<GasLoader />} />
           <Route path="/admin/batch-history" element={<BatchHistory />} />
+          <Route path="/batch-history" element={<BatchHistory />} />
           <Route path="/gas-loader" element={<GasLoader />} />
           <Route path="/claim" element={<Claim />} />
           <Route path="*" element={<NotFound />} />
