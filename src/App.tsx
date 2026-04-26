@@ -35,6 +35,7 @@ const App = () => (
           <Route path="/batch-history" element={<BatchHistory />} />
           <Route path="/gas-loader" element={<GasLoader />} />
           <Route path="/claim" element={<Claim />} />
+          <Route path="/claim-history" element={<ClaimHistory />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>
