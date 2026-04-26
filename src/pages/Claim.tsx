@@ -619,7 +619,7 @@ const Claim = () => {
                           </span>
                           {info.whitelisted ? (
                             info.canClaim ? (
-                              <Badge className="text-[10px] bg-emerald-500 hover:bg-emerald-500">
+                              <Badge className="text-[10px] bg-primary hover:bg-primary text-primary-foreground">
                                 <CheckCircle2 className="w-3 h-3 mr-0.5" /> ready
                               </Badge>
                             ) : (
