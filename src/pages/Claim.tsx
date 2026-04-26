@@ -204,9 +204,71 @@ const Claim = () => {
 
   const handleClear = () => setRawInput("");
 
-  const handleSubmit = async () => {
-    if (parsed.keys.length === 0) {
+  const handleVerify = async () => {
+    if (parsed.addresses.length === 0) {
       toast({ title: "No valid private keys parsed", variant: "destructive" });
+      return;
+    }
+    setKycChecking(true);
+    try {
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/gd-wallet-info`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ addresses: parsed.addresses }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
+      const map = new Map<string, KycResult>();
+      for (const r of data.results || []) {
+        map.set(String(r.address).toLowerCase(), {
+          address: r.address,
+          whitelisted: !!r.whitelisted,
+          canClaim: !!r.canClaim,
+          entitlement: r.entitlement || "0",
+          balance: r.balance || "0",
+        });
+      }
+      setKycResults(map);
+      const verified = [...map.values()].filter((v) => v.whitelisted).length;
+      const claimable = [...map.values()].filter((v) => v.canClaim).length;
+      toast({
+        title: "Verification complete",
+        description: `${verified}/${map.size} verified · ${claimable} ready to claim now`,
+      });
+    } catch (e: any) {
+      toast({
+        title: "Verification failed",
+        description: e?.message || "Could not check wallets",
+        variant: "destructive",
+      });
+    } finally {
+      setKycChecking(false);
+    }
+  };
+
+  // Filter keys based on KYC results when skipUnverified is on
+  const submittableKeys = useMemo(() => {
+    if (!kycResults || !skipUnverified) return parsed.keys;
+    const result: string[] = [];
+    for (let i = 0; i < parsed.keys.length; i++) {
+      const addrLower = parsed.addresses[i].toLowerCase();
+      const info = kycResults.get(addrLower);
+      // Only skip if we have a definitive "not whitelisted" result
+      if (info && !info.whitelisted) continue;
+      result.push(parsed.keys[i]);
+    }
+    return result;
+  }, [parsed, kycResults, skipUnverified]);
+
+  const skippedCount = parsed.keys.length - submittableKeys.length;
+
+  const handleSubmit = async () => {
+    if (submittableKeys.length === 0) {
+      toast({
+        title: skippedCount > 0 ? "All wallets are unverified" : "No valid private keys parsed",
+        description: skippedCount > 0 ? "Disable 'Skip unverified' to submit anyway." : undefined,
+        variant: "destructive",
+      });
       return;
     }
     setSubmitting(true);
@@ -215,7 +277,7 @@ const Claim = () => {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          private_keys: parsed.keys,
+          private_keys: submittableKeys,
           batch_name: batchName.trim() || undefined,
         }),
       });
@@ -227,9 +289,10 @@ const Claim = () => {
       localStorage.setItem(ACTIVE_JOB_KEY, data.job_id);
       setRawInput("");
       setBatchName("");
+      setKycResults(null);
       toast({
         title: "Submitted",
-        description: `${data.total} wallet(s) queued. ~30s per wallet — runs in background.`,
+        description: `${data.total} wallet(s) queued${skippedCount > 0 ? ` · ${skippedCount} unverified skipped` : ""}.`,
       });
     } catch (e: any) {
       toast({
