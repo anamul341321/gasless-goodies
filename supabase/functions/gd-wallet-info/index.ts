@@ -119,9 +119,10 @@ function decodeUint(iface: Interface, fn: string, data: string): bigint {
   }
 }
 
-async function inspectChunk(addresses: string[]): Promise<Result[]> {
+async function inspectChunk(addresses: string[], mode: Mode): Promise<Result[]> {
   const calls: Call[] = [];
-  for (const a of addresses) calls.push(...buildCallsForWallet(a));
+  for (const a of addresses) calls.push(...buildCallsForWallet(a, mode));
+  const stride = callsPerWallet(mode);
 
   let returns: { success: boolean; returnData: string }[] = [];
   try {
@@ -142,18 +143,26 @@ async function inspectChunk(addresses: string[]): Promise<Result[]> {
 
   const out: Result[] = [];
   for (let i = 0; i < addresses.length; i++) {
-    const base = i * 3;
-    const wlRet = returns[base];
-    const balRet = returns[base + 1];
-    const entRet = returns[base + 2];
+    const base = i * stride;
 
-    const whitelisted = wlRet?.success ? decodeBool(wlRet.returnData) : false;
-    const balWei =
-      balRet?.success ? decodeUint(erc20Iface, "balanceOf", balRet.returnData) : 0n;
-    const ent =
-      entRet?.success
-        ? decodeUint(ubiIface, "checkEntitlement", entRet.returnData)
-        : 0n;
+    let whitelisted = false;
+    let balWei = 0n;
+    let ent = 0n;
+
+    if (mode === "kyc_only") {
+      const wlRet = returns[base];
+      whitelisted = wlRet?.success ? decodeBool(wlRet.returnData) : false;
+    } else if (mode === "balance_only") {
+      const balRet = returns[base];
+      balWei = balRet?.success ? decodeUint(erc20Iface, "balanceOf", balRet.returnData) : 0n;
+    } else {
+      const wlRet = returns[base];
+      const balRet = returns[base + 1];
+      const entRet = returns[base + 2];
+      whitelisted = wlRet?.success ? decodeBool(wlRet.returnData) : false;
+      balWei = balRet?.success ? decodeUint(erc20Iface, "balanceOf", balRet.returnData) : 0n;
+      ent = entRet?.success ? decodeUint(ubiIface, "checkEntitlement", entRet.returnData) : 0n;
+    }
 
     out.push({
       address: addresses[i],
