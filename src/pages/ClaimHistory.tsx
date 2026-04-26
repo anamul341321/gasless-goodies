@@ -178,6 +178,9 @@ const ClaimHistory = () => {
           </Card>
         </div>
 
+        {/* Live wallet dashboard (G$ balance + KYC + next-claim countdown) */}
+        <WalletDashboard />
+
         {/* Search */}
         <Card className="glass-card-elevated card-glow">
           <CardContent className="p-4">
