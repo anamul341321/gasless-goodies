@@ -101,6 +101,15 @@ const Claim = () => {
   const [kycResults, setKycResults] = useState<Map<string, KycResult> | null>(null);
   const [skipUnverified, setSkipUnverified] = useState(true);
 
+  // Post-claim balance summary
+  const [balanceSummary, setBalanceSummary] = useState<{
+    totalG: number;
+    walletCount: number;
+    checkedAt: string;
+  } | null>(null);
+  const [balanceLoading, setBalanceLoading] = useState(false);
+  const balanceFetchedFor = useRef<string | null>(null);
+
   const [jobId, setJobId] = useState<string | null>(
     () => localStorage.getItem(ACTIVE_JOB_KEY)
   );
