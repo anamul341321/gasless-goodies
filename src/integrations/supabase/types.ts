@@ -560,6 +560,25 @@ export type Database = {
           total: number
         }[]
       }
+      get_public_gd_claim_history: {
+        Args: {
+          page_limit?: number
+          page_offset?: number
+          search_name?: string
+        }
+        Returns: {
+          batch_name: string
+          created_at: string
+          done: number
+          duration_seconds: number
+          failed: number
+          finished_at: string
+          id: string
+          needs_gas: number
+          status: string
+          total: number
+        }[]
+      }
       get_public_name_summary: {
         Args: { search_name?: string }
         Returns: {
