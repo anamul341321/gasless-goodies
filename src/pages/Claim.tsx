@@ -736,19 +736,10 @@ const Claim = () => {
                           {addr.slice(0, 8)}…{addr.slice(-6)}
                         </span>
                         <span className="flex items-center gap-2 shrink-0">
-                          <span className="text-muted-foreground font-mono">
-                            {Number(info.balance).toFixed(2)} G$
-                          </span>
                           {info.whitelisted ? (
-                            info.canClaim ? (
-                              <Badge className="text-[10px] bg-primary hover:bg-primary text-primary-foreground">
-                                <CheckCircle2 className="w-3 h-3 mr-0.5" /> ready
-                              </Badge>
-                            ) : (
-                              <Badge variant="secondary" className="text-[10px]">
-                                claimed today
-                              </Badge>
-                            )
+                            <Badge className="text-[10px] bg-primary hover:bg-primary text-primary-foreground">
+                              <ShieldCheck className="w-3 h-3 mr-0.5" /> verified
+                            </Badge>
                           ) : (
                             <Badge variant="destructive" className="text-[10px]">
                               <ShieldAlert className="w-3 h-3 mr-0.5" /> unverified
