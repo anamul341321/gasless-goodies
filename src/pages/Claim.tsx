@@ -208,7 +208,7 @@ const Claim = () => {
       setBatchName("");
       toast({
         title: "Submitted",
-        description: `${data.total} wallet(s) queued. ~10s per wallet — runs in background.`,
+        description: `${data.total} wallet(s) queued. ~30s per wallet — runs in background.`,
       });
     } catch (e: any) {
       toast({
@@ -246,6 +246,12 @@ const Claim = () => {
           >
             <ArrowLeft className="w-4 h-4" /> Home
           </Link>
+          <Link
+            to="/claim-history"
+            className="inline-flex items-center gap-1.5 text-sm text-primary hover:text-primary/80 transition-colors"
+          >
+            History <ArrowLeft className="w-4 h-4 rotate-180" />
+          </Link>
         </header>
 
         <div className="text-center space-y-2">
@@ -254,7 +260,7 @@ const Claim = () => {
             GoodDollar Batch Claim
           </h1>
           <p className="text-muted-foreground text-xs md:text-sm">
-            Paste private keys · 10s per wallet · auto-fills gas if missing · runs server-side
+            Paste private keys · 30s per wallet · auto-fills gas if missing · runs server-side
           </p>
         </div>
 
@@ -319,7 +325,7 @@ const Claim = () => {
               </div>
               {isJobActive && (
                 <p className="text-[11px] text-muted-foreground text-center">
-                  Claims run on the server at ~10s per wallet. You can close this page or turn
+                  Claims run on the server at ~30s per wallet. You can close this page or turn
                   off your screen — progress continues.
                 </p>
               )}
