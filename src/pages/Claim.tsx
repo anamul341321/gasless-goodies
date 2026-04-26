@@ -81,11 +81,25 @@ function parseKeys(raw: string): { keys: string[]; addresses: string[]; invalid:
   return { keys, addresses, invalid };
 }
 
+type KycStatus = "verified" | "unverified" | "claimed_today";
+type KycResult = {
+  address: string;
+  whitelisted: boolean;
+  canClaim: boolean;
+  entitlement: string;
+  balance: string;
+};
+
 const Claim = () => {
   const { toast } = useToast();
   const [rawInput, setRawInput] = useState("");
   const [batchName, setBatchName] = useState("");
   const [submitting, setSubmitting] = useState(false);
+
+  // KYC verification state
+  const [kycChecking, setKycChecking] = useState(false);
+  const [kycResults, setKycResults] = useState<Map<string, KycResult> | null>(null);
+  const [skipUnverified, setSkipUnverified] = useState(true);
 
   const [jobId, setJobId] = useState<string | null>(
     () => localStorage.getItem(ACTIVE_JOB_KEY)
@@ -95,6 +109,11 @@ const Claim = () => {
   const pollTimer = useRef<number | null>(null);
 
   const parsed = useMemo(() => parseKeys(rawInput), [rawInput]);
+
+  // Reset KYC results whenever input changes
+  useEffect(() => {
+    setKycResults(null);
+  }, [rawInput]);
 
   const fetchStatus = async (id: string) => {
     try {
