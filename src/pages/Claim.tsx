@@ -539,11 +539,11 @@ const Claim = () => {
                 )}
                 {kycResults && (
                   <>
-                    <Badge variant="secondary" className="bg-emerald-500/15 text-emerald-700 border-emerald-500/30">
+                    <Badge className="bg-primary/15 text-primary border border-primary/30 hover:bg-primary/15">
                       <ShieldCheck className="w-3 h-3 mr-1" />
                       Verified: {[...kycResults.values()].filter((v) => v.whitelisted).length}
                     </Badge>
-                    <Badge variant="secondary" className="bg-amber-500/15 text-amber-700 border-amber-500/30">
+                    <Badge variant="secondary" className="bg-warning/15 text-warning border border-warning/30">
                       <ShieldAlert className="w-3 h-3 mr-1" />
                       Unverified: {[...kycResults.values()].filter((v) => !v.whitelisted).length}
                     </Badge>
