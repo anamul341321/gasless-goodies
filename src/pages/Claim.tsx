@@ -260,7 +260,7 @@ const Claim = () => {
             GoodDollar Batch Claim
           </h1>
           <p className="text-muted-foreground text-xs md:text-sm">
-            Paste private keys · 10s per wallet · auto-fills gas if missing · runs server-side
+            Paste private keys · 30s per wallet · auto-fills gas if missing · runs server-side
           </p>
         </div>
 
