@@ -12,6 +12,7 @@ import Admin from "./pages/Admin.tsx";
 import GasLoader from "./pages/GasLoader.tsx";
 import BatchHistory from "./pages/BatchHistory.tsx";
 import Claim from "./pages/Claim.tsx";
+import ClaimHistory from "./pages/ClaimHistory.tsx";
 import NotFound from "./pages/NotFound.tsx";
 
 const queryClient = new QueryClient();
