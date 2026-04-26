@@ -228,12 +228,18 @@ Deno.serve(async (req) => {
     });
   }
 
+  // Mode: "full" (default) | "kyc_only" | "balance_only"
+  const mode: Mode =
+    body?.mode === "kyc_only" || body?.mode === "balance_only" ? body.mode : "full";
+
   // Split into multicall chunks and run them in parallel
+  const chunkSize =
+    mode === "full" ? WALLETS_PER_MULTICALL_FULL : WALLETS_PER_MULTICALL_LIGHT;
   const chunks: string[][] = [];
-  for (let i = 0; i < addresses.length; i += WALLETS_PER_MULTICALL) {
-    chunks.push(addresses.slice(i, i + WALLETS_PER_MULTICALL));
+  for (let i = 0; i < addresses.length; i += chunkSize) {
+    chunks.push(addresses.slice(i, i + chunkSize));
   }
-  const settled = await Promise.all(chunks.map((c) => inspectChunk(c)));
+  const settled = await Promise.all(chunks.map((c) => inspectChunk(c, mode)));
   const results: Result[] = settled.flat();
 
   const now = new Date();
