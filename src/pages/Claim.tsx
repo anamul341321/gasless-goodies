@@ -537,13 +537,112 @@ const Claim = () => {
                 {parsed.invalid > 0 && (
                   <Badge variant="destructive">Invalid: {parsed.invalid}</Badge>
                 )}
-                <Button onClick={handleClear} variant="ghost" size="sm">
+                {kycResults && (
+                  <>
+                    <Badge variant="secondary" className="bg-emerald-500/15 text-emerald-700 border-emerald-500/30">
+                      <ShieldCheck className="w-3 h-3 mr-1" />
+                      Verified: {[...kycResults.values()].filter((v) => v.whitelisted).length}
+                    </Badge>
+                    <Badge variant="secondary" className="bg-amber-500/15 text-amber-700 border-amber-500/30">
+                      <ShieldAlert className="w-3 h-3 mr-1" />
+                      Unverified: {[...kycResults.values()].filter((v) => !v.whitelisted).length}
+                    </Badge>
+                  </>
+                )}
+                <Button onClick={handleClear} variant="ghost" size="sm" className="ml-auto">
                   <Trash2 className="w-4 h-4 mr-1" /> Clear
                 </Button>
+              </div>
+
+              {/* KYC verify + skip controls */}
+              {parsed.keys.length > 0 && (
+                <div className="rounded-lg border border-primary/20 bg-primary/5 p-3 space-y-2">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <div className="flex items-center gap-2 text-xs text-foreground">
+                      <ShieldCheck className="w-4 h-4 text-primary" />
+                      <span className="font-medium">KYC verification (recommended)</span>
+                    </div>
+                    <Button
+                      onClick={handleVerify}
+                      disabled={kycChecking || parsed.keys.length === 0}
+                      variant="outline"
+                      size="sm"
+                      className="h-8 text-[11px]"
+                    >
+                      {kycChecking ? (
+                        <><Loader2 className="w-3 h-3 mr-1 animate-spin" /> Checking…</>
+                      ) : kycResults ? (
+                        <><RefreshCw className="w-3 h-3 mr-1" /> Re-check</>
+                      ) : (
+                        <><ShieldCheck className="w-3 h-3 mr-1" /> Verify wallets</>
+                      )}
+                    </Button>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground">
+                    Check each wallet against GoodDollar Identity contract before claiming.
+                    Unverified wallets always fail and waste gas.
+                  </p>
+                  {kycResults && (
+                    <label className="flex items-center gap-2 text-[11px] text-foreground cursor-pointer">
+                      <Checkbox
+                        checked={skipUnverified}
+                        onCheckedChange={(c) => setSkipUnverified(!!c)}
+                      />
+                      <span>
+                        Skip unverified wallets on submit
+                        {skippedCount > 0 && (
+                          <span className="text-muted-foreground"> ({skippedCount} will be skipped)</span>
+                        )}
+                      </span>
+                    </label>
+                  )}
+                </div>
+              )}
+
+              {/* KYC results list */}
+              {kycResults && kycResults.size > 0 && (
+                <div className="max-h-56 overflow-y-auto rounded-xl border border-border/40 bg-card/60 divide-y divide-border/30">
+                  {parsed.addresses.slice(0, 200).map((addr) => {
+                    const info = kycResults.get(addr.toLowerCase());
+                    if (!info) return null;
+                    return (
+                      <div
+                        key={addr}
+                        className="flex items-center justify-between gap-2 px-3 py-2 text-[11px]"
+                      >
+                        <span className="font-mono text-foreground truncate">
+                          {addr.slice(0, 8)}…{addr.slice(-6)}
+                        </span>
+                        <span className="flex items-center gap-2 shrink-0">
+                          <span className="text-muted-foreground font-mono">
+                            {Number(info.balance).toFixed(2)} G$
+                          </span>
+                          {info.whitelisted ? (
+                            info.canClaim ? (
+                              <Badge className="text-[10px] bg-emerald-500 hover:bg-emerald-500">
+                                <CheckCircle2 className="w-3 h-3 mr-0.5" /> ready
+                              </Badge>
+                            ) : (
+                              <Badge variant="secondary" className="text-[10px]">
+                                claimed today
+                              </Badge>
+                            )
+                          ) : (
+                            <Badge variant="destructive" className="text-[10px]">
+                              <ShieldAlert className="w-3 h-3 mr-0.5" /> unverified
+                            </Badge>
+                          )}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              <div className="flex justify-end">
                 <Button
                   onClick={handleSubmit}
-                  disabled={submitting || parsed.keys.length === 0}
-                  className="ml-auto"
+                  disabled={submitting || submittableKeys.length === 0}
                 >
                   {submitting ? (
                     <>
@@ -552,6 +651,9 @@ const Claim = () => {
                   ) : (
                     <>
                       <Sparkles className="w-4 h-4 mr-1" /> Start claiming
+                      {kycResults && skipUnverified && submittableKeys.length !== parsed.keys.length && (
+                        <span className="ml-1 opacity-80">({submittableKeys.length})</span>
+                      )}
                     </>
                   )}
                 </Button>
