@@ -34,8 +34,8 @@ const UBI_ABI = [
 const FAUCET_TRIGGER_URL = `${SUPABASE_URL}/functions/v1/gas-loader-worker`;
 const WORKER_TRIGGER_URL = `${SUPABASE_URL}/functions/v1/gd-claim-worker`;
 
-const PER_WALLET_DELAY_MS = 10_000; // 10s between claim() calls
-const FAUCET_DELAY_MS = 3_000;       // 3s between gas refill calls (1 IP per req)
+const PER_WALLET_DELAY_MS = 30_000; // 30s between claim() calls (~2 per minute)
+const FAUCET_DELAY_MS = 10_000;      // 10s between gas refill calls (1 IP per req)
 const WORKER_TIME_BUDGET_MS = 110_000;
 const MAX_CLAIM_ATTEMPTS = 3;        // total claim() tries per wallet (incl. post-gas)
 
