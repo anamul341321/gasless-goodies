@@ -166,6 +166,38 @@ const Claim = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [jobId]);
 
+  // When a job completes, automatically fetch the total G$ balance across ALL
+  // wallets in the batch (success + failed + everything). Single batched call.
+  useEffect(() => {
+    if (!job || job.status !== "completed" || !jobId) return;
+    if (balanceFetchedFor.current === jobId) return;
+    if (wallets.length === 0) return;
+    balanceFetchedFor.current = jobId;
+    const addrs = wallets.map((w) => w.wallet_address);
+    setBalanceLoading(true);
+    fetch(`${SUPABASE_URL}/functions/v1/gd-wallet-info`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ addresses: addrs, mode: "balance_only" }),
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        if (!data?.results) return;
+        let total = 0;
+        for (const r of data.results) total += Number(r.balance) || 0;
+        setBalanceSummary({
+          totalG: total,
+          walletCount: data.results.length,
+          checkedAt: data.checked_at || new Date().toISOString(),
+        });
+      })
+      .catch(() => {
+        // silent — surfaced only if user clicks refresh
+        balanceFetchedFor.current = null;
+      })
+      .finally(() => setBalanceLoading(false));
+  }, [job, jobId, wallets]);
+
   const successCount = useMemo(
     () => wallets.filter((w) => w.status === "success").length,
     [wallets]
