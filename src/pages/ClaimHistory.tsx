@@ -16,6 +16,7 @@ import {
   Sparkles,
   History as HistoryIcon,
 } from "lucide-react";
+import WalletDashboard from "@/components/WalletDashboard";
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
 
@@ -176,6 +177,9 @@ const ClaimHistory = () => {
             </CardContent>
           </Card>
         </div>
+
+        {/* Live wallet dashboard (G$ balance + KYC + next-claim countdown) */}
+        <WalletDashboard />
 
         {/* Search */}
         <Card className="glass-card-elevated card-glow">

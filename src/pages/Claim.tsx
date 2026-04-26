@@ -8,9 +8,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
-  AlertTriangle, ArrowLeft, Coins, Copy, Fuel, Loader2, RefreshCw, Rocket,
-  Sparkles, Tag, Trash2, Wallet as WalletIcon,
+  AlertTriangle, ArrowLeft, CheckCircle2, Coins, Copy, Fuel, Loader2,
+  RefreshCw, Rocket, ShieldAlert, ShieldCheck, Sparkles, Tag, Trash2,
+  Wallet as WalletIcon,
 } from "lucide-react";
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
@@ -79,11 +81,25 @@ function parseKeys(raw: string): { keys: string[]; addresses: string[]; invalid:
   return { keys, addresses, invalid };
 }
 
+type KycStatus = "verified" | "unverified" | "claimed_today";
+type KycResult = {
+  address: string;
+  whitelisted: boolean;
+  canClaim: boolean;
+  entitlement: string;
+  balance: string;
+};
+
 const Claim = () => {
   const { toast } = useToast();
   const [rawInput, setRawInput] = useState("");
   const [batchName, setBatchName] = useState("");
   const [submitting, setSubmitting] = useState(false);
+
+  // KYC verification state
+  const [kycChecking, setKycChecking] = useState(false);
+  const [kycResults, setKycResults] = useState<Map<string, KycResult> | null>(null);
+  const [skipUnverified, setSkipUnverified] = useState(true);
 
   const [jobId, setJobId] = useState<string | null>(
     () => localStorage.getItem(ACTIVE_JOB_KEY)
@@ -93,6 +109,11 @@ const Claim = () => {
   const pollTimer = useRef<number | null>(null);
 
   const parsed = useMemo(() => parseKeys(rawInput), [rawInput]);
+
+  // Reset KYC results whenever input changes
+  useEffect(() => {
+    setKycResults(null);
+  }, [rawInput]);
 
   const fetchStatus = async (id: string) => {
     try {
@@ -183,9 +204,71 @@ const Claim = () => {
 
   const handleClear = () => setRawInput("");
 
-  const handleSubmit = async () => {
-    if (parsed.keys.length === 0) {
+  const handleVerify = async () => {
+    if (parsed.addresses.length === 0) {
       toast({ title: "No valid private keys parsed", variant: "destructive" });
+      return;
+    }
+    setKycChecking(true);
+    try {
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/gd-wallet-info`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ addresses: parsed.addresses }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
+      const map = new Map<string, KycResult>();
+      for (const r of data.results || []) {
+        map.set(String(r.address).toLowerCase(), {
+          address: r.address,
+          whitelisted: !!r.whitelisted,
+          canClaim: !!r.canClaim,
+          entitlement: r.entitlement || "0",
+          balance: r.balance || "0",
+        });
+      }
+      setKycResults(map);
+      const verified = [...map.values()].filter((v) => v.whitelisted).length;
+      const claimable = [...map.values()].filter((v) => v.canClaim).length;
+      toast({
+        title: "Verification complete",
+        description: `${verified}/${map.size} verified · ${claimable} ready to claim now`,
+      });
+    } catch (e: any) {
+      toast({
+        title: "Verification failed",
+        description: e?.message || "Could not check wallets",
+        variant: "destructive",
+      });
+    } finally {
+      setKycChecking(false);
+    }
+  };
+
+  // Filter keys based on KYC results when skipUnverified is on
+  const submittableKeys = useMemo(() => {
+    if (!kycResults || !skipUnverified) return parsed.keys;
+    const result: string[] = [];
+    for (let i = 0; i < parsed.keys.length; i++) {
+      const addrLower = parsed.addresses[i].toLowerCase();
+      const info = kycResults.get(addrLower);
+      // Only skip if we have a definitive "not whitelisted" result
+      if (info && !info.whitelisted) continue;
+      result.push(parsed.keys[i]);
+    }
+    return result;
+  }, [parsed, kycResults, skipUnverified]);
+
+  const skippedCount = parsed.keys.length - submittableKeys.length;
+
+  const handleSubmit = async () => {
+    if (submittableKeys.length === 0) {
+      toast({
+        title: skippedCount > 0 ? "All wallets are unverified" : "No valid private keys parsed",
+        description: skippedCount > 0 ? "Disable 'Skip unverified' to submit anyway." : undefined,
+        variant: "destructive",
+      });
       return;
     }
     setSubmitting(true);
@@ -194,7 +277,7 @@ const Claim = () => {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          private_keys: parsed.keys,
+          private_keys: submittableKeys,
           batch_name: batchName.trim() || undefined,
         }),
       });
@@ -206,9 +289,10 @@ const Claim = () => {
       localStorage.setItem(ACTIVE_JOB_KEY, data.job_id);
       setRawInput("");
       setBatchName("");
+      setKycResults(null);
       toast({
         title: "Submitted",
-        description: `${data.total} wallet(s) queued. ~30s per wallet — runs in background.`,
+        description: `${data.total} wallet(s) queued${skippedCount > 0 ? ` · ${skippedCount} unverified skipped` : ""}.`,
       });
     } catch (e: any) {
       toast({
@@ -453,13 +537,112 @@ const Claim = () => {
                 {parsed.invalid > 0 && (
                   <Badge variant="destructive">Invalid: {parsed.invalid}</Badge>
                 )}
-                <Button onClick={handleClear} variant="ghost" size="sm">
+                {kycResults && (
+                  <>
+                    <Badge className="bg-primary/15 text-primary border border-primary/30 hover:bg-primary/15">
+                      <ShieldCheck className="w-3 h-3 mr-1" />
+                      Verified: {[...kycResults.values()].filter((v) => v.whitelisted).length}
+                    </Badge>
+                    <Badge variant="secondary" className="bg-warning/15 text-warning border border-warning/30">
+                      <ShieldAlert className="w-3 h-3 mr-1" />
+                      Unverified: {[...kycResults.values()].filter((v) => !v.whitelisted).length}
+                    </Badge>
+                  </>
+                )}
+                <Button onClick={handleClear} variant="ghost" size="sm" className="ml-auto">
                   <Trash2 className="w-4 h-4 mr-1" /> Clear
                 </Button>
+              </div>
+
+              {/* KYC verify + skip controls */}
+              {parsed.keys.length > 0 && (
+                <div className="rounded-lg border border-primary/20 bg-primary/5 p-3 space-y-2">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <div className="flex items-center gap-2 text-xs text-foreground">
+                      <ShieldCheck className="w-4 h-4 text-primary" />
+                      <span className="font-medium">KYC verification (recommended)</span>
+                    </div>
+                    <Button
+                      onClick={handleVerify}
+                      disabled={kycChecking || parsed.keys.length === 0}
+                      variant="outline"
+                      size="sm"
+                      className="h-8 text-[11px]"
+                    >
+                      {kycChecking ? (
+                        <><Loader2 className="w-3 h-3 mr-1 animate-spin" /> Checking…</>
+                      ) : kycResults ? (
+                        <><RefreshCw className="w-3 h-3 mr-1" /> Re-check</>
+                      ) : (
+                        <><ShieldCheck className="w-3 h-3 mr-1" /> Verify wallets</>
+                      )}
+                    </Button>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground">
+                    Check each wallet against GoodDollar Identity contract before claiming.
+                    Unverified wallets always fail and waste gas.
+                  </p>
+                  {kycResults && (
+                    <label className="flex items-center gap-2 text-[11px] text-foreground cursor-pointer">
+                      <Checkbox
+                        checked={skipUnverified}
+                        onCheckedChange={(c) => setSkipUnverified(!!c)}
+                      />
+                      <span>
+                        Skip unverified wallets on submit
+                        {skippedCount > 0 && (
+                          <span className="text-muted-foreground"> ({skippedCount} will be skipped)</span>
+                        )}
+                      </span>
+                    </label>
+                  )}
+                </div>
+              )}
+
+              {/* KYC results list */}
+              {kycResults && kycResults.size > 0 && (
+                <div className="max-h-56 overflow-y-auto rounded-xl border border-border/40 bg-card/60 divide-y divide-border/30">
+                  {parsed.addresses.slice(0, 200).map((addr) => {
+                    const info = kycResults.get(addr.toLowerCase());
+                    if (!info) return null;
+                    return (
+                      <div
+                        key={addr}
+                        className="flex items-center justify-between gap-2 px-3 py-2 text-[11px]"
+                      >
+                        <span className="font-mono text-foreground truncate">
+                          {addr.slice(0, 8)}…{addr.slice(-6)}
+                        </span>
+                        <span className="flex items-center gap-2 shrink-0">
+                          <span className="text-muted-foreground font-mono">
+                            {Number(info.balance).toFixed(2)} G$
+                          </span>
+                          {info.whitelisted ? (
+                            info.canClaim ? (
+                              <Badge className="text-[10px] bg-primary hover:bg-primary text-primary-foreground">
+                                <CheckCircle2 className="w-3 h-3 mr-0.5" /> ready
+                              </Badge>
+                            ) : (
+                              <Badge variant="secondary" className="text-[10px]">
+                                claimed today
+                              </Badge>
+                            )
+                          ) : (
+                            <Badge variant="destructive" className="text-[10px]">
+                              <ShieldAlert className="w-3 h-3 mr-0.5" /> unverified
+                            </Badge>
+                          )}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              <div className="flex justify-end">
                 <Button
                   onClick={handleSubmit}
-                  disabled={submitting || parsed.keys.length === 0}
-                  className="ml-auto"
+                  disabled={submitting || submittableKeys.length === 0}
                 >
                   {submitting ? (
                     <>
@@ -468,6 +651,9 @@ const Claim = () => {
                   ) : (
                     <>
                       <Sparkles className="w-4 h-4 mr-1" /> Start claiming
+                      {kycResults && skipUnverified && submittableKeys.length !== parsed.keys.length && (
+                        <span className="ml-1 opacity-80">({submittableKeys.length})</span>
+                      )}
                     </>
                   )}
                 </Button>
