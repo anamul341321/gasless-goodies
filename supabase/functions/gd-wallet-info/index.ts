@@ -47,9 +47,10 @@ const multicall = new Contract(MULTICALL3_ADDRESS, MULTICALL3_ABI, provider);
 
 const GD_DECIMALS = 18;
 
-// Multicall3 chunk size — keep response size reasonable. Each wallet = 3 calls,
-// so 60 wallets = 180 calls per RPC request. Run chunks in parallel.
-const WALLETS_PER_MULTICALL = 60;
+// Multicall3 chunk size — keep response size reasonable. With kyc_only mode
+// (1 call/wallet) we can pack many more wallets per RPC. Run chunks in parallel.
+const WALLETS_PER_MULTICALL_FULL = 60;
+const WALLETS_PER_MULTICALL_LIGHT = 180;
 
 type Result = {
   address: string;
@@ -62,8 +63,25 @@ type Result = {
 };
 
 type Call = { target: string; callData: string };
+type Mode = "full" | "kyc_only" | "balance_only";
 
-function buildCallsForWallet(addr: string): Call[] {
+function buildCallsForWallet(addr: string, mode: Mode): Call[] {
+  if (mode === "kyc_only") {
+    return [
+      {
+        target: IDENTITY_ADDRESS,
+        callData: identityIface.encodeFunctionData("isWhitelisted", [addr]),
+      },
+    ];
+  }
+  if (mode === "balance_only") {
+    return [
+      {
+        target: G$_ADDRESS,
+        callData: erc20Iface.encodeFunctionData("balanceOf", [addr]),
+      },
+    ];
+  }
   return [
     {
       target: IDENTITY_ADDRESS,
@@ -78,6 +96,10 @@ function buildCallsForWallet(addr: string): Call[] {
       callData: ubiIface.encodeFunctionData("checkEntitlement", [addr]),
     },
   ];
+}
+
+function callsPerWallet(mode: Mode): number {
+  return mode === "full" ? 3 : 1;
 }
 
 function decodeBool(data: string): boolean {
@@ -97,9 +119,10 @@ function decodeUint(iface: Interface, fn: string, data: string): bigint {
   }
 }
 
-async function inspectChunk(addresses: string[]): Promise<Result[]> {
+async function inspectChunk(addresses: string[], mode: Mode): Promise<Result[]> {
   const calls: Call[] = [];
-  for (const a of addresses) calls.push(...buildCallsForWallet(a));
+  for (const a of addresses) calls.push(...buildCallsForWallet(a, mode));
+  const stride = callsPerWallet(mode);
 
   let returns: { success: boolean; returnData: string }[] = [];
   try {
@@ -120,18 +143,26 @@ async function inspectChunk(addresses: string[]): Promise<Result[]> {
 
   const out: Result[] = [];
   for (let i = 0; i < addresses.length; i++) {
-    const base = i * 3;
-    const wlRet = returns[base];
-    const balRet = returns[base + 1];
-    const entRet = returns[base + 2];
+    const base = i * stride;
 
-    const whitelisted = wlRet?.success ? decodeBool(wlRet.returnData) : false;
-    const balWei =
-      balRet?.success ? decodeUint(erc20Iface, "balanceOf", balRet.returnData) : 0n;
-    const ent =
-      entRet?.success
-        ? decodeUint(ubiIface, "checkEntitlement", entRet.returnData)
-        : 0n;
+    let whitelisted = false;
+    let balWei = 0n;
+    let ent = 0n;
+
+    if (mode === "kyc_only") {
+      const wlRet = returns[base];
+      whitelisted = wlRet?.success ? decodeBool(wlRet.returnData) : false;
+    } else if (mode === "balance_only") {
+      const balRet = returns[base];
+      balWei = balRet?.success ? decodeUint(erc20Iface, "balanceOf", balRet.returnData) : 0n;
+    } else {
+      const wlRet = returns[base];
+      const balRet = returns[base + 1];
+      const entRet = returns[base + 2];
+      whitelisted = wlRet?.success ? decodeBool(wlRet.returnData) : false;
+      balWei = balRet?.success ? decodeUint(erc20Iface, "balanceOf", balRet.returnData) : 0n;
+      ent = entRet?.success ? decodeUint(ubiIface, "checkEntitlement", entRet.returnData) : 0n;
+    }
 
     out.push({
       address: addresses[i],
@@ -197,12 +228,18 @@ Deno.serve(async (req) => {
     });
   }
 
+  // Mode: "full" (default) | "kyc_only" | "balance_only"
+  const mode: Mode =
+    body?.mode === "kyc_only" || body?.mode === "balance_only" ? body.mode : "full";
+
   // Split into multicall chunks and run them in parallel
+  const chunkSize =
+    mode === "full" ? WALLETS_PER_MULTICALL_FULL : WALLETS_PER_MULTICALL_LIGHT;
   const chunks: string[][] = [];
-  for (let i = 0; i < addresses.length; i += WALLETS_PER_MULTICALL) {
-    chunks.push(addresses.slice(i, i + WALLETS_PER_MULTICALL));
+  for (let i = 0; i < addresses.length; i += chunkSize) {
+    chunks.push(addresses.slice(i, i + chunkSize));
   }
-  const settled = await Promise.all(chunks.map((c) => inspectChunk(c)));
+  const settled = await Promise.all(chunks.map((c) => inspectChunk(c, mode)));
   const results: Result[] = settled.flat();
 
   const now = new Date();

@@ -101,6 +101,15 @@ const Claim = () => {
   const [kycResults, setKycResults] = useState<Map<string, KycResult> | null>(null);
   const [skipUnverified, setSkipUnverified] = useState(true);
 
+  // Post-claim balance summary
+  const [balanceSummary, setBalanceSummary] = useState<{
+    totalG: number;
+    walletCount: number;
+    checkedAt: string;
+  } | null>(null);
+  const [balanceLoading, setBalanceLoading] = useState(false);
+  const balanceFetchedFor = useRef<string | null>(null);
+
   const [jobId, setJobId] = useState<string | null>(
     () => localStorage.getItem(ACTIVE_JOB_KEY)
   );
@@ -157,6 +166,38 @@ const Claim = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [jobId]);
 
+  // When a job completes, automatically fetch the total G$ balance across ALL
+  // wallets in the batch (success + failed + everything). Single batched call.
+  useEffect(() => {
+    if (!job || job.status !== "completed" || !jobId) return;
+    if (balanceFetchedFor.current === jobId) return;
+    if (wallets.length === 0) return;
+    balanceFetchedFor.current = jobId;
+    const addrs = wallets.map((w) => w.wallet_address);
+    setBalanceLoading(true);
+    fetch(`${SUPABASE_URL}/functions/v1/gd-wallet-info`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ addresses: addrs, mode: "balance_only" }),
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        if (!data?.results) return;
+        let total = 0;
+        for (const r of data.results) total += Number(r.balance) || 0;
+        setBalanceSummary({
+          totalG: total,
+          walletCount: data.results.length,
+          checkedAt: data.checked_at || new Date().toISOString(),
+        });
+      })
+      .catch(() => {
+        // silent — surfaced only if user clicks refresh
+        balanceFetchedFor.current = null;
+      })
+      .finally(() => setBalanceLoading(false));
+  }, [job, jobId, wallets]);
+
   const successCount = useMemo(
     () => wallets.filter((w) => w.status === "success").length,
     [wallets]
@@ -211,10 +252,11 @@ const Claim = () => {
     }
     setKycChecking(true);
     try {
+      // KYC-only mode: skip balance + entitlement reads → much faster
       const res = await fetch(`${SUPABASE_URL}/functions/v1/gd-wallet-info`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ addresses: parsed.addresses }),
+        body: JSON.stringify({ addresses: parsed.addresses, mode: "kyc_only" }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
@@ -230,10 +272,9 @@ const Claim = () => {
       }
       setKycResults(map);
       const verified = [...map.values()].filter((v) => v.whitelisted).length;
-      const claimable = [...map.values()].filter((v) => v.canClaim).length;
       toast({
         title: "Verification complete",
-        description: `${verified}/${map.size} verified · ${claimable} ready to claim now`,
+        description: `${verified}/${map.size} wallets are KYC verified`,
       });
     } catch (e: any) {
       toast({
@@ -309,7 +350,39 @@ const Claim = () => {
     setJobId(null);
     setJob(null);
     setWallets([]);
+    setBalanceSummary(null);
+    balanceFetchedFor.current = null;
     localStorage.removeItem(ACTIVE_JOB_KEY);
+  };
+
+  const handleRefreshBalance = async () => {
+    if (!jobId || wallets.length === 0) return;
+    setBalanceLoading(true);
+    try {
+      const addrs = wallets.map((w) => w.wallet_address);
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/gd-wallet-info`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ addresses: addrs, mode: "balance_only" }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
+      let total = 0;
+      for (const r of data.results || []) total += Number(r.balance) || 0;
+      setBalanceSummary({
+        totalG: total,
+        walletCount: (data.results || []).length,
+        checkedAt: data.checked_at || new Date().toISOString(),
+      });
+    } catch (e: any) {
+      toast({
+        title: "Balance refresh failed",
+        description: e?.message || "Could not fetch balances",
+        variant: "destructive",
+      });
+    } finally {
+      setBalanceLoading(false);
+    }
   };
 
   const total = job?.total ?? 0;
@@ -347,6 +420,7 @@ const Claim = () => {
             Paste private keys · 30s per wallet · auto-fills gas if missing · runs server-side
           </p>
         </div>
+
 
         {/* Active / completed job panel */}
         {job && (
@@ -397,6 +471,54 @@ const Claim = () => {
                   <div className="font-semibold text-foreground">{claimingCount}</div>
                 </div>
               </div>
+
+              {/* Total G$ summary — auto-shown when batch completes */}
+              {isJobDone && (
+                <div className="rounded-xl border border-primary/30 bg-gradient-to-br from-primary/10 to-primary/5 p-3 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 text-xs font-medium text-foreground">
+                      <Coins className="w-4 h-4 text-primary" />
+                      Total G$ across {balanceSummary?.walletCount ?? wallets.length} wallets
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 text-[11px]"
+                      onClick={handleRefreshBalance}
+                      disabled={balanceLoading}
+                    >
+                      {balanceLoading ? (
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                      ) : (
+                        <RefreshCw className="w-3 h-3" />
+                      )}
+                    </Button>
+                  </div>
+                  <div className="text-center">
+                    {balanceLoading && !balanceSummary ? (
+                      <div className="text-xs text-muted-foreground inline-flex items-center gap-1.5">
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" /> Fetching balances…
+                      </div>
+                    ) : balanceSummary ? (
+                      <>
+                        <div className="text-2xl font-bold text-primary tabular-nums">
+                          {balanceSummary.totalG.toLocaleString(undefined, {
+                            maximumFractionDigits: 2,
+                          })}{" "}
+                          <span className="text-sm font-semibold">G$</span>
+                        </div>
+                        <div className="text-[10px] text-muted-foreground mt-0.5">
+                          Updated {new Date(balanceSummary.checkedAt).toLocaleTimeString()}
+                        </div>
+                      </>
+                    ) : (
+                      <div className="text-xs text-muted-foreground">
+                        Click refresh to load balances
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
               <div className="flex items-center justify-between gap-2">
                 <Button size="sm" variant="ghost" onClick={() => jobId && fetchStatus(jobId)}>
                   <RefreshCw className="w-3.5 h-3.5 mr-1" /> Refresh
