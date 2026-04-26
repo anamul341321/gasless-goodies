@@ -419,7 +419,55 @@ const Claim = () => {
           <p className="text-muted-foreground text-xs md:text-sm">
             Paste private keys · 30s per wallet · auto-fills gas if missing · runs server-side
           </p>
-        </div>
+              </div>
+
+              {/* Total G$ summary — auto-shown when batch completes */}
+              {isJobDone && (
+                <div className="rounded-xl border border-primary/30 bg-gradient-to-br from-primary/10 to-primary/5 p-3 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 text-xs font-medium text-foreground">
+                      <Coins className="w-4 h-4 text-primary" />
+                      Total G$ across {balanceSummary?.walletCount ?? wallets.length} wallets
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 text-[11px]"
+                      onClick={handleRefreshBalance}
+                      disabled={balanceLoading}
+                    >
+                      {balanceLoading ? (
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                      ) : (
+                        <RefreshCw className="w-3 h-3" />
+                      )}
+                    </Button>
+                  </div>
+                  <div className="text-center">
+                    {balanceLoading && !balanceSummary ? (
+                      <div className="text-xs text-muted-foreground inline-flex items-center gap-1.5">
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" /> Fetching balances…
+                      </div>
+                    ) : balanceSummary ? (
+                      <>
+                        <div className="text-2xl font-bold text-primary tabular-nums">
+                          {balanceSummary.totalG.toLocaleString(undefined, {
+                            maximumFractionDigits: 2,
+                          })}{" "}
+                          <span className="text-sm font-semibold">G$</span>
+                        </div>
+                        <div className="text-[10px] text-muted-foreground mt-0.5">
+                          Updated {new Date(balanceSummary.checkedAt).toLocaleTimeString()}
+                        </div>
+                      </>
+                    ) : (
+                      <div className="text-xs text-muted-foreground">
+                        Click refresh to load balances
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
 
         {/* Active / completed job panel */}
         {job && (
