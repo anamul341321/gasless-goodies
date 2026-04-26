@@ -8,9 +8,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
-  AlertTriangle, ArrowLeft, Coins, Copy, Fuel, Loader2, RefreshCw, Rocket,
-  Sparkles, Tag, Trash2, Wallet as WalletIcon,
+  AlertTriangle, ArrowLeft, CheckCircle2, Coins, Copy, Fuel, Loader2,
+  RefreshCw, Rocket, ShieldAlert, ShieldCheck, Sparkles, Tag, Trash2,
+  Wallet as WalletIcon,
 } from "lucide-react";
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
