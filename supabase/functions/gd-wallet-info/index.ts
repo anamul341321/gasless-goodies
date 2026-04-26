@@ -47,9 +47,10 @@ const multicall = new Contract(MULTICALL3_ADDRESS, MULTICALL3_ABI, provider);
 
 const GD_DECIMALS = 18;
 
-// Multicall3 chunk size — keep response size reasonable. Each wallet = 3 calls,
-// so 60 wallets = 180 calls per RPC request. Run chunks in parallel.
-const WALLETS_PER_MULTICALL = 60;
+// Multicall3 chunk size — keep response size reasonable. With kyc_only mode
+// (1 call/wallet) we can pack many more wallets per RPC. Run chunks in parallel.
+const WALLETS_PER_MULTICALL_FULL = 60;
+const WALLETS_PER_MULTICALL_LIGHT = 180;
 
 type Result = {
   address: string;
