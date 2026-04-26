@@ -170,7 +170,7 @@ const ClaimHistory = () => {
               <div className="text-xs text-muted-foreground mb-1 inline-flex items-center gap-1 justify-center">
                 <Fuel className="w-3 h-3" /> Auto Gas
               </div>
-              <div className="text-2xl font-bold text-amber-500">
+              <div className="text-2xl font-bold text-warning">
                 {totals.gas}
               </div>
             </CardContent>
@@ -271,11 +271,11 @@ const ClaimHistory = () => {
                         {b.failed}
                       </div>
                     </div>
-                    <div className="rounded-lg bg-amber-500/10 p-2">
+                    <div className="rounded-lg bg-warning/10 p-2">
                       <div className="text-muted-foreground inline-flex items-center justify-center gap-1">
-                        <Fuel className="w-3 h-3 text-amber-500" />
+                        <Fuel className="w-3 h-3 text-warning" />
                       </div>
-                      <div className="font-semibold text-amber-500">
+                      <div className="font-semibold text-warning">
                         {b.needs_gas}
                       </div>
                     </div>
