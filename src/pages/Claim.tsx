@@ -211,10 +211,11 @@ const Claim = () => {
     }
     setKycChecking(true);
     try {
+      // KYC-only mode: skip balance + entitlement reads → much faster
       const res = await fetch(`${SUPABASE_URL}/functions/v1/gd-wallet-info`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ addresses: parsed.addresses }),
+        body: JSON.stringify({ addresses: parsed.addresses, mode: "kyc_only" }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
@@ -230,10 +231,9 @@ const Claim = () => {
       }
       setKycResults(map);
       const verified = [...map.values()].filter((v) => v.whitelisted).length;
-      const claimable = [...map.values()].filter((v) => v.canClaim).length;
       toast({
         title: "Verification complete",
-        description: `${verified}/${map.size} verified · ${claimable} ready to claim now`,
+        description: `${verified}/${map.size} wallets are KYC verified`,
       });
     } catch (e: any) {
       toast({
