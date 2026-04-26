@@ -350,7 +350,39 @@ const Claim = () => {
     setJobId(null);
     setJob(null);
     setWallets([]);
+    setBalanceSummary(null);
+    balanceFetchedFor.current = null;
     localStorage.removeItem(ACTIVE_JOB_KEY);
+  };
+
+  const handleRefreshBalance = async () => {
+    if (!jobId || wallets.length === 0) return;
+    setBalanceLoading(true);
+    try {
+      const addrs = wallets.map((w) => w.wallet_address);
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/gd-wallet-info`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ addresses: addrs, mode: "balance_only" }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
+      let total = 0;
+      for (const r of data.results || []) total += Number(r.balance) || 0;
+      setBalanceSummary({
+        totalG: total,
+        walletCount: (data.results || []).length,
+        checkedAt: data.checked_at || new Date().toISOString(),
+      });
+    } catch (e: any) {
+      toast({
+        title: "Balance refresh failed",
+        description: e?.message || "Could not fetch balances",
+        variant: "destructive",
+      });
+    } finally {
+      setBalanceLoading(false);
+    }
   };
 
   const total = job?.total ?? 0;
