@@ -2,9 +2,17 @@
 //   - GoodDollar Identity whitelisted status (KYC)
 //   - G$ token balance (formatted)
 //   - next-claim entitlement (UBIScheme.checkEntitlement) → if 0, already claimed today
-// All RPC calls are made server-side (Forno) and batched in parallel.
+//
+// Uses Multicall3 to batch ALL reads into a few RPC calls (massive speedup
+// vs per-wallet round-trips). 200 wallets → ~3 RPC requests instead of 600.
 
-import { JsonRpcProvider, Contract, formatUnits, getAddress } from "https://esm.sh/ethers@6.13.4";
+import {
+  JsonRpcProvider,
+  Contract,
+  Interface,
+  formatUnits,
+  getAddress,
+} from "https://esm.sh/ethers@6.13.4";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -16,58 +24,123 @@ const CELO_RPC = "https://forno.celo.org";
 const IDENTITY_ADDRESS = "0xC361A6E67822a0EDc17D899227dd9FC50BD62F42";
 const G$_ADDRESS = "0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A";
 const UBI_SCHEME_ADDRESS = "0x43d72Ff17701B2DA814620735C39C620Ce0ea4A1";
+// Multicall3 has the same address on virtually every EVM chain incl. Celo
+const MULTICALL3_ADDRESS = "0xcA11bde05977b3631167028862bE2a173976CA11";
 
-const IDENTITY_ABI = [
+const MULTICALL3_ABI = [
+  "function tryAggregate(bool requireSuccess, tuple(address target, bytes callData)[] calls) returns (tuple(bool success, bytes returnData)[])",
+];
+
+// Encoders for each call type
+const identityIface = new Interface([
   "function isWhitelisted(address account) view returns (bool)",
-  "function lastAuthenticated(address account) view returns (uint256)",
-];
-const ERC20_ABI = ["function balanceOf(address) view returns (uint256)"];
-const UBI_ABI = [
+]);
+const erc20Iface = new Interface([
+  "function balanceOf(address) view returns (uint256)",
+]);
+const ubiIface = new Interface([
   "function checkEntitlement(address member) view returns (uint256)",
-  "function periodStart() view returns (uint256)",
-  "function currentDay() view returns (uint256)",
-];
+]);
 
 const provider = new JsonRpcProvider(CELO_RPC, 42220);
-const identity = new Contract(IDENTITY_ADDRESS, IDENTITY_ABI, provider);
-const gd = new Contract(G$_ADDRESS, ERC20_ABI, provider);
-const ubi = new Contract(UBI_SCHEME_ADDRESS, UBI_ABI, provider);
+const multicall = new Contract(MULTICALL3_ADDRESS, MULTICALL3_ABI, provider);
 
-// G$ has 18 decimals on Celo (ERC20 wrapper)
 const GD_DECIMALS = 18;
+
+// Multicall3 chunk size — keep response size reasonable. Each wallet = 3 calls,
+// so 60 wallets = 180 calls per RPC request. Run chunks in parallel.
+const WALLETS_PER_MULTICALL = 60;
 
 type Result = {
   address: string;
   whitelisted: boolean;
-  balance: string;          // formatted G$
-  balanceWei: string;       // raw
-  entitlement: string;      // formatted G$ amount claimable now ("0" if already claimed)
-  canClaim: boolean;        // entitlement > 0 AND whitelisted
+  balance: string;
+  balanceWei: string;
+  entitlement: string;
+  canClaim: boolean;
   error?: string;
 };
 
-async function inspectWallet(addr: string): Promise<Result> {
-  const out: Result = {
-    address: addr,
-    whitelisted: false,
-    balance: "0",
-    balanceWei: "0",
-    entitlement: "0",
-    canClaim: false,
-  };
+type Call = { target: string; callData: string };
+
+function buildCallsForWallet(addr: string): Call[] {
+  return [
+    {
+      target: IDENTITY_ADDRESS,
+      callData: identityIface.encodeFunctionData("isWhitelisted", [addr]),
+    },
+    {
+      target: G$_ADDRESS,
+      callData: erc20Iface.encodeFunctionData("balanceOf", [addr]),
+    },
+    {
+      target: UBI_SCHEME_ADDRESS,
+      callData: ubiIface.encodeFunctionData("checkEntitlement", [addr]),
+    },
+  ];
+}
+
+function decodeBool(data: string): boolean {
   try {
-    const [wl, bal, ent] = await Promise.all([
-      identity.isWhitelisted(addr).catch(() => false),
-      gd.balanceOf(addr).catch(() => 0n),
-      ubi.checkEntitlement(addr).catch(() => 0n),
-    ]);
-    out.whitelisted = Boolean(wl);
-    out.balanceWei = String(bal);
-    out.balance = formatUnits(bal as bigint, GD_DECIMALS);
-    out.entitlement = formatUnits(ent as bigint, GD_DECIMALS);
-    out.canClaim = out.whitelisted && (ent as bigint) > 0n;
+    const [v] = identityIface.decodeFunctionResult("isWhitelisted", data);
+    return Boolean(v);
+  } catch {
+    return false;
+  }
+}
+function decodeUint(iface: Interface, fn: string, data: string): bigint {
+  try {
+    const [v] = iface.decodeFunctionResult(fn, data);
+    return BigInt(v);
+  } catch {
+    return 0n;
+  }
+}
+
+async function inspectChunk(addresses: string[]): Promise<Result[]> {
+  const calls: Call[] = [];
+  for (const a of addresses) calls.push(...buildCallsForWallet(a));
+
+  let returns: { success: boolean; returnData: string }[] = [];
+  try {
+    // staticCall — no tx, pure read
+    returns = await multicall.tryAggregate.staticCall(false, calls);
   } catch (e: any) {
-    out.error = (e?.message || String(e)).slice(0, 200);
+    // Whole-batch failure → mark all wallets in this chunk as errored
+    return addresses.map((a) => ({
+      address: a,
+      whitelisted: false,
+      balance: "0",
+      balanceWei: "0",
+      entitlement: "0",
+      canClaim: false,
+      error: (e?.message || String(e)).slice(0, 200),
+    }));
+  }
+
+  const out: Result[] = [];
+  for (let i = 0; i < addresses.length; i++) {
+    const base = i * 3;
+    const wlRet = returns[base];
+    const balRet = returns[base + 1];
+    const entRet = returns[base + 2];
+
+    const whitelisted = wlRet?.success ? decodeBool(wlRet.returnData) : false;
+    const balWei =
+      balRet?.success ? decodeUint(erc20Iface, "balanceOf", balRet.returnData) : 0n;
+    const ent =
+      entRet?.success
+        ? decodeUint(ubiIface, "checkEntitlement", entRet.returnData)
+        : 0n;
+
+    out.push({
+      address: addresses[i],
+      whitelisted,
+      balance: formatUnits(balWei, GD_DECIMALS),
+      balanceWei: String(balWei),
+      entitlement: formatUnits(ent, GD_DECIMALS),
+      canClaim: whitelisted && ent > 0n,
+    });
   }
   return out;
 }
@@ -94,8 +167,8 @@ Deno.serve(async (req) => {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
-  if (rawList.length > 200) {
-    return new Response(JSON.stringify({ error: "max 200 addresses per request" }), {
+  if (rawList.length > 500) {
+    return new Response(JSON.stringify({ error: "max 500 addresses per request" }), {
       status: 400,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
@@ -124,17 +197,14 @@ Deno.serve(async (req) => {
     });
   }
 
-  // Process in chunks of 25 to avoid hammering RPC
-  const CHUNK = 25;
-  const results: Result[] = [];
-  for (let i = 0; i < addresses.length; i += CHUNK) {
-    const slice = addresses.slice(i, i + CHUNK);
-    const part = await Promise.all(slice.map((a) => inspectWallet(a)));
-    results.push(...part);
+  // Split into multicall chunks and run them in parallel
+  const chunks: string[][] = [];
+  for (let i = 0; i < addresses.length; i += WALLETS_PER_MULTICALL) {
+    chunks.push(addresses.slice(i, i + WALLETS_PER_MULTICALL));
   }
+  const settled = await Promise.all(chunks.map((c) => inspectChunk(c)));
+  const results: Result[] = settled.flat();
 
-  // GoodDollar UBI cycle is 1 calendar day in UTC. Next-claim time for an
-  // already-claimed wallet is the next UTC midnight (approx).
   const now = new Date();
   const nextUtcMidnight = new Date(
     Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1, 0, 0, 0)
