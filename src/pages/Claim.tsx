@@ -246,6 +246,12 @@ const Claim = () => {
           >
             <ArrowLeft className="w-4 h-4" /> Home
           </Link>
+          <Link
+            to="/claim-history"
+            className="inline-flex items-center gap-1.5 text-sm text-primary hover:text-primary/80 transition-colors"
+          >
+            History <ArrowLeft className="w-4 h-4 rotate-180" />
+          </Link>
         </header>
 
         <div className="text-center space-y-2">
