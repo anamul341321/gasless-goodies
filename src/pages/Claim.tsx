@@ -208,7 +208,7 @@ const Claim = () => {
       setBatchName("");
       toast({
         title: "Submitted",
-        description: `${data.total} wallet(s) queued. ~10s per wallet — runs in background.`,
+        description: `${data.total} wallet(s) queued. ~30s per wallet — runs in background.`,
       });
     } catch (e: any) {
       toast({
@@ -325,7 +325,7 @@ const Claim = () => {
               </div>
               {isJobActive && (
                 <p className="text-[11px] text-muted-foreground text-center">
-                  Claims run on the server at ~10s per wallet. You can close this page or turn
+                  Claims run on the server at ~30s per wallet. You can close this page or turn
                   off your screen — progress continues.
                 </p>
               )}
