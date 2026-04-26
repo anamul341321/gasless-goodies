@@ -62,8 +62,25 @@ type Result = {
 };
 
 type Call = { target: string; callData: string };
+type Mode = "full" | "kyc_only" | "balance_only";
 
-function buildCallsForWallet(addr: string): Call[] {
+function buildCallsForWallet(addr: string, mode: Mode): Call[] {
+  if (mode === "kyc_only") {
+    return [
+      {
+        target: IDENTITY_ADDRESS,
+        callData: identityIface.encodeFunctionData("isWhitelisted", [addr]),
+      },
+    ];
+  }
+  if (mode === "balance_only") {
+    return [
+      {
+        target: G$_ADDRESS,
+        callData: erc20Iface.encodeFunctionData("balanceOf", [addr]),
+      },
+    ];
+  }
   return [
     {
       target: IDENTITY_ADDRESS,
@@ -78,6 +95,10 @@ function buildCallsForWallet(addr: string): Call[] {
       callData: ubiIface.encodeFunctionData("checkEntitlement", [addr]),
     },
   ];
+}
+
+function callsPerWallet(mode: Mode): number {
+  return mode === "full" ? 3 : 1;
 }
 
 function decodeBool(data: string): boolean {
