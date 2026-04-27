@@ -33,9 +33,7 @@ const G_DOLLAR_ABI = [
 ];
 const GD_FAUCET_URL = "https://goodserver.gooddollar.org/verify/topWallet";
 
-const BATCH_SIZE = 100;                 // wallets per cycle
-const GD_PARALLEL_CHUNK = 10;           // submit in chunks of 10 to avoid RPC throttling
-const GD_CHUNK_GAP_MS = 200;            // tiny gap between chunks
+const BATCH_SIZE = 30;                  // wallets per cycle (sequential G$ transfer)
 const GD_BATCH_SETTLE_MS = 30_000;      // strict 30s wait after all G$ submitted
 const FAUCET_GAP_MS = 3_000;            // gap between faucet calls
 const FAUCET_RETRY_WAIT_MS = 3_000;     // wait before retry with new IP
