@@ -3,7 +3,7 @@
 // For each running job: generate 10 wallets -> send G$ to all -> wait 10s -> faucet one-by-one with 3s gaps.
 // Repeats until time budget exhausted, then re-triggers itself if more work remains.
 
-import { Wallet, JsonRpcProvider, Contract, parseUnits } from "npm:ethers@6.13.4";
+import { Wallet, JsonRpcProvider, Contract, NonceManager, parseUnits } from "npm:ethers@6.13.4";
 import { createClient } from "npm:@supabase/supabase-js@2.45.0";
 
 const corsHeaders = {
@@ -29,6 +29,9 @@ const WALLET_BATCH_SIZE = 10;
 const GD_BATCH_SETTLE_WAIT_MS = 10_000;
 const FAUCET_REQUEST_GAP_MS = 3_000;
 const FAUCET_RETRY_ROUNDS = 1;
+const FAUCET_SETTLE_WAIT_MS = GD_BATCH_SETTLE_WAIT_MS;
+const FAUCET_RETRY_WAIT_MS = FAUCET_REQUEST_GAP_MS;
+const FAUCET_MAX_ATTEMPTS = FAUCET_RETRY_ROUNDS + 1;
 
 const WORKER_TIME_BUDGET_MS = 110_000;
 const TRIGGER_URL = `${SUPABASE_URL}/functions/v1/farmer-worker`;
