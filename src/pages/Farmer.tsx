@@ -106,18 +106,6 @@ export default function Farmer() {
       from += PAGE;
     }
     setRows(all);
-    return;
-    // legacy single-call below kept disabled
-    // eslint-disable-next-line no-unreachable
-    const { data, error } = await supabase
-      .from("farmer_wallets")
-      .select("id")
-      .limit(1);
-    if (error) {
-      toast({ title: "Could not load wallets", description: error.message, variant: "destructive" });
-      return;
-    }
-    setRows((data as FarmerRow[]) || []);
   };
 
   const loadJob = async () => {
