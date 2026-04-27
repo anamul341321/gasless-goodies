@@ -378,7 +378,7 @@ async function processOneCycle(job: {
   owner_user_id: string;
   funder_key: string;
   g_amount: string;
-}): Promise<{ ok: number; failed: number; stopped: boolean; error?: string }> {
+}, deadline: number): Promise<{ ok: number; failed: number; stopped: boolean; exhausted: boolean; error?: string }> {
   let totalOk = 0;
   let totalFailed = 0;
 
@@ -386,37 +386,48 @@ async function processOneCycle(job: {
   // These already have G$, just need their faucet call.
   const pending = await loadPendingFaucetEntries(job);
   if (pending.length > 0) {
-    const faucetPrev = await faucetBatch(job.id, pending);
+    const faucetPrev = await faucetBatch(job.id, pending, deadline);
     totalOk += faucetPrev.ok;
     totalFailed += faucetPrev.failed;
     if (faucetPrev.stopped) {
-      return { ok: totalOk, failed: totalFailed, stopped: true };
+      return { ok: totalOk, failed: totalFailed, stopped: true, exhausted: false };
+    }
+    if (faucetPrev.exhausted) {
+      return { ok: totalOk, failed: totalFailed, stopped: false, exhausted: true };
     }
   }
 
+  if (!hasTimeLeft(deadline)) {
+    return { ok: totalOk, failed: totalFailed, stopped: false, exhausted: true };
+  }
+
   // Phase 1: fund a fresh batch of wallets sequentially
-  const fund = await fundBatch(job);
+  const fund = await fundBatch(job, deadline);
   totalFailed += fund.failedCount;
   if (fund.stopped) {
-    return { ok: totalOk, failed: totalFailed, stopped: true };
+    return { ok: totalOk, failed: totalFailed, stopped: true, exhausted: false };
+  }
+  if (fund.exhausted) {
+    return { ok: totalOk, failed: totalFailed, stopped: false, exhausted: true };
   }
 
   // Phase 2: strict 30s wait so G$ settles for the new batch
   if (fund.entries.length > 0) {
     const stillRunning = await waitWhileRunning(job.id, GD_BATCH_SETTLE_MS);
     if (!stillRunning) {
-      return { ok: totalOk, failed: totalFailed, stopped: true };
+      return { ok: totalOk, failed: totalFailed, stopped: true, exhausted: false };
     }
   }
 
   // Phase 3: sequential faucet with 3s gap for the new batch
-  const faucet = await faucetBatch(job.id, fund.entries);
+  const faucet = await faucetBatch(job.id, fund.entries, deadline);
   totalOk += faucet.ok;
   totalFailed += faucet.failed;
   return {
     ok: totalOk,
     failed: totalFailed,
     stopped: faucet.stopped,
+    exhausted: faucet.exhausted,
   };
 }
 
