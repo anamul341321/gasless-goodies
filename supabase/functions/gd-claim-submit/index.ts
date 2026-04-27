@@ -2,6 +2,7 @@
 // creates a gd_claim_jobs row + queue rows, kicks the worker.
 
 import { Wallet } from "https://esm.sh/ethers@6.13.4";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -11,6 +12,23 @@ const corsHeaders = {
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
+
+async function getUserFromAuthHeader(authHeader: string | null): Promise<{ id: string; email: string | null } | null> {
+  if (!authHeader) return null;
+  const token = authHeader.replace(/^Bearer\s+/i, "");
+  if (!token || token === SUPABASE_ANON_KEY) return null;
+  try {
+    const supa = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      global: { headers: { Authorization: `Bearer ${token}` } },
+    });
+    const { data, error } = await supa.auth.getUser();
+    if (error || !data?.user) return null;
+    return { id: data.user.id, email: data.user.email ?? null };
+  } catch {
+    return null;
+  }
+}
 
 function sbHeaders(extra: Record<string, string> = {}) {
   return {
@@ -25,6 +43,9 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
+
+  // Identify the caller (optional). Logged-in users get their batch linked.
+  const user = await getUserFromAuthHeader(req.headers.get("Authorization"));
 
   let body: any;
   try {
@@ -41,6 +62,7 @@ Deno.serve(async (req) => {
     typeof body?.batch_name === "string" && body.batch_name.trim()
       ? body.batch_name.trim().slice(0, 80)
       : `Claim ${new Date().toISOString().slice(0, 16).replace("T", " ")}`;
+
 
   if (rawKeys.length === 0) {
     return new Response(JSON.stringify({ error: "no private keys provided" }), {
@@ -91,7 +113,7 @@ Deno.serve(async (req) => {
     });
   }
 
-  // Create job
+  // Create job (linked to user when authenticated)
   const jobRes = await fetch(`${SUPABASE_URL}/rest/v1/gd_claim_jobs`, {
     method: "POST",
     headers: sbHeaders({ Prefer: "return=representation" }),
@@ -99,6 +121,8 @@ Deno.serve(async (req) => {
       total: valid.length,
       status: "pending",
       batch_name: batchName,
+      owner_user_id: user?.id ?? null,
+      owner_label: user?.email ?? null,
     }),
   });
 

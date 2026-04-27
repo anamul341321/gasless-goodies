@@ -1,13 +1,14 @@
 import { useEffect, useState } from "react";
 import {
   ArrowRight, Coins, Fuel, Megaphone, Menu, Shield, Smartphone,
-  Sparkles, Zap, CheckCircle2, Clock, Wallet, Lock, TrendingUp,
+  Sparkles, Zap, CheckCircle2, Clock, Wallet, Lock, TrendingUp, User,
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import appLogo from "@/assets/logo.png";
 import ServicesDrawer from "@/components/ServicesDrawer";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
 
 const BRAND_TITLE = "Celo Gas Sponsor";
 const BRAND_SUBTITLE = "by Good-App";
@@ -56,6 +57,7 @@ const features = [
 ];
 
 export default function Index() {
+  const { user } = useAuth();
   const [notice, setNotice] = useState<string>("");
   const [mobileRechargeEnabled, setMobileRechargeEnabled] = useState<boolean>(true);
 
@@ -118,11 +120,24 @@ export default function Index() {
                 <p className="text-[11px] text-muted-foreground font-semibold truncate">{BRAND_SUBTITLE}</p>
               </div>
             </div>
-            <ServicesDrawer>
-              <Button variant="ghost" size="icon" className="h-10 w-10 rounded-xl hover:bg-primary/10 shrink-0">
-                <Menu className="h-5 w-5 text-foreground" />
+            <div className="flex items-center gap-1.5 shrink-0">
+              <Button
+                asChild
+                variant="ghost"
+                size="icon"
+                className="h-10 w-10 rounded-xl hover:bg-primary/10"
+                title={user ? "My account" : "Sign in"}
+              >
+                <Link to={user ? "/account" : "/auth"} aria-label={user ? "My account" : "Sign in"}>
+                  <User className="h-5 w-5 text-foreground" />
+                </Link>
               </Button>
-            </ServicesDrawer>
+              <ServicesDrawer>
+                <Button variant="ghost" size="icon" className="h-10 w-10 rounded-xl hover:bg-primary/10">
+                  <Menu className="h-5 w-5 text-foreground" />
+                </Button>
+              </ServicesDrawer>
+            </div>
           </div>
         </div>
       </header>

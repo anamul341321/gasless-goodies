@@ -14,6 +14,7 @@ import {
   RefreshCw, Rocket, ShieldAlert, ShieldCheck, Sparkles, Tag, Trash2,
   Wallet as WalletIcon,
 } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
 const POLL_INTERVAL_MS = 4000;
@@ -314,9 +315,13 @@ const Claim = () => {
     }
     setSubmitting(true);
     try {
+      const { data: sess } = await supabase.auth.getSession();
+      const token = sess?.session?.access_token;
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (token) headers["Authorization"] = `Bearer ${token}`;
       const res = await fetch(`${SUPABASE_URL}/functions/v1/gd-claim-submit`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({
           private_keys: submittableKeys,
           batch_name: batchName.trim() || undefined,

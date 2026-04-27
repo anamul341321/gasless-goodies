@@ -162,8 +162,10 @@ async function finalizeClaim(
     // Park for Phase B. Keep private_key (still need to sign claim later).
     patch.status = "waiting_gas";
   } else {
+    // Failed claim (revert, network error, etc.) — keep the private key
+    // so the owner can copy/recover it from their account. The owner can
+    // manually delete it later via delete_my_failed_key.
     patch.status = "failed";
-    patch.private_key = null;
   }
 
   await fetch(`${SUPABASE_URL}/rest/v1/gd_claim_queue?id=eq.${row.id}`, {

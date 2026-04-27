@@ -8,3 +8,9 @@ verify_jwt = false
 
 [functions.gd-claim-worker]
 verify_jwt = false
+
+[functions.siwe-nonce]
+verify_jwt = false
+
+[functions.siwe-verify]
+verify_jwt = false

@@ -209,6 +209,8 @@ export type Database = {
           finished_at: string | null
           id: string
           needs_gas: number
+          owner_label: string | null
+          owner_user_id: string | null
           status: string
           total: number
           updated_at: string
@@ -222,6 +224,8 @@ export type Database = {
           finished_at?: string | null
           id?: string
           needs_gas?: number
+          owner_label?: string | null
+          owner_user_id?: string | null
           status?: string
           total?: number
           updated_at?: string
@@ -235,6 +239,8 @@ export type Database = {
           finished_at?: string | null
           id?: string
           needs_gas?: number
+          owner_label?: string | null
+          owner_user_id?: string | null
           status?: string
           total?: number
           updated_at?: string
@@ -385,6 +391,39 @@ export type Database = {
           },
         ]
       }
+      profiles: {
+        Row: {
+          auth_method: string
+          avatar_url: string | null
+          created_at: string
+          display_name: string | null
+          email: string | null
+          id: string
+          updated_at: string
+          wallet_address: string | null
+        }
+        Insert: {
+          auth_method?: string
+          avatar_url?: string | null
+          created_at?: string
+          display_name?: string | null
+          email?: string | null
+          id: string
+          updated_at?: string
+          wallet_address?: string | null
+        }
+        Update: {
+          auth_method?: string
+          avatar_url?: string | null
+          created_at?: string
+          display_name?: string | null
+          email?: string | null
+          id?: string
+          updated_at?: string
+          wallet_address?: string | null
+        }
+        Relationships: []
+      }
       recharge_requests: {
         Row: {
           admin_note: string | null
@@ -426,6 +465,30 @@ export type Database = {
           status?: string
           tx_hash?: string | null
           updated_at?: string
+          wallet_address?: string
+        }
+        Relationships: []
+      }
+      siwe_nonces: {
+        Row: {
+          created_at: string
+          expires_at: string
+          nonce: string
+          used: boolean
+          wallet_address: string
+        }
+        Insert: {
+          created_at?: string
+          expires_at?: string
+          nonce: string
+          used?: boolean
+          wallet_address: string
+        }
+        Update: {
+          created_at?: string
+          expires_at?: string
+          nonce?: string
+          used?: boolean
           wallet_address?: string
         }
         Relationships: []
@@ -512,6 +575,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      delete_my_failed_key: {
+        Args: { p_job_id: string; p_wallet_address: string }
+        Returns: boolean
+      }
       get_free_gas_count_today: {
         Args: { p_fingerprint?: string; p_ip: string; p_wallets?: string[] }
         Returns: number
@@ -531,7 +598,7 @@ export type Database = {
         }[]
       }
       get_gd_claim_wallets: {
-        Args: { p_job_id: string }
+        Args: { p_job_id: string; p_requester?: string }
         Returns: {
           error_message: string
           gas_requests: number
@@ -540,6 +607,21 @@ export type Database = {
           status: string
           tx_hash: string
           wallet_address: string
+        }[]
+      }
+      get_my_gd_claim_batches: {
+        Args: never
+        Returns: {
+          batch_name: string
+          created_at: string
+          done: number
+          failed: number
+          failed_with_keys: number
+          finished_at: string
+          id: string
+          needs_gas: number
+          status: string
+          total: number
         }[]
       }
       get_public_batch_history: {
