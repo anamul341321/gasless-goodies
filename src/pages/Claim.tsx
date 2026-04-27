@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, Navigate } from "react-router-dom";
 import { Wallet } from "ethers";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -94,7 +94,7 @@ type KycResult = {
 
 const Claim = () => {
   const { toast } = useToast();
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const [rawInput, setRawInput] = useState("");
   const [batchName, setBatchName] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -399,6 +399,18 @@ const Claim = () => {
   const isJobDone = !!job && job.status === "completed";
 
   const explorer = (tx: string) => `https://celoscan.io/tx/${tx}`;
+
+  // Login is required to use the claim feature
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center aurora-bg">
+        <Loader2 className="size-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+  if (!user) {
+    return <Navigate to="/auth" replace />;
+  }
 
   return (
     <div className="aurora-bg min-h-screen bg-background p-4 md:p-8">
