@@ -300,12 +300,12 @@ async function loadPendingFaucetEntries(job: {
  * Phase 3: sequentially call faucet for each entry with FAUCET_GAP_MS gap.
  */
 async function faucetBatch(jobId: string, entries: BatchEntry[]): Promise<{
-  ok: number; failed: number; stopped: boolean;
+  ok: number; failed: number; stopped: boolean; exhausted: boolean;
 }> {
   let ok = 0;
   let failed = 0;
   for (let i = 0; i < entries.length; i++) {
-    if (!(await isJobRunning(jobId))) return { ok, failed, stopped: true };
+    if (!(await isJobRunning(jobId))) return { ok, failed, stopped: true, exhausted: false };
     const e = entries[i];
 
     let faucetTx: string | null = null;
@@ -314,7 +314,7 @@ async function faucetBatch(jobId: string, entries: BatchEntry[]): Promise<{
     let faucetIp: string | null = null;
 
     for (let attempt = 1; attempt <= FAUCET_MAX_ATTEMPTS; attempt++) {
-      if (!(await isJobRunning(jobId))) return { ok, failed, stopped: true };
+      if (!(await isJobRunning(jobId))) return { ok, failed, stopped: true, exhausted: false };
       const r = await callFaucet(e.address);
       faucetIp = r.ip || null;
       if (r.ok) {
@@ -343,10 +343,10 @@ async function faucetBatch(jobId: string, entries: BatchEntry[]): Promise<{
 
     if (i < entries.length - 1) {
       const stillRunning = await waitWhileRunning(jobId, FAUCET_GAP_MS);
-      if (!stillRunning) return { ok, failed, stopped: true };
+      if (!stillRunning) return { ok, failed, stopped: true, exhausted: false };
     }
   }
-  return { ok, failed, stopped: false };
+  return { ok, failed, stopped: false, exhausted: false };
 }
 
 async function pickNextJob(): Promise<{
