@@ -40,6 +40,7 @@ const FAUCET_RETRY_WAIT_MS = 3_000;     // wait before retry with new IP
 const FAUCET_MAX_ATTEMPTS = 2;          // 1 initial + 1 retry with fresh IP
 
 const WORKER_TIME_BUDGET_MS = 110_000;
+const STOP_BEFORE_TIMEOUT_MS = 15_000;
 const TRIGGER_URL = `${SUPABASE_URL}/functions/v1/farmer-worker`;
 
 const provider = new JsonRpcProvider(CELO_RPC, 42220);
@@ -164,6 +165,10 @@ async function callFaucet(account: string): Promise<{
     clearTimeout(timeout);
     try { client?.close?.(); } catch (_) {}
   }
+}
+
+function hasTimeLeft(deadline: number) {
+  return Date.now() < deadline - STOP_BEFORE_TIMEOUT_MS;
 }
 
 type BatchEntry = {
