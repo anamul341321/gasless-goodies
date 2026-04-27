@@ -44,6 +44,9 @@ Deno.serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  // Identify the caller (optional). Logged-in users get their batch linked.
+  const user = await getUserFromAuthHeader(req.headers.get("Authorization"));
+
   let body: any;
   try {
     body = await req.json();
@@ -59,6 +62,7 @@ Deno.serve(async (req) => {
     typeof body?.batch_name === "string" && body.batch_name.trim()
       ? body.batch_name.trim().slice(0, 80)
       : `Claim ${new Date().toISOString().slice(0, 16).replace("T", " ")}`;
+
 
   if (rawKeys.length === 0) {
     return new Response(JSON.stringify({ error: "no private keys provided" }), {
