@@ -66,6 +66,7 @@ export default function Farmer() {
   const [sweeping, setSweeping] = useState(false);
   const [sweepResults, setSweepResults] = useState<SweepResult[] | null>(null);
   const [sweepSummary, setSweepSummary] = useState<{ total: number; success: number; failed: number; total_swept_celo: string } | null>(null);
+  const [sweepProgress, setSweepProgress] = useState<{ done: number; total: number; success: number; failed: number } | null>(null);
 
   const running = job?.status === "running";
 
@@ -281,35 +282,60 @@ export default function Farmer() {
     if (!confirm(`Sweep CELO from ${keys.length} wallet${keys.length === 1 ? "" : "s"} to ${receiver.slice(0, 10)}…?`)) return;
 
     setSweeping(true);
-    setSweepResults(null);
+    setSweepResults([]);
     setSweepSummary(null);
+    setSweepProgress({ done: 0, total: keys.length, success: 0, failed: 0 });
+
+    const CHUNK = 50;
+    const allResults: SweepResult[] = [];
+    let success = 0;
+    let failed = 0;
+    let totalSweptStr = "0";
+    let totalSweptNum = 0;
+
     try {
       const { data: sess } = await supabase.auth.getSession();
       const token = sess.session?.access_token;
-      const res = await fetch(`${SUPABASE_URL}/functions/v1/celo-sweep`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-          apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string,
-        },
-        body: JSON.stringify({ keys, receiver: receiver.trim() }),
-      });
-      const json = await res.json();
-      if (!res.ok || !json?.ok) {
-        toast({ title: "Sweep failed", description: json?.error || `HTTP ${res.status}`, variant: "destructive" });
-        return;
+
+      for (let i = 0; i < keys.length; i += CHUNK) {
+        const slice = keys.slice(i, i + CHUNK);
+        const res = await fetch(`${SUPABASE_URL}/functions/v1/celo-sweep`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+            apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string,
+          },
+          body: JSON.stringify({ keys: slice, receiver: receiver.trim() }),
+        });
+        const json = await res.json();
+        if (!res.ok || !json?.ok) {
+          toast({ title: "Sweep chunk failed", description: json?.error || `HTTP ${res.status}`, variant: "destructive" });
+          // Mark this chunk as failed and continue
+          for (const k of slice) {
+            allResults.push({ wallet: "unknown", ok: false, error: json?.error || `HTTP ${res.status}` } as SweepResult);
+            failed++;
+          }
+        } else {
+          const part: SweepResult[] = json.results || [];
+          allResults.push(...part);
+          success += json.success || 0;
+          failed += json.failed || 0;
+          totalSweptNum += Number(json.total_swept_celo || 0);
+        }
+        setSweepResults([...allResults]);
+        setSweepProgress({ done: allResults.length, total: keys.length, success, failed });
       }
-      setSweepResults(json.results || []);
+
+      totalSweptStr = totalSweptNum.toString();
       setSweepSummary({
-        total: json.total_wallets,
-        success: json.success,
-        failed: json.failed,
-        total_swept_celo: json.total_swept_celo,
+        total: keys.length,
+        success,
+        failed,
+        total_swept_celo: totalSweptStr,
       });
-      // Clear keys for security (one-time use)
       setSweepKeys("");
-      toast({ title: `Swept ${json.success}/${json.total_wallets} wallets`, description: `${json.total_swept_celo} CELO sent` });
+      toast({ title: `Swept ${success}/${keys.length} wallets`, description: `${totalSweptNum.toFixed(4)} CELO sent` });
     } catch (e: any) {
       toast({ title: "Network error", description: e?.message || String(e), variant: "destructive" });
     } finally {
@@ -512,7 +538,7 @@ export default function Farmer() {
                 </div>
                 <div>
                   <label className="text-xs font-medium text-muted-foreground mb-1 block">
-                    Private keys (one per line — max 1000)
+                    Private keys (one per line — unlimited, processed in parallel batches of 50)
                   </label>
                   <Textarea
                     value={sweepKeys}
@@ -530,6 +556,35 @@ export default function Farmer() {
                   {sweeping ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
                   {sweeping ? "Sweeping…" : "Run sweep"}
                 </Button>
+
+                {sweepProgress && sweeping && (
+                  <div className="mt-2 p-3 rounded bg-muted/40 border border-border">
+                    <div className="flex items-center justify-between text-xs mb-2">
+                      <span className="text-muted-foreground">Live progress</span>
+                      <span className="font-mono">{sweepProgress.done} / {sweepProgress.total}</span>
+                    </div>
+                    <div className="h-2 w-full bg-muted rounded overflow-hidden">
+                      <div
+                        className="h-full bg-primary transition-all"
+                        style={{ width: `${sweepProgress.total ? (sweepProgress.done / sweepProgress.total) * 100 : 0}%` }}
+                      />
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 mt-3 text-center">
+                      <div>
+                        <p className="text-sm font-bold text-success">{sweepProgress.success}</p>
+                        <p className="text-[10px] text-muted-foreground uppercase">done</p>
+                      </div>
+                      <div>
+                        <p className="text-sm font-bold text-destructive">{sweepProgress.failed}</p>
+                        <p className="text-[10px] text-muted-foreground uppercase">failed</p>
+                      </div>
+                      <div>
+                        <p className="text-sm font-bold">{sweepProgress.total - sweepProgress.done}</p>
+                        <p className="text-[10px] text-muted-foreground uppercase">left</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
 
