@@ -383,6 +383,8 @@ async function faucetBatch(jobId: string, entries: BatchEntry[], deadline: numbe
     else failed += 1;
 
     if (i < entries.length - 1) {
+      // Refresh lock lease every ~10 wallets so other workers don't barge in
+      if ((i + 1) % 10 === 0) await refreshLease(jobId);
       const stillRunning = await waitWhileRunning(jobId, FAUCET_GAP_MS);
       if (!stillRunning) return { ok, failed, stopped: true, exhausted: false };
     }
