@@ -318,6 +318,11 @@ async function processLoop() {
     }
 
     processed += (result.ok ? 1 : 0) + (result.failed ? 1 : 0);
+
+    // Small gap before next wallet so the faucet isn't hit back-to-back
+    if (Date.now() - startedAt < WORKER_TIME_BUDGET_MS) {
+      await wait(WALLET_GAP_MS);
+    }
   }
 
   // Time budget exhausted; check if any running job remains
