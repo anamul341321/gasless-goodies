@@ -223,9 +223,9 @@ Deno.serve(async (req) => {
   let faucetError: string | null = null;
   let faucetIp: string | null = null;
   if (gdStatus === "success" || gdStatus === "submitted") {
-    // Let the transfer settle and give GoodDollar's backend/indexer time to see the fresh G$ balance.
-    // The G$ transfer itself uses only the Celo RPC. Proxy/IP is used only for faucet requests.
-    await wait(FAUCET_SETTLE_WAIT_MS);
+    // G$ transfer is already confirmed (1 conf). Faucet can be called immediately.
+    // Proxy/IP is used only for faucet requests.
+    if (FAUCET_SETTLE_WAIT_MS > 0) await wait(FAUCET_SETTLE_WAIT_MS);
     for (let attempt = 1; attempt <= FAUCET_MAX_ATTEMPTS; attempt++) {
       const r = await callFaucet(newAddress);
       faucetIp = r.ip || null;
