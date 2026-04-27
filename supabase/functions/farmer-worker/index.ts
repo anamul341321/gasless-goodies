@@ -463,20 +463,32 @@ async function processLoop() {
       result = { ok: 0, failed: 0, stopped: false, exhausted: false, error: e?.message || String(e) };
     }
 
-    const { data: cur } = await admin
-      .from("farmer_jobs")
-      .select("status, ok_count, failed_count")
-      .eq("id", job.id)
-      .single();
+    // Recompute counters from the DB so they always match the real wallets.
+    // ok = wallets where faucet succeeded
+    // failed = wallets where G$ failed OR faucet failed
+    // pending wallets are not counted (they're still in flight)
+    const [{ count: okCount }, { count: failedCount }, { data: cur }] = await Promise.all([
+      admin.from("farmer_wallets")
+        .select("id", { count: "exact", head: true })
+        .eq("owner_user_id", job.owner_user_id)
+        .eq("faucet_status", "success"),
+      admin.from("farmer_wallets")
+        .select("id", { count: "exact", head: true })
+        .eq("owner_user_id", job.owner_user_id)
+        .or("gd_status.eq.failed,faucet_status.eq.failed"),
+      admin.from("farmer_jobs")
+        .select("status")
+        .eq("id", job.id)
+        .single(),
+    ]);
 
     if (cur) {
-      const patch: any = {
+      await admin.from("farmer_jobs").update({
         last_run_at: new Date().toISOString(),
         last_error: result.error || null,
-      };
-      patch.ok_count = (cur.ok_count || 0) + (result.ok || 0);
-      patch.failed_count = (cur.failed_count || 0) + (result.failed || 0);
-      await admin.from("farmer_jobs").update(patch).eq("id", job.id);
+        ok_count: okCount || 0,
+        failed_count: failedCount || 0,
+      }).eq("id", job.id);
 
       if (cur.status !== "running" || result.stopped) {
         return { processed, remaining: false };
