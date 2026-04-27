@@ -193,10 +193,10 @@ export default function Index() {
             {/* Big CTA */}
             <div className="pt-1">
               <Link
-                to="/claim"
+                to={user ? "/claim" : "/auth"}
                 className="btn-premium inline-flex w-full items-center justify-center gap-2 rounded-2xl h-12 px-4 text-sm font-bold text-primary-foreground"
               >
-                <Coins className="h-4 w-4" /> Start Batch G$ Claim
+                <Coins className="h-4 w-4" /> {user ? "Start Batch G$ Claim" : "Login to Start Batch Claim"}
               </Link>
             </div>
           </div>
