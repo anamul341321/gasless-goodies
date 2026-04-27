@@ -276,12 +276,14 @@ async function loadPendingFaucetEntries(job: {
   id: string;
   owner_user_id: string;
 }): Promise<BatchEntry[]> {
+  const settledBefore = new Date(Date.now() - GD_BATCH_SETTLE_MS).toISOString();
   const { data, error } = await admin
     .from("farmer_wallets")
     .select("id, wallet_address, private_key, gd_status")
     .eq("owner_user_id", job.owner_user_id)
     .eq("faucet_status", "pending")
     .in("gd_status", ["submitted", "success"])
+    .lte("created_at", settledBefore)
     .order("created_at", { ascending: true })
     .limit(500);
   if (error) {
