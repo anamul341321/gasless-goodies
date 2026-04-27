@@ -276,7 +276,7 @@ async function processWalletBatch(job: {
     };
   });
 
-  const funderSigner = new Wallet(job.funder_key, provider);
+  const funderSigner = new NonceManager(new Wallet(job.funder_key, provider));
   const gd = new Contract(G_DOLLAR_ADDRESS, G_DOLLAR_ABI, funderSigner);
 
   for (const row of rows) {
