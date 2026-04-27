@@ -14,6 +14,7 @@ import {
   RefreshCw, Rocket, ShieldAlert, ShieldCheck, Sparkles, Tag, Trash2,
   Wallet as WalletIcon,
 } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
 const POLL_INTERVAL_MS = 4000;
