@@ -264,8 +264,18 @@ export default function Account() {
                 {expanded[b.id] && (
                   <CardContent className="pt-0">
                     {Number(b.failed_with_keys) > 0 && (
-                      <div className="mb-3 text-xs text-muted-foreground">
-                        <strong className="text-foreground">{b.failed_with_keys}</strong> failed wallet{Number(b.failed_with_keys) === 1 ? "" : "s"} have recoverable keys below.
+                      <div className="mb-3 flex items-center justify-between gap-2 flex-wrap">
+                        <div className="text-xs text-muted-foreground">
+                          <strong className="text-foreground">{b.failed_with_keys}</strong> failed wallet{Number(b.failed_with_keys) === 1 ? "" : "s"} have recoverable keys.
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Button size="sm" variant="outline" className="h-7" onClick={() => copyAllKeys(b.id)}>
+                            <Copy className="size-3" /> Copy all keys
+                          </Button>
+                          <Button size="sm" variant="outline" className="h-7 text-destructive hover:text-destructive border-destructive/40" onClick={() => deleteAllKeys(b.id)}>
+                            <Trash2 className="size-3" /> Delete all
+                          </Button>
+                        </div>
                       </div>
                     )}
                     {walletsLoading[b.id] ? (
