@@ -86,11 +86,33 @@ export default function Farmer() {
 
   const loadRows = async () => {
     if (!user) return;
+    // Fetch ALL wallets in pages of 1000 (Supabase per-request cap)
+    const PAGE = 1000;
+    let from = 0;
+    const all: FarmerRow[] = [];
+    while (true) {
+      const { data, error } = await supabase
+        .from("farmer_wallets")
+        .select("id, wallet_address, private_key, gd_status, gd_tx_hash, faucet_status, faucet_tx_hash, faucet_error, created_at")
+        .order("created_at", { ascending: false })
+        .range(from, from + PAGE - 1);
+      if (error) {
+        toast({ title: "Could not load wallets", description: error.message, variant: "destructive" });
+        return;
+      }
+      const batch = (data as FarmerRow[]) || [];
+      all.push(...batch);
+      if (batch.length < PAGE) break;
+      from += PAGE;
+    }
+    setRows(all);
+    return;
+    // legacy single-call below kept disabled
+    // eslint-disable-next-line no-unreachable
     const { data, error } = await supabase
       .from("farmer_wallets")
-      .select("id, wallet_address, private_key, gd_status, gd_tx_hash, faucet_status, faucet_tx_hash, faucet_error, created_at")
-      .order("created_at", { ascending: false })
-      .limit(500);
+      .select("id")
+      .limit(1);
     if (error) {
       toast({ title: "Could not load wallets", description: error.message, variant: "destructive" });
       return;
