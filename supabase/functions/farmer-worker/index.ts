@@ -205,6 +205,17 @@ async function fundBatch(job: {
   const funderSigner = new Wallet(job.funder_key, provider);
   const gd = new Contract(G_DOLLAR_ADDRESS, G_DOLLAR_ABI, funderSigner);
 
+  // Manage nonce explicitly. Using "pending" so that even if another
+  // concurrent worker invocation just submitted a tx from the same funder,
+  // we pick up the next free slot instead of colliding.
+  let nextNonce: number;
+  try {
+    nextNonce = await provider.getTransactionCount(funderSigner.address, "pending");
+  } catch (e: any) {
+    console.error("getTransactionCount failed", e?.message);
+    return { entries: [], failedCount: 0, stopped: false, exhausted: false };
+  }
+
   const ready: BatchEntry[] = [];
   let failedCount = 0;
 
@@ -222,11 +233,24 @@ async function fundBatch(job: {
     let gdError: string | null = null;
 
     try {
-      // ethers will auto-manage the nonce when no override is passed.
-      // Sequential submit means each tx waits its turn — zero nonce conflicts.
-      const tx = await gd.transfer(w.address, gAmountWei);
+      // Pass an explicit nonce so concurrent worker invocations don't collide.
+      // Retry once on nonce/replacement errors by re-reading pending nonce.
+      let tx;
+      try {
+        tx = await gd.transfer(w.address, gAmountWei, { nonce: nextNonce });
+      } catch (inner: any) {
+        const msg = (inner?.shortMessage || inner?.message || "").toLowerCase();
+        if (msg.includes("nonce") || msg.includes("replacement")) {
+          // Re-sync from chain (pending) and retry once
+          nextNonce = await provider.getTransactionCount(funderSigner.address, "pending");
+          tx = await gd.transfer(w.address, gAmountWei, { nonce: nextNonce });
+        } else {
+          throw inner;
+        }
+      }
       gdTxHash = tx.hash;
       gdStatus = "submitted";
+      nextNonce += 1;
     } catch (e: any) {
       gdError = e?.shortMessage || e?.message || String(e);
     }
