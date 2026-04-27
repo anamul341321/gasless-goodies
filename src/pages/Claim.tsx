@@ -400,6 +400,18 @@ const Claim = () => {
 
   const explorer = (tx: string) => `https://celoscan.io/tx/${tx}`;
 
+  // Login is required to use the claim feature
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center aurora-bg">
+        <Loader2 className="size-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+  if (!user) {
+    return <Navigate to="/auth" replace />;
+  }
+
   return (
     <div className="aurora-bg min-h-screen bg-background p-4 md:p-8">
       <div className="max-w-3xl mx-auto space-y-5">
