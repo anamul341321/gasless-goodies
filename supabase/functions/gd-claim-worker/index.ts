@@ -163,12 +163,23 @@ async function finalizeClaim(
     patch.status = "success";
     patch.private_key = null;
   } else if (result.needsGas) {
-    // Park for Phase B. Keep private_key (still need to sign claim later).
-    patch.status = "waiting_gas";
+    if (row.gas_requests === 0) {
+      // First gas miss → fire faucet inline (non-blocking) and park.
+      patch.status = "waiting_gas";
+      patch.gas_requests = 1;
+      patch.last_gas_request_at = new Date().toISOString();
+      // Enqueue into batch faucet job in the background (don't await long).
+      enqueueFaucetForWallet(row.job_id, row.wallet_address).catch((e) =>
+        console.error("inline faucet enqueue failed", e)
+      );
+    } else {
+      // Already had gas request before (Round 2 still no funds) → final fail.
+      patch.status = "failed";
+      patch.error_message = "insufficient gas after refill";
+    }
   } else {
     // Failed claim (revert, network error, etc.) — keep the private key
-    // so the owner can copy/recover it from their account. The owner can
-    // manually delete it later via delete_my_failed_key.
+    // so the owner can copy/recover it from their account.
     patch.status = "failed";
   }
 
@@ -179,6 +190,76 @@ async function finalizeClaim(
   });
 
   await refreshJobAggregate(row.job_id);
+}
+
+// Find-or-create the batch's faucet job and append a single wallet to it.
+// Idempotent-ish: if a non-completed faucet job for this batch exists, we
+// append; otherwise we create a fresh one.
+async function enqueueFaucetForWallet(jobId: string, walletAddress: string) {
+  const tag = `gd-claim:${jobId}`;
+  let faucetJobId = await findActiveFaucetJob(jobId);
+
+  if (!faucetJobId) {
+    const jobRes = await fetch(`${SUPABASE_URL}/rest/v1/gas_load_jobs`, {
+      method: "POST",
+      headers: sbHeaders({ Prefer: "return=representation" }),
+      body: JSON.stringify({
+        total: 1,
+        status: "pending",
+        batch_name: tag,
+        delay_ms: FAUCET_DELAY_MS,
+        max_retries: 0,
+      }),
+    });
+    if (!jobRes.ok) {
+      console.error("create faucet job failed", await jobRes.text());
+      return;
+    }
+    const job = await jobRes.json();
+    faucetJobId = (Array.isArray(job) ? job[0] : job).id as string;
+  } else {
+    // Bump total counter on existing job
+    await fetch(
+      `${SUPABASE_URL}/rest/v1/rpc/`,
+      {} as any
+    ).catch(() => {});
+    // Simple approach: read current total, increment by 1.
+    const cur = await fetch(
+      `${SUPABASE_URL}/rest/v1/gas_load_jobs?id=eq.${faucetJobId}&select=total`,
+      { headers: sbHeaders() }
+    );
+    if (cur.ok) {
+      const arr = await cur.json();
+      const total = Array.isArray(arr) && arr[0] ? (arr[0].total || 0) + 1 : 1;
+      await fetch(`${SUPABASE_URL}/rest/v1/gas_load_jobs?id=eq.${faucetJobId}`, {
+        method: "PATCH",
+        headers: sbHeaders({ Prefer: "return=minimal" }),
+        body: JSON.stringify({ total, updated_at: new Date().toISOString() }),
+      }).catch(() => {});
+    }
+  }
+
+  // Insert the queue row
+  const ins = await fetch(`${SUPABASE_URL}/rest/v1/gas_load_queue`, {
+    method: "POST",
+    headers: sbHeaders({ Prefer: "return=minimal" }),
+    body: JSON.stringify({
+      job_id: faucetJobId,
+      wallet_address: walletAddress,
+      status: "pending",
+    }),
+  });
+  if (!ins.ok) {
+    console.error("faucet queue insert failed", await ins.text());
+    return;
+  }
+
+  // Kick the faucet worker (best-effort)
+  fetch(FAUCET_TRIGGER_URL, {
+    method: "POST",
+    headers: sbHeaders(),
+    body: JSON.stringify({ trigger: "gd-claim-gas-inline", job_id: faucetJobId }),
+  }).catch(() => {});
 }
 
 // ---------------- Phase B: GAS REFILL ----------------
