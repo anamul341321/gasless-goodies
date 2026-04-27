@@ -410,9 +410,6 @@ export default function Farmer() {
               </CardContent>
             </Card>
 
-              </CardContent>
-            </Card>
-
             <Card className="glass-card">
               <CardHeader className="pb-3">
                 <div className="flex items-center justify-between flex-wrap gap-2">
