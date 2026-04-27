@@ -12,9 +12,10 @@ import { Checkbox } from "@/components/ui/checkbox";
 import {
   AlertTriangle, ArrowLeft, CheckCircle2, Coins, Copy, Fuel, Loader2,
   RefreshCw, Rocket, ShieldAlert, ShieldCheck, Sparkles, Tag, Trash2,
-  Wallet as WalletIcon,
+  Wallet as WalletIcon, User, LogIn,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
 const POLL_INTERVAL_MS = 4000;
@@ -93,6 +94,7 @@ type KycResult = {
 
 const Claim = () => {
   const { toast } = useToast();
+  const { user } = useAuth();
   const [rawInput, setRawInput] = useState("");
   const [batchName, setBatchName] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -408,12 +410,20 @@ const Claim = () => {
           >
             <ArrowLeft className="w-4 h-4" /> Home
           </Link>
-          <Link
-            to="/claim-history"
-            className="inline-flex items-center gap-1.5 text-sm text-primary hover:text-primary/80 transition-colors"
-          >
-            History <ArrowLeft className="w-4 h-4 rotate-180" />
-          </Link>
+          <div className="flex items-center gap-2">
+            <Button asChild variant="outline" size="sm" className="h-9 rounded-xl font-semibold">
+              <Link to={user ? "/account" : "/auth"}>
+                {user ? <User className="w-4 h-4" /> : <LogIn className="w-4 h-4" />}
+                {user ? "My batches" : "Login"}
+              </Link>
+            </Button>
+            <Link
+              to="/claim-history"
+              className="inline-flex items-center gap-1.5 text-sm text-primary hover:text-primary/80 transition-colors"
+            >
+              History <ArrowLeft className="w-4 h-4 rotate-180" />
+            </Link>
+          </div>
         </header>
 
         <div className="text-center space-y-2">
@@ -785,8 +795,8 @@ const Claim = () => {
                 </p>
                 <p>
                   Pacing is fixed at <strong className="text-foreground">10 seconds per wallet</strong>{" "}
-                  to avoid network throttling. Private keys are kept only until the batch
-                  finishes, then auto-deleted from storage.
+                  to avoid network throttling. Login before starting a batch to keep failed
+                  private keys in your account until you manually delete them.
                 </p>
               </div>
             </CardContent>
