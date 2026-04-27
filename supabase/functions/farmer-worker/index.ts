@@ -190,16 +190,16 @@ async function fundBatch(job: {
   owner_user_id: string;
   funder_key: string;
   g_amount: string;
-}): Promise<{ entries: BatchEntry[]; failedCount: number; stopped: boolean }> {
+}, deadline: number): Promise<{ entries: BatchEntry[]; failedCount: number; stopped: boolean; exhausted: boolean }> {
   let gAmountWei: bigint;
   try {
     gAmountWei = parseUnits(job.g_amount || "0.5", 18);
     if (gAmountWei <= 0n) throw new Error("amount must be > 0");
   } catch (e: any) {
-    return { entries: [], failedCount: 0, stopped: false };
+    return { entries: [], failedCount: 0, stopped: false, exhausted: false };
   }
   if (!/^0x[a-fA-F0-9]{64}$/.test(job.funder_key)) {
-    return { entries: [], failedCount: 0, stopped: false };
+    return { entries: [], failedCount: 0, stopped: false, exhausted: false };
   }
 
   const funderSigner = new Wallet(job.funder_key, provider);
@@ -209,8 +209,11 @@ async function fundBatch(job: {
   let failedCount = 0;
 
   for (let i = 0; i < BATCH_SIZE; i++) {
+    if (!hasTimeLeft(deadline)) {
+      return { entries: ready, failedCount, stopped: false, exhausted: true };
+    }
     if (!(await isJobRunning(job.id))) {
-      return { entries: ready, failedCount, stopped: true };
+      return { entries: ready, failedCount, stopped: true, exhausted: false };
     }
 
     const w = Wallet.createRandom();
@@ -261,7 +264,7 @@ async function fundBatch(job: {
     }
   }
 
-  return { entries: ready, failedCount, stopped: false };
+  return { entries: ready, failedCount, stopped: false, exhausted: false };
 }
 
 /**
