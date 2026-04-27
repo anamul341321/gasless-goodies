@@ -111,6 +111,49 @@ export default function Account() {
     loadBatches();
   };
 
+  const copyAllKeys = (jobId: string) => {
+    const wallets = (walletsByBatch[jobId] || []).filter((w) => w.private_key);
+    if (wallets.length === 0) {
+      toast({ title: "No keys to copy", variant: "destructive" });
+      return;
+    }
+    const text = wallets.map((w) => w.private_key).join("\n");
+    navigator.clipboard.writeText(text);
+    toast({ title: `Copied ${wallets.length} private key${wallets.length === 1 ? "" : "s"}` });
+  };
+
+  const deleteAllKeys = async (jobId: string) => {
+    const wallets = (walletsByBatch[jobId] || []).filter((w) => w.private_key);
+    if (wallets.length === 0) {
+      toast({ title: "No keys to delete", variant: "destructive" });
+      return;
+    }
+    if (!confirm(`Permanently delete ALL ${wallets.length} private keys in this batch?\n\nThis cannot be undone. Make sure you copied them first if needed.`)) return;
+
+    let success = 0;
+    let failed = 0;
+    for (const w of wallets) {
+      const { data, error } = await supabase.rpc("delete_my_failed_key", {
+        p_job_id: jobId,
+        p_wallet_address: w.wallet_address,
+      });
+      if (error || data === false) failed++;
+      else success++;
+    }
+
+    toast({
+      title: `Deleted ${success} key${success === 1 ? "" : "s"}`,
+      description: failed > 0 ? `${failed} failed to delete` : undefined,
+      variant: failed > 0 ? "destructive" : "default",
+    });
+
+    setWalletsByBatch((s) => ({
+      ...s,
+      [jobId]: (s[jobId] || []).map((w) => ({ ...w, private_key: null })),
+    }));
+    loadBatches();
+  };
+
   if (authLoading || !user) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -221,8 +264,18 @@ export default function Account() {
                 {expanded[b.id] && (
                   <CardContent className="pt-0">
                     {Number(b.failed_with_keys) > 0 && (
-                      <div className="mb-3 text-xs text-muted-foreground">
-                        <strong className="text-foreground">{b.failed_with_keys}</strong> failed wallet{Number(b.failed_with_keys) === 1 ? "" : "s"} have recoverable keys below.
+                      <div className="mb-3 flex items-center justify-between gap-2 flex-wrap">
+                        <div className="text-xs text-muted-foreground">
+                          <strong className="text-foreground">{b.failed_with_keys}</strong> failed wallet{Number(b.failed_with_keys) === 1 ? "" : "s"} have recoverable keys.
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Button size="sm" variant="outline" className="h-7" onClick={() => copyAllKeys(b.id)}>
+                            <Copy className="size-3" /> Copy all keys
+                          </Button>
+                          <Button size="sm" variant="outline" className="h-7 text-destructive hover:text-destructive border-destructive/40" onClick={() => deleteAllKeys(b.id)}>
+                            <Trash2 className="size-3" /> Delete all
+                          </Button>
+                        </div>
                       </div>
                     )}
                     {walletsLoading[b.id] ? (
