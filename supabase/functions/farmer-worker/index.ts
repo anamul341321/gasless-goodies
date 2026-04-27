@@ -436,17 +436,18 @@ async function processOneCycle(job: {
 
 async function processLoop() {
   const startedAt = Date.now();
+  const deadline = startedAt + WORKER_TIME_BUDGET_MS;
   let processed = 0;
 
-  while (Date.now() - startedAt < WORKER_TIME_BUDGET_MS) {
+  while (hasTimeLeft(deadline)) {
     const job = await pickNextJob();
     if (!job) return { processed, remaining: false };
 
-    let result: { ok: number; failed: number; stopped: boolean; error?: string };
+    let result: { ok: number; failed: number; stopped: boolean; exhausted: boolean; error?: string };
     try {
-      result = await processOneCycle(job);
+      result = await processOneCycle(job, deadline);
     } catch (e: any) {
-      result = { ok: 0, failed: 0, stopped: false, error: e?.message || String(e) };
+      result = { ok: 0, failed: 0, stopped: false, exhausted: false, error: e?.message || String(e) };
     }
 
     const { data: cur } = await admin
@@ -471,8 +472,10 @@ async function processLoop() {
 
     processed += (result.ok || 0) + (result.failed || 0);
 
+    if (result.exhausted) break;
+
     // One cycle is heavy (~95s). Re-trigger to continue rather than squeezing another cycle in.
-    if (Date.now() - startedAt > WORKER_TIME_BUDGET_MS - 30_000) break;
+    if (!hasTimeLeft(deadline)) break;
   }
 
   const { data: more } = await admin
