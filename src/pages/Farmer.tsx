@@ -443,7 +443,7 @@ export default function Farmer() {
                     No wallets yet. Set your funder key and press Start.
                   </p>
                 ) : (
-                  <div className="space-y-2 max-h-[500px] overflow-y-auto pr-1">
+                  <div className="space-y-2 max-h-[70vh] overflow-y-auto pr-1">
                     {rows.map(r => (
                       <div key={r.id} className="p-3 rounded-lg bg-muted/40 border border-border space-y-1.5">
                         <div className="flex items-center justify-between gap-2 flex-wrap">
