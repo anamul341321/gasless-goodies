@@ -283,14 +283,13 @@ async function processLoop() {
     const job = await pickNextJob();
     if (!job) return { processed, remaining: false };
 
-    let result: { ok: number; failed: number; error?: string };
+    let result: { ok: boolean; failed: boolean; stopped?: boolean; error?: string };
     try {
-      result = await processWalletBatch(job);
+      result = await processOneWallet(job);
     } catch (e: any) {
-      result = { ok: 0, failed: WALLET_BATCH_SIZE, error: e?.message || String(e) };
+      result = { ok: false, failed: true, error: e?.message || String(e) };
     }
 
-    // Re-read current status (user may have stopped mid-flight)
     const { data: cur } = await admin
       .from("farmer_jobs")
       .select("status, ok_count, failed_count")
@@ -300,17 +299,16 @@ async function processLoop() {
     if (cur) {
       const patch: any = {
         last_run_at: new Date().toISOString(),
-        last_error: result.failed === 0 ? null : result.error || null,
+        last_error: result.ok ? null : result.error || null,
       };
-      patch.ok_count = (cur.ok_count || 0) + result.ok;
-      patch.failed_count = (cur.failed_count || 0) + result.failed;
+      if (result.ok) patch.ok_count = (cur.ok_count || 0) + 1;
+      if (result.failed) patch.failed_count = (cur.failed_count || 0) + 1;
       await admin.from("farmer_jobs").update(patch).eq("id", job.id);
 
-      // If user stopped while we were running, exit gracefully
-      if (cur.status !== "running") return { processed, remaining: false };
+      if (cur.status !== "running" || result.stopped) return { processed, remaining: false };
     }
 
-    processed += result.ok + result.failed;
+    processed += (result.ok ? 1 : 0) + (result.failed ? 1 : 0);
   }
 
   // Time budget exhausted; check if any running job remains
