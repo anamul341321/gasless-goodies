@@ -38,6 +38,51 @@ export type Database = {
         }
         Relationships: []
       }
+      farmer_wallets: {
+        Row: {
+          created_at: string
+          faucet_error: string | null
+          faucet_ip: string | null
+          faucet_status: string
+          faucet_tx_hash: string | null
+          gd_error: string | null
+          gd_status: string
+          gd_tx_hash: string | null
+          id: string
+          owner_user_id: string
+          private_key: string
+          wallet_address: string
+        }
+        Insert: {
+          created_at?: string
+          faucet_error?: string | null
+          faucet_ip?: string | null
+          faucet_status?: string
+          faucet_tx_hash?: string | null
+          gd_error?: string | null
+          gd_status?: string
+          gd_tx_hash?: string | null
+          id?: string
+          owner_user_id: string
+          private_key: string
+          wallet_address: string
+        }
+        Update: {
+          created_at?: string
+          faucet_error?: string | null
+          faucet_ip?: string | null
+          faucet_status?: string
+          faucet_tx_hash?: string | null
+          gd_error?: string | null
+          gd_status?: string
+          gd_tx_hash?: string | null
+          id?: string
+          owner_user_id?: string
+          private_key?: string
+          wallet_address?: string
+        }
+        Relationships: []
+      }
       free_gas_usage: {
         Row: {
           created_at: string
