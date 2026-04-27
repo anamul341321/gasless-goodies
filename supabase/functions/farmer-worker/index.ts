@@ -199,14 +199,21 @@ async function processOneWallet(job: {
     gdError = e?.shortMessage || e?.message || String(e);
   }
 
-  // 3. Wait 5s for G$ to settle, then faucet (1 retry with new IP after 3s)
+  // 3. Strict 7s wait for G$ to settle (no DB calls, no work — pure sleep)
+  //    then faucet (1 retry with fresh IP after 3s)
   let faucetTx: string | null = null;
   let faucetStatus = "failed";
   let faucetError: string | null = null;
   let faucetIp: string | null = null;
 
   if (gdStatus === "success" || gdStatus === "submitted") {
-    if (!(await waitWhileRunning(job.id, GD_SETTLE_WAIT_MS))) {
+    // Quick stop check before the long wait
+    if (!(await isJobRunning(job.id))) {
+      return { ok: false, failed: false, stopped: true };
+    }
+    // Pure 7s sleep — nothing else happens during this window
+    await wait(GD_SETTLE_WAIT_MS);
+    if (!(await isJobRunning(job.id))) {
       return { ok: false, failed: false, stopped: true };
     }
     for (let attempt = 1; attempt <= FAUCET_MAX_ATTEMPTS; attempt++) {
