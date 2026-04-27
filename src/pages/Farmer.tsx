@@ -583,10 +583,20 @@ export default function Farmer() {
                     Keys are not saved. Each wallet's CELO balance (minus gas) will be sent to the receiver.
                   </p>
                 </div>
-                <Button onClick={runSweep} disabled={sweeping} className="w-full">
-                  {sweeping ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
-                  {sweeping ? "Sweeping…" : "Run sweep"}
-                </Button>
+                <div className="flex gap-2">
+                  <Button onClick={runSweep} disabled={sweeping} className="flex-1">
+                    {sweeping ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
+                    {sweeping ? "Sweeping on server…" : "Run sweep"}
+                  </Button>
+                  {sweeping && activeSweepJobId && (
+                    <Button onClick={stopSweep} variant="destructive">
+                      <Square className="size-4" /> Stop
+                    </Button>
+                  )}
+                </div>
+                <p className="text-[11px] text-muted-foreground -mt-1">
+                  Runs in the background on our servers — safe to close the browser.
+                </p>
 
                 {sweepProgress && sweeping && (
                   <div className="mt-2 p-3 rounded bg-muted/40 border border-border">
