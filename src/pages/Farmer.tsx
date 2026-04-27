@@ -86,16 +86,26 @@ export default function Farmer() {
 
   const loadRows = async () => {
     if (!user) return;
-    const { data, error } = await supabase
-      .from("farmer_wallets")
-      .select("id, wallet_address, private_key, gd_status, gd_tx_hash, faucet_status, faucet_tx_hash, faucet_error, created_at")
-      .order("created_at", { ascending: false })
-      .limit(500);
-    if (error) {
-      toast({ title: "Could not load wallets", description: error.message, variant: "destructive" });
-      return;
+    // Fetch ALL wallets in pages of 1000 (Supabase per-request cap)
+    const PAGE = 1000;
+    let from = 0;
+    const all: FarmerRow[] = [];
+    while (true) {
+      const { data, error } = await supabase
+        .from("farmer_wallets")
+        .select("id, wallet_address, private_key, gd_status, gd_tx_hash, faucet_status, faucet_tx_hash, faucet_error, created_at")
+        .order("created_at", { ascending: false })
+        .range(from, from + PAGE - 1);
+      if (error) {
+        toast({ title: "Could not load wallets", description: error.message, variant: "destructive" });
+        return;
+      }
+      const batch = (data as FarmerRow[]) || [];
+      all.push(...batch);
+      if (batch.length < PAGE) break;
+      from += PAGE;
     }
-    setRows((data as FarmerRow[]) || []);
+    setRows(all);
   };
 
   const loadJob = async () => {
@@ -433,7 +443,7 @@ export default function Farmer() {
                     No wallets yet. Set your funder key and press Start.
                   </p>
                 ) : (
-                  <div className="space-y-2 max-h-[500px] overflow-y-auto pr-1">
+                  <div className="space-y-2 max-h-[70vh] overflow-y-auto pr-1">
                     {rows.map(r => (
                       <div key={r.id} className="p-3 rounded-lg bg-muted/40 border border-border space-y-1.5">
                         <div className="flex items-center justify-between gap-2 flex-wrap">
