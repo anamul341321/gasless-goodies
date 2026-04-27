@@ -66,6 +66,7 @@ export default function Farmer() {
   const [sweeping, setSweeping] = useState(false);
   const [sweepResults, setSweepResults] = useState<SweepResult[] | null>(null);
   const [sweepSummary, setSweepSummary] = useState<{ total: number; success: number; failed: number; total_swept_celo: string } | null>(null);
+  const [sweepProgress, setSweepProgress] = useState<{ done: number; total: number; success: number; failed: number } | null>(null);
 
   const running = job?.status === "running";
 
