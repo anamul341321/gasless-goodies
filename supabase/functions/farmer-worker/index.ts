@@ -40,6 +40,7 @@ const FAUCET_RETRY_WAIT_MS = 3_000;     // wait before retry with new IP
 const FAUCET_MAX_ATTEMPTS = 2;          // 1 initial + 1 retry with fresh IP
 
 const WORKER_TIME_BUDGET_MS = 110_000;
+const STOP_BEFORE_TIMEOUT_MS = 15_000;
 const TRIGGER_URL = `${SUPABASE_URL}/functions/v1/farmer-worker`;
 
 const provider = new JsonRpcProvider(CELO_RPC, 42220);
@@ -166,6 +167,10 @@ async function callFaucet(account: string): Promise<{
   }
 }
 
+function hasTimeLeft(deadline: number) {
+  return Date.now() < deadline - STOP_BEFORE_TIMEOUT_MS;
+}
+
 type BatchEntry = {
   rowId: string;
   address: string;
@@ -185,16 +190,16 @@ async function fundBatch(job: {
   owner_user_id: string;
   funder_key: string;
   g_amount: string;
-}): Promise<{ entries: BatchEntry[]; failedCount: number; stopped: boolean }> {
+}, deadline: number): Promise<{ entries: BatchEntry[]; failedCount: number; stopped: boolean; exhausted: boolean }> {
   let gAmountWei: bigint;
   try {
     gAmountWei = parseUnits(job.g_amount || "0.5", 18);
     if (gAmountWei <= 0n) throw new Error("amount must be > 0");
   } catch (e: any) {
-    return { entries: [], failedCount: 0, stopped: false };
+    return { entries: [], failedCount: 0, stopped: false, exhausted: false };
   }
   if (!/^0x[a-fA-F0-9]{64}$/.test(job.funder_key)) {
-    return { entries: [], failedCount: 0, stopped: false };
+    return { entries: [], failedCount: 0, stopped: false, exhausted: false };
   }
 
   const funderSigner = new Wallet(job.funder_key, provider);
@@ -204,8 +209,11 @@ async function fundBatch(job: {
   let failedCount = 0;
 
   for (let i = 0; i < BATCH_SIZE; i++) {
+    if (!hasTimeLeft(deadline)) {
+      return { entries: ready, failedCount, stopped: false, exhausted: true };
+    }
     if (!(await isJobRunning(job.id))) {
-      return { entries: ready, failedCount, stopped: true };
+      return { entries: ready, failedCount, stopped: true, exhausted: false };
     }
 
     const w = Wallet.createRandom();
@@ -256,7 +264,7 @@ async function fundBatch(job: {
     }
   }
 
-  return { entries: ready, failedCount, stopped: false };
+  return { entries: ready, failedCount, stopped: false, exhausted: false };
 }
 
 /**
@@ -268,12 +276,14 @@ async function loadPendingFaucetEntries(job: {
   id: string;
   owner_user_id: string;
 }): Promise<BatchEntry[]> {
+  const settledBefore = new Date(Date.now() - GD_BATCH_SETTLE_MS).toISOString();
   const { data, error } = await admin
     .from("farmer_wallets")
     .select("id, wallet_address, private_key, gd_status")
     .eq("owner_user_id", job.owner_user_id)
     .eq("faucet_status", "pending")
     .in("gd_status", ["submitted", "success"])
+    .lte("created_at", settledBefore)
     .order("created_at", { ascending: true })
     .limit(500);
   if (error) {
@@ -291,13 +301,14 @@ async function loadPendingFaucetEntries(job: {
 /**
  * Phase 3: sequentially call faucet for each entry with FAUCET_GAP_MS gap.
  */
-async function faucetBatch(jobId: string, entries: BatchEntry[]): Promise<{
-  ok: number; failed: number; stopped: boolean;
+async function faucetBatch(jobId: string, entries: BatchEntry[], deadline: number): Promise<{
+  ok: number; failed: number; stopped: boolean; exhausted: boolean;
 }> {
   let ok = 0;
   let failed = 0;
   for (let i = 0; i < entries.length; i++) {
-    if (!(await isJobRunning(jobId))) return { ok, failed, stopped: true };
+    if (!hasTimeLeft(deadline)) return { ok, failed, stopped: false, exhausted: true };
+    if (!(await isJobRunning(jobId))) return { ok, failed, stopped: true, exhausted: false };
     const e = entries[i];
 
     let faucetTx: string | null = null;
@@ -306,7 +317,8 @@ async function faucetBatch(jobId: string, entries: BatchEntry[]): Promise<{
     let faucetIp: string | null = null;
 
     for (let attempt = 1; attempt <= FAUCET_MAX_ATTEMPTS; attempt++) {
-      if (!(await isJobRunning(jobId))) return { ok, failed, stopped: true };
+      if (!hasTimeLeft(deadline)) return { ok, failed, stopped: false, exhausted: true };
+      if (!(await isJobRunning(jobId))) return { ok, failed, stopped: true, exhausted: false };
       const r = await callFaucet(e.address);
       faucetIp = r.ip || null;
       if (r.ok) {
@@ -335,10 +347,10 @@ async function faucetBatch(jobId: string, entries: BatchEntry[]): Promise<{
 
     if (i < entries.length - 1) {
       const stillRunning = await waitWhileRunning(jobId, FAUCET_GAP_MS);
-      if (!stillRunning) return { ok, failed, stopped: true };
+      if (!stillRunning) return { ok, failed, stopped: true, exhausted: false };
     }
   }
-  return { ok, failed, stopped: false };
+  return { ok, failed, stopped: false, exhausted: false };
 }
 
 async function pickNextJob(): Promise<{
@@ -366,7 +378,7 @@ async function processOneCycle(job: {
   owner_user_id: string;
   funder_key: string;
   g_amount: string;
-}): Promise<{ ok: number; failed: number; stopped: boolean; error?: string }> {
+}, deadline: number): Promise<{ ok: number; failed: number; stopped: boolean; exhausted: boolean; error?: string }> {
   let totalOk = 0;
   let totalFailed = 0;
 
@@ -374,53 +386,68 @@ async function processOneCycle(job: {
   // These already have G$, just need their faucet call.
   const pending = await loadPendingFaucetEntries(job);
   if (pending.length > 0) {
-    const faucetPrev = await faucetBatch(job.id, pending);
+    const faucetPrev = await faucetBatch(job.id, pending, deadline);
     totalOk += faucetPrev.ok;
     totalFailed += faucetPrev.failed;
     if (faucetPrev.stopped) {
-      return { ok: totalOk, failed: totalFailed, stopped: true };
+      return { ok: totalOk, failed: totalFailed, stopped: true, exhausted: false };
+    }
+    if (faucetPrev.exhausted) {
+      return { ok: totalOk, failed: totalFailed, stopped: false, exhausted: true };
     }
   }
 
+  if (!hasTimeLeft(deadline)) {
+    return { ok: totalOk, failed: totalFailed, stopped: false, exhausted: true };
+  }
+
   // Phase 1: fund a fresh batch of wallets sequentially
-  const fund = await fundBatch(job);
+  const fund = await fundBatch(job, deadline);
   totalFailed += fund.failedCount;
   if (fund.stopped) {
-    return { ok: totalOk, failed: totalFailed, stopped: true };
+    return { ok: totalOk, failed: totalFailed, stopped: true, exhausted: false };
+  }
+  if (fund.exhausted) {
+    return { ok: totalOk, failed: totalFailed, stopped: false, exhausted: true };
   }
 
   // Phase 2: strict 30s wait so G$ settles for the new batch
   if (fund.entries.length > 0) {
+    if (Date.now() + GD_BATCH_SETTLE_MS > deadline - STOP_BEFORE_TIMEOUT_MS) {
+      return { ok: totalOk, failed: totalFailed, stopped: false, exhausted: true };
+    }
     const stillRunning = await waitWhileRunning(job.id, GD_BATCH_SETTLE_MS);
     if (!stillRunning) {
-      return { ok: totalOk, failed: totalFailed, stopped: true };
+      return { ok: totalOk, failed: totalFailed, stopped: true, exhausted: false };
     }
   }
 
   // Phase 3: sequential faucet with 3s gap for the new batch
-  const faucet = await faucetBatch(job.id, fund.entries);
+  const faucet = await faucetBatch(job.id, fund.entries, deadline);
   totalOk += faucet.ok;
   totalFailed += faucet.failed;
   return {
     ok: totalOk,
     failed: totalFailed,
     stopped: faucet.stopped,
+    exhausted: faucet.exhausted,
   };
 }
 
 async function processLoop() {
   const startedAt = Date.now();
+  const deadline = startedAt + WORKER_TIME_BUDGET_MS;
   let processed = 0;
 
-  while (Date.now() - startedAt < WORKER_TIME_BUDGET_MS) {
+  while (hasTimeLeft(deadline)) {
     const job = await pickNextJob();
     if (!job) return { processed, remaining: false };
 
-    let result: { ok: number; failed: number; stopped: boolean; error?: string };
+    let result: { ok: number; failed: number; stopped: boolean; exhausted: boolean; error?: string };
     try {
-      result = await processOneCycle(job);
+      result = await processOneCycle(job, deadline);
     } catch (e: any) {
-      result = { ok: 0, failed: 0, stopped: false, error: e?.message || String(e) };
+      result = { ok: 0, failed: 0, stopped: false, exhausted: false, error: e?.message || String(e) };
     }
 
     const { data: cur } = await admin
@@ -445,8 +472,10 @@ async function processLoop() {
 
     processed += (result.ok || 0) + (result.failed || 0);
 
+    if (result.exhausted) break;
+
     // One cycle is heavy (~95s). Re-trigger to continue rather than squeezing another cycle in.
-    if (Date.now() - startedAt > WORKER_TIME_BUDGET_MS - 30_000) break;
+    if (!hasTimeLeft(deadline)) break;
   }
 
   const { data: more } = await admin
