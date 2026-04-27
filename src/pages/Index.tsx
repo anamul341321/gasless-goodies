@@ -1,13 +1,14 @@
 import { useEffect, useState } from "react";
 import {
   ArrowRight, Coins, Fuel, Megaphone, Menu, Shield, Smartphone,
-  Sparkles, Zap, CheckCircle2, Clock, Wallet, Lock, TrendingUp,
+  Sparkles, Zap, CheckCircle2, Clock, Wallet, Lock, TrendingUp, User,
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import appLogo from "@/assets/logo.png";
 import ServicesDrawer from "@/components/ServicesDrawer";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
 
 const BRAND_TITLE = "Celo Gas Sponsor";
 const BRAND_SUBTITLE = "by Good-App";
