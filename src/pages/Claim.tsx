@@ -424,6 +424,7 @@ const Claim = () => {
             Paste private keys · 30s per wallet · auto-fills gas if missing · runs server-side
           </p>
         </div>
+import { supabase } from "@/integrations/supabase/client";
 
 
         {/* Active / completed job panel */}
