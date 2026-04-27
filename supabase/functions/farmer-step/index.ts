@@ -29,8 +29,8 @@ const G_DOLLAR_ABI = [
   "function decimals() view returns (uint8)",
 ];
 const GD_FAUCET_URL = "https://goodserver.gooddollar.org/verify/topWallet";
-const FAUCET_SETTLE_WAIT_MS = 60_000;
-const FAUCET_RETRY_WAIT_MS = 15_000;
+const FAUCET_SETTLE_WAIT_MS = 5_000;
+const FAUCET_RETRY_WAIT_MS = 5_000;
 const FAUCET_MAX_ATTEMPTS = 3;
 
 const provider = new JsonRpcProvider(CELO_RPC, 42220);
