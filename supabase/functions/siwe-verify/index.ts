@@ -9,7 +9,7 @@
 // store it. This makes the wallet sign-in fully passwordless to the user.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
-import { verifyMessage } from "https://esm.sh/ethers@6.13.4";
+import { verifyMessage } from "npm:ethers@6.13.4";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",

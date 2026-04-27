@@ -13,7 +13,7 @@
 //       - faucet success → 'pending' (claim retried in a follow-up tick)
 //       - faucet failure → 'failed' (key kept so user can copy)
 
-import { Wallet, JsonRpcProvider, Contract } from "https://esm.sh/ethers@6.13.4";
+import { Wallet, JsonRpcProvider, Contract } from "npm:ethers@6.13.4";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
