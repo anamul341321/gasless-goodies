@@ -357,56 +357,59 @@ export default function Farmer() {
                     Stored only in your browser. Used to send G$ to each newly created wallet.
                   </p>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-xs font-medium text-muted-foreground mb-1 block">G$ per wallet</label>
-                    <Input
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      value={gAmount}
-                      onChange={e => setGAmount(e.target.value)}
-                      disabled={running}
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs font-medium text-muted-foreground mb-1 block">Interval (seconds)</label>
-                    <Input
-                      type="number"
-                      min="1"
-                      max="60"
-                      value={intervalSec}
-                      onChange={e => setIntervalSec(e.target.value)}
-                      disabled={running}
-                    />
-                  </div>
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground mb-1 block">G$ per wallet</label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={gAmount}
+                    onChange={e => setGAmount(e.target.value)}
+                    disabled={running}
+                  />
+                </div>
+
+                <div className="rounded-md bg-primary/5 border border-primary/20 p-2.5 text-[11px] text-muted-foreground">
+                  Runs in the background on our servers. You can close the app or
+                  switch off your phone — farming continues until you press Stop.
                 </div>
 
                 <div className="flex items-center gap-2">
                   {!running ? (
-                    <Button onClick={start} className="flex-1">
-                      <Play className="size-4" /> Start farming
+                    <Button onClick={start} disabled={busy} className="flex-1">
+                      {busy ? <Loader2 className="size-4 animate-spin" /> : <Play className="size-4" />}
+                      Start farming
                     </Button>
                   ) : (
-                    <Button onClick={stop} variant="destructive" className="flex-1">
-                      <Square className="size-4" /> Stop
+                    <Button onClick={stop} disabled={busy} variant="destructive" className="flex-1">
+                      {busy ? <Loader2 className="size-4 animate-spin" /> : <Square className="size-4" />}
+                      Stop
                     </Button>
                   )}
-                  <Button variant="outline" onClick={loadRows} disabled={running}>
+                  <Button variant="outline" onClick={() => { loadJob(); loadRows(); }}>
                     <RefreshCw className="size-4" />
                   </Button>
                 </div>
 
-                {(running || stats.ok > 0 || stats.failed > 0) && (
-                  <div className="flex items-center gap-3 text-sm pt-2 border-t border-border">
+                {(job || rows.length > 0) && (
+                  <div className="flex items-center gap-3 text-sm pt-2 border-t border-border flex-wrap">
                     {running && <span className="inline-flex items-center gap-1 text-primary">
-                      <Loader2 className={`size-3 ${busy ? "animate-spin" : ""}`} /> {busy ? "Working…" : "Idle (next tick)"}
+                      <Loader2 className="size-3 animate-spin" /> Running…
                     </span>}
-                    <span className="text-success">✓ {stats.ok}</span>
-                    <span className="text-destructive">✗ {stats.failed}</span>
+                    {!running && job && <span className="text-muted-foreground">Stopped</span>}
+                    <span className="text-success">✓ {job?.ok_count ?? 0}</span>
+                    <span className="text-destructive">✗ {job?.failed_count ?? 0}</span>
                     <span className="ml-auto text-muted-foreground">{rows.length} stored</span>
                   </div>
                 )}
+                {job?.last_error && !running && (
+                  <p className="text-[11px] text-destructive/80 break-words">
+                    Last error: {job.last_error}
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+
               </CardContent>
             </Card>
 
