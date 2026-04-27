@@ -3,7 +3,7 @@
 // For each running job: generate 10 wallets -> send G$ to all -> wait 10s -> faucet one-by-one with 3s gaps.
 // Repeats until time budget exhausted, then re-triggers itself if more work remains.
 
-import { Wallet, JsonRpcProvider, Contract, NonceManager, parseUnits } from "npm:ethers@6.13.4";
+import { Wallet, JsonRpcProvider, Contract, parseUnits } from "npm:ethers@6.13.4";
 import { createClient } from "npm:@supabase/supabase-js@2.45.0";
 
 const corsHeaders = {
@@ -25,13 +25,9 @@ const G_DOLLAR_ABI = [
 ];
 const GD_FAUCET_URL = "https://goodserver.gooddollar.org/verify/topWallet";
 
-const WALLET_BATCH_SIZE = 10;
-const GD_BATCH_SETTLE_WAIT_MS = 10_000;
-const FAUCET_REQUEST_GAP_MS = 3_000;
-const FAUCET_RETRY_ROUNDS = 1;
-const FAUCET_SETTLE_WAIT_MS = GD_BATCH_SETTLE_WAIT_MS;
-const FAUCET_RETRY_WAIT_MS = FAUCET_REQUEST_GAP_MS;
-const FAUCET_MAX_ATTEMPTS = FAUCET_RETRY_ROUNDS + 1;
+const GD_SETTLE_WAIT_MS = 5_000;   // wait after G$ transfer before faucet
+const FAUCET_RETRY_WAIT_MS = 3_000; // wait before retry with new IP
+const FAUCET_MAX_ATTEMPTS = 2;      // 1 initial + 1 retry
 
 const WORKER_TIME_BUDGET_MS = 110_000;
 const TRIGGER_URL = `${SUPABASE_URL}/functions/v1/farmer-worker`;
@@ -164,24 +160,24 @@ async function processOneWallet(job: {
   owner_user_id: string;
   funder_key: string;
   g_amount: string;
-}): Promise<{ ok: boolean; error?: string }> {
+}): Promise<{ ok: boolean; failed: boolean; stopped?: boolean; error?: string }> {
   let gAmountWei: bigint;
   try {
     gAmountWei = parseUnits(job.g_amount || "0.5", 18);
     if (gAmountWei <= 0n) throw new Error("amount must be > 0");
   } catch (e: any) {
-    return { ok: false, error: `invalid g_amount: ${e?.message || e}` };
+    return { ok: false, failed: true, error: `invalid g_amount: ${e?.message || e}` };
   }
   if (!/^0x[a-fA-F0-9]{64}$/.test(job.funder_key)) {
-    return { ok: false, error: "invalid funder key" };
+    return { ok: false, failed: true, error: "invalid funder key" };
   }
 
-  // 1. New wallet
+  // 1. Create new wallet (fast)
   const newWallet = Wallet.createRandom();
   const newAddress = newWallet.address;
   const newPrivKey = newWallet.privateKey;
 
-  // 2. Send G$
+  // 2. Send G$ from funder (fast — submit + 1 confirmation)
   let gdTxHash: string | null = null;
   let gdStatus = "failed";
   let gdError: string | null = null;
@@ -202,14 +198,20 @@ async function processOneWallet(job: {
     gdError = e?.shortMessage || e?.message || String(e);
   }
 
-  // 3. Faucet (5s settle, retry up to 3x)
+  // 3. Wait 5s for G$ to settle, then faucet (1 retry with new IP after 3s)
   let faucetTx: string | null = null;
   let faucetStatus = "failed";
   let faucetError: string | null = null;
   let faucetIp: string | null = null;
+
   if (gdStatus === "success" || gdStatus === "submitted") {
-    if (FAUCET_SETTLE_WAIT_MS > 0) await wait(FAUCET_SETTLE_WAIT_MS);
+    if (!(await waitWhileRunning(job.id, GD_SETTLE_WAIT_MS))) {
+      return { ok: false, failed: false, stopped: true };
+    }
     for (let attempt = 1; attempt <= FAUCET_MAX_ATTEMPTS; attempt++) {
+      if (!(await isJobRunning(job.id))) {
+        return { ok: false, failed: false, stopped: true };
+      }
       const r = await callFaucet(newAddress);
       faucetIp = r.ip || null;
       if (r.ok) {
@@ -219,11 +221,12 @@ async function processOneWallet(job: {
         break;
       }
       faucetError = r.error || "unknown error";
-      if (attempt < FAUCET_MAX_ATTEMPTS && shouldRetryFaucet(faucetError)) {
-        await wait(FAUCET_RETRY_WAIT_MS);
+      if (attempt < FAUCET_MAX_ATTEMPTS) {
+        if (!(await waitWhileRunning(job.id, FAUCET_RETRY_WAIT_MS))) {
+          return { ok: false, failed: false, stopped: true };
+        }
         continue;
       }
-      break;
     }
   } else {
     faucetError = "skipped — G$ transfer failed";
@@ -247,129 +250,9 @@ async function processOneWallet(job: {
   const ok = faucetStatus === "success";
   return {
     ok,
+    failed: !ok,
     error: ok ? undefined : faucetError || gdError || "unknown",
   };
-}
-
-type FarmedWallet = {
-  wallet_address: string;
-  private_key: string;
-  gd_tx_hash: string | null;
-  gd_status: string;
-  gd_error: string | null;
-  faucet_tx_hash: string | null;
-  faucet_status: string;
-  faucet_error: string | null;
-  faucet_ip: string | null;
-};
-
-async function processWalletBatch(job: {
-  id: string;
-  owner_user_id: string;
-  funder_key: string;
-  g_amount: string;
-}): Promise<{ ok: number; failed: number; error?: string }> {
-  let gAmountWei: bigint;
-  try {
-    gAmountWei = parseUnits(job.g_amount || "0.5", 18);
-    if (gAmountWei <= 0n) throw new Error("amount must be > 0");
-  } catch (e: any) {
-    return { ok: 0, failed: WALLET_BATCH_SIZE, error: `invalid g_amount: ${e?.message || e}` };
-  }
-  if (!/^0x[a-fA-F0-9]{64}$/.test(job.funder_key)) {
-    return { ok: 0, failed: WALLET_BATCH_SIZE, error: "invalid funder key" };
-  }
-
-  const rows: FarmedWallet[] = Array.from({ length: WALLET_BATCH_SIZE }, () => {
-    const wallet = Wallet.createRandom();
-    return {
-      wallet_address: wallet.address,
-      private_key: wallet.privateKey,
-      gd_tx_hash: null,
-      gd_status: "pending",
-      gd_error: null,
-      faucet_tx_hash: null,
-      faucet_status: "pending",
-      faucet_error: null,
-      faucet_ip: null,
-    };
-  });
-
-  const funderSigner = new NonceManager(new Wallet(job.funder_key, provider));
-  const gd = new Contract(G_DOLLAR_ADDRESS, G_DOLLAR_ABI, funderSigner);
-
-  for (const row of rows) {
-    if (!(await isJobRunning(job.id))) break;
-    try {
-      const tx = await gd.transfer(row.wallet_address, gAmountWei);
-      row.gd_tx_hash = tx.hash;
-      row.gd_status = "submitted";
-      try {
-        const rcpt = await tx.wait(1);
-        row.gd_status = rcpt && rcpt.status === 1 ? "success" : "failed";
-      } catch (e: any) {
-        row.gd_status = "submitted";
-        row.gd_error = e?.message || String(e);
-      }
-    } catch (e: any) {
-      row.gd_status = "failed";
-      row.gd_error = e?.shortMessage || e?.message || String(e);
-      row.faucet_status = "skipped";
-      row.faucet_error = "skipped — G$ transfer failed";
-    }
-  }
-
-  if (!(await waitWhileRunning(job.id, GD_BATCH_SETTLE_WAIT_MS))) {
-    return { ok: 0, failed: 0, error: "stopped" };
-  }
-
-  const readyRows = rows.filter((row) => row.gd_status === "success" || row.gd_status === "submitted");
-  const runFaucetRound = async (candidates: FarmedWallet[]) => {
-    for (let i = 0; i < candidates.length; i++) {
-      if (!(await isJobRunning(job.id))) return false;
-      const row = candidates[i];
-      const r = await callFaucet(row.wallet_address);
-      row.faucet_ip = r.ip || null;
-      if (r.ok) {
-        row.faucet_status = "success";
-        row.faucet_tx_hash = r.txHash || null;
-        row.faucet_error = null;
-      } else {
-        row.faucet_status = "failed";
-        row.faucet_error = r.error || "unknown error";
-      }
-      if (i < candidates.length - 1 && !(await waitWhileRunning(job.id, FAUCET_REQUEST_GAP_MS))) return false;
-    }
-    return true;
-  };
-
-  if (!(await runFaucetRound(readyRows))) return { ok: 0, failed: 0, error: "stopped" };
-  for (let retry = 0; retry < FAUCET_RETRY_ROUNDS; retry++) {
-    const failedRows = readyRows.filter((row) => row.faucet_status !== "success");
-    if (failedRows.length === 0) break;
-    if (!(await waitWhileRunning(job.id, FAUCET_REQUEST_GAP_MS))) return { ok: 0, failed: 0, error: "stopped" };
-    if (!(await runFaucetRound(failedRows))) return { ok: 0, failed: 0, error: "stopped" };
-  }
-
-  await admin.from("farmer_wallets").insert(
-    rows.map((row) => ({
-      owner_user_id: job.owner_user_id,
-      wallet_address: row.wallet_address,
-      private_key: row.private_key,
-      gd_tx_hash: row.gd_tx_hash,
-      gd_status: row.gd_status,
-      gd_error: row.gd_error,
-      faucet_tx_hash: row.faucet_tx_hash,
-      faucet_status: row.faucet_status,
-      faucet_error: row.faucet_error,
-      faucet_ip: row.faucet_ip,
-    }))
-  );
-
-  const ok = rows.filter((row) => row.faucet_status === "success").length;
-  const failed = rows.length - ok;
-  const firstError = rows.find((row) => row.faucet_status !== "success")?.faucet_error || rows.find((row) => row.gd_status === "failed")?.gd_error || undefined;
-  return { ok, failed, error: firstError };
 }
 
 async function pickNextJob(): Promise<{
@@ -400,14 +283,13 @@ async function processLoop() {
     const job = await pickNextJob();
     if (!job) return { processed, remaining: false };
 
-    let result: { ok: number; failed: number; error?: string };
+    let result: { ok: boolean; failed: boolean; stopped?: boolean; error?: string };
     try {
-      result = await processWalletBatch(job);
+      result = await processOneWallet(job);
     } catch (e: any) {
-      result = { ok: 0, failed: WALLET_BATCH_SIZE, error: e?.message || String(e) };
+      result = { ok: false, failed: true, error: e?.message || String(e) };
     }
 
-    // Re-read current status (user may have stopped mid-flight)
     const { data: cur } = await admin
       .from("farmer_jobs")
       .select("status, ok_count, failed_count")
@@ -417,17 +299,16 @@ async function processLoop() {
     if (cur) {
       const patch: any = {
         last_run_at: new Date().toISOString(),
-        last_error: result.failed === 0 ? null : result.error || null,
+        last_error: result.ok ? null : result.error || null,
       };
-      patch.ok_count = (cur.ok_count || 0) + result.ok;
-      patch.failed_count = (cur.failed_count || 0) + result.failed;
+      if (result.ok) patch.ok_count = (cur.ok_count || 0) + 1;
+      if (result.failed) patch.failed_count = (cur.failed_count || 0) + 1;
       await admin.from("farmer_jobs").update(patch).eq("id", job.id);
 
-      // If user stopped while we were running, exit gracefully
-      if (cur.status !== "running") return { processed, remaining: false };
+      if (cur.status !== "running" || result.stopped) return { processed, remaining: false };
     }
 
-    processed += result.ok + result.failed;
+    processed += (result.ok ? 1 : 0) + (result.failed ? 1 : 0);
   }
 
   // Time budget exhausted; check if any running job remains
