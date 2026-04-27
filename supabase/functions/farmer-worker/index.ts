@@ -230,7 +230,8 @@ async function processOneWallet(job: {
       }
       faucetError = r.error || "unknown error";
       if (attempt < FAUCET_MAX_ATTEMPTS) {
-        if (!(await waitWhileRunning(job.id, FAUCET_RETRY_WAIT_MS))) {
+        await wait(FAUCET_RETRY_WAIT_MS);
+        if (!(await isJobRunning(job.id))) {
           return { ok: false, failed: false, stopped: true };
         }
         continue;
