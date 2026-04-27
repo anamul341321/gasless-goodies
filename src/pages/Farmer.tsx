@@ -241,7 +241,6 @@ export default function Farmer() {
       return;
     }
     setRows([]);
-    setStats({ ok: 0, failed: 0 });
     toast({ title: "All wallets deleted" });
   };
 
