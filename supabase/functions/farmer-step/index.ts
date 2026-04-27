@@ -56,7 +56,7 @@ function shouldRetryFaucet(error?: string) {
     text.includes("network") ||
     text.includes("fetch") ||
     text.includes("429") ||
-    text.includes("5")
+    /http\s+5\d\d/.test(text)
   );
 }
 
