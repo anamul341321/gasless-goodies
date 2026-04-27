@@ -297,68 +297,6 @@ async function findActiveFaucetJob(jobId: string): Promise<string | null> {
   return Array.isArray(j) && j[0] ? j[0].id : null;
 }
 
-async function createFaucetJob(jobId: string, wallets: QueueRow[]): Promise<string | null> {
-  const tag = `gd-claim:${jobId}`;
-  const jobRes = await fetch(`${SUPABASE_URL}/rest/v1/gas_load_jobs`, {
-    method: "POST",
-    headers: sbHeaders({ Prefer: "return=representation" }),
-    body: JSON.stringify({
-      total: wallets.length,
-      status: "pending",
-      batch_name: tag,
-      delay_ms: FAUCET_DELAY_MS,
-      max_retries: 0,
-    }),
-  });
-  if (!jobRes.ok) return null;
-  const job = await jobRes.json();
-  const faucetJobId = (Array.isArray(job) ? job[0] : job).id as string;
-
-  const queueRows = wallets.map((w) => ({
-    job_id: faucetJobId,
-    wallet_address: w.wallet_address,
-    status: "pending",
-  }));
-
-  // Insert in chunks
-  const CHUNK = 200;
-  for (let i = 0; i < queueRows.length; i += CHUNK) {
-    const slice = queueRows.slice(i, i + CHUNK);
-    const ins = await fetch(`${SUPABASE_URL}/rest/v1/gas_load_queue`, {
-      method: "POST",
-      headers: sbHeaders({ Prefer: "return=minimal" }),
-      body: JSON.stringify(slice),
-    });
-    if (!ins.ok) {
-      console.error("faucet enqueue failed", await ins.text());
-      return null;
-    }
-  }
-
-  // Kick faucet worker (best-effort)
-  fetch(FAUCET_TRIGGER_URL, {
-    method: "POST",
-    headers: sbHeaders(),
-    body: JSON.stringify({ trigger: "gd-claim-gas", job_id: faucetJobId }),
-  }).catch(() => {});
-
-  // Mark waiting_gas wallets as having had a gas request
-  await fetch(
-    `${SUPABASE_URL}/rest/v1/gd_claim_queue?job_id=eq.${jobId}&status=eq.waiting_gas`,
-    {
-      method: "PATCH",
-      headers: sbHeaders({ Prefer: "return=minimal" }),
-      body: JSON.stringify({
-        gas_requests: 1,
-        last_gas_request_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      }),
-    }
-  ).catch(() => {});
-
-  return faucetJobId;
-}
-
 type FaucetWalletStatus = { wallet_address: string; status: string };
 
 async function getFaucetJobResults(faucetJobId: string): Promise<{
