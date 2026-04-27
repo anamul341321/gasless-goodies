@@ -314,9 +314,13 @@ const Claim = () => {
     }
     setSubmitting(true);
     try {
+      const { data: sess } = await supabase.auth.getSession();
+      const token = sess?.session?.access_token;
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (token) headers["Authorization"] = `Bearer ${token}`;
       const res = await fetch(`${SUPABASE_URL}/functions/v1/gd-claim-submit`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({
           private_keys: submittableKeys,
           batch_name: batchName.trim() || undefined,
