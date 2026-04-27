@@ -282,35 +282,60 @@ export default function Farmer() {
     if (!confirm(`Sweep CELO from ${keys.length} wallet${keys.length === 1 ? "" : "s"} to ${receiver.slice(0, 10)}…?`)) return;
 
     setSweeping(true);
-    setSweepResults(null);
+    setSweepResults([]);
     setSweepSummary(null);
+    setSweepProgress({ done: 0, total: keys.length, success: 0, failed: 0 });
+
+    const CHUNK = 50;
+    const allResults: SweepResult[] = [];
+    let success = 0;
+    let failed = 0;
+    let totalSweptStr = "0";
+    let totalSweptNum = 0;
+
     try {
       const { data: sess } = await supabase.auth.getSession();
       const token = sess.session?.access_token;
-      const res = await fetch(`${SUPABASE_URL}/functions/v1/celo-sweep`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-          apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string,
-        },
-        body: JSON.stringify({ keys, receiver: receiver.trim() }),
-      });
-      const json = await res.json();
-      if (!res.ok || !json?.ok) {
-        toast({ title: "Sweep failed", description: json?.error || `HTTP ${res.status}`, variant: "destructive" });
-        return;
+
+      for (let i = 0; i < keys.length; i += CHUNK) {
+        const slice = keys.slice(i, i + CHUNK);
+        const res = await fetch(`${SUPABASE_URL}/functions/v1/celo-sweep`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+            apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string,
+          },
+          body: JSON.stringify({ keys: slice, receiver: receiver.trim() }),
+        });
+        const json = await res.json();
+        if (!res.ok || !json?.ok) {
+          toast({ title: "Sweep chunk failed", description: json?.error || `HTTP ${res.status}`, variant: "destructive" });
+          // Mark this chunk as failed and continue
+          for (const k of slice) {
+            allResults.push({ wallet: "unknown", ok: false, error: json?.error || `HTTP ${res.status}` } as SweepResult);
+            failed++;
+          }
+        } else {
+          const part: SweepResult[] = json.results || [];
+          allResults.push(...part);
+          success += json.success || 0;
+          failed += json.failed || 0;
+          totalSweptNum += Number(json.total_swept_celo || 0);
+        }
+        setSweepResults([...allResults]);
+        setSweepProgress({ done: allResults.length, total: keys.length, success, failed });
       }
-      setSweepResults(json.results || []);
+
+      totalSweptStr = totalSweptNum.toString();
       setSweepSummary({
-        total: json.total_wallets,
-        success: json.success,
-        failed: json.failed,
-        total_swept_celo: json.total_swept_celo,
+        total: keys.length,
+        success,
+        failed,
+        total_swept_celo: totalSweptStr,
       });
-      // Clear keys for security (one-time use)
       setSweepKeys("");
-      toast({ title: `Swept ${json.success}/${json.total_wallets} wallets`, description: `${json.total_swept_celo} CELO sent` });
+      toast({ title: `Swept ${success}/${keys.length} wallets`, description: `${totalSweptNum.toFixed(4)} CELO sent` });
     } catch (e: any) {
       toast({ title: "Network error", description: e?.message || String(e), variant: "destructive" });
     } finally {
