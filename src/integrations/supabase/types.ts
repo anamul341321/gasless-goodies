@@ -38,6 +38,107 @@ export type Database = {
         }
         Relationships: []
       }
+      celo_sweep_jobs: {
+        Row: {
+          created_at: string
+          done: number
+          failed_count: number
+          finished_at: string | null
+          id: string
+          last_error: string | null
+          last_run_at: string | null
+          ok_count: number
+          owner_user_id: string
+          receiver: string
+          status: string
+          total: number
+          total_swept_celo: string
+        }
+        Insert: {
+          created_at?: string
+          done?: number
+          failed_count?: number
+          finished_at?: string | null
+          id?: string
+          last_error?: string | null
+          last_run_at?: string | null
+          ok_count?: number
+          owner_user_id: string
+          receiver: string
+          status?: string
+          total?: number
+          total_swept_celo?: string
+        }
+        Update: {
+          created_at?: string
+          done?: number
+          failed_count?: number
+          finished_at?: string | null
+          id?: string
+          last_error?: string | null
+          last_run_at?: string | null
+          ok_count?: number
+          owner_user_id?: string
+          receiver?: string
+          status?: string
+          total?: number
+          total_swept_celo?: string
+        }
+        Relationships: []
+      }
+      celo_sweep_queue: {
+        Row: {
+          amount: string | null
+          attempts: number
+          created_at: string
+          error_message: string | null
+          id: string
+          job_id: string
+          owner_user_id: string
+          private_key: string
+          processed_at: string | null
+          status: string
+          tx_hash: string | null
+          wallet_address: string | null
+        }
+        Insert: {
+          amount?: string | null
+          attempts?: number
+          created_at?: string
+          error_message?: string | null
+          id?: string
+          job_id: string
+          owner_user_id: string
+          private_key: string
+          processed_at?: string | null
+          status?: string
+          tx_hash?: string | null
+          wallet_address?: string | null
+        }
+        Update: {
+          amount?: string | null
+          attempts?: number
+          created_at?: string
+          error_message?: string | null
+          id?: string
+          job_id?: string
+          owner_user_id?: string
+          private_key?: string
+          processed_at?: string | null
+          status?: string
+          tx_hash?: string | null
+          wallet_address?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "celo_sweep_queue_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "celo_sweep_jobs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       farmer_jobs: {
         Row: {
           created_at: string

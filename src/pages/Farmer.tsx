@@ -67,6 +67,7 @@ export default function Farmer() {
   const [sweepResults, setSweepResults] = useState<SweepResult[] | null>(null);
   const [sweepSummary, setSweepSummary] = useState<{ total: number; success: number; failed: number; total_swept_celo: string } | null>(null);
   const [sweepProgress, setSweepProgress] = useState<{ done: number; total: number; success: number; failed: number } | null>(null);
+  const [activeSweepJobId, setActiveSweepJobId] = useState<string | null>(null);
 
   const running = job?.status === "running";
 
@@ -265,7 +266,49 @@ export default function Farmer() {
     setRows(prev => prev.filter(r => r.id !== id));
   };
 
-  // ----- Sweeper -----
+  // ----- Sweeper (server-side, runs even if browser is closed) -----
+
+  // Resume any running sweep job on mount, then keep polling
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+
+    const fetchActive = async () => {
+      const { data } = await supabase
+        .from("celo_sweep_jobs")
+        .select("id, total, done, ok_count, failed_count, total_swept_celo, status, receiver")
+        .eq("owner_user_id", user.id)
+        .order("created_at", { ascending: false })
+        .limit(1);
+      if (cancelled) return;
+      const j = data?.[0];
+      if (!j) return;
+
+      setActiveSweepJobId(j.id);
+      setSweepProgress({
+        done: j.done || 0,
+        total: j.total || 0,
+        success: j.ok_count || 0,
+        failed: j.failed_count || 0,
+      });
+      if (j.status === "running") {
+        setSweeping(true);
+      } else {
+        setSweeping(false);
+        setSweepSummary({
+          total: j.total || 0,
+          success: j.ok_count || 0,
+          failed: j.failed_count || 0,
+          total_swept_celo: j.total_swept_celo || "0",
+        });
+      }
+    };
+
+    fetchActive();
+    const iv = setInterval(fetchActive, 3000);
+    return () => { cancelled = true; clearInterval(iv); };
+  }, [user]);
+
   const runSweep = async () => {
     const keys = sweepKeys
       .split(/[\s,;\n]+/)
@@ -279,68 +322,56 @@ export default function Farmer() {
       toast({ title: "Invalid receiver address", variant: "destructive" });
       return;
     }
-    if (!confirm(`Sweep CELO from ${keys.length} wallet${keys.length === 1 ? "" : "s"} to ${receiver.slice(0, 10)}…?`)) return;
+    if (!confirm(`Sweep CELO from ${keys.length} wallet${keys.length === 1 ? "" : "s"} to ${receiver.slice(0, 10)}…?\n\nThis runs on our servers — you can close the browser.`)) return;
 
     setSweeping(true);
-    setSweepResults([]);
+    setSweepResults(null);
     setSweepSummary(null);
     setSweepProgress({ done: 0, total: keys.length, success: 0, failed: 0 });
-
-    const CHUNK = 50;
-    const allResults: SweepResult[] = [];
-    let success = 0;
-    let failed = 0;
-    let totalSweptStr = "0";
-    let totalSweptNum = 0;
 
     try {
       const { data: sess } = await supabase.auth.getSession();
       const token = sess.session?.access_token;
-
-      for (let i = 0; i < keys.length; i += CHUNK) {
-        const slice = keys.slice(i, i + CHUNK);
-        const res = await fetch(`${SUPABASE_URL}/functions/v1/celo-sweep`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-            apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string,
-          },
-          body: JSON.stringify({ keys: slice, receiver: receiver.trim() }),
-        });
-        const json = await res.json();
-        if (!res.ok || !json?.ok) {
-          toast({ title: "Sweep chunk failed", description: json?.error || `HTTP ${res.status}`, variant: "destructive" });
-          // Mark this chunk as failed and continue
-          for (const k of slice) {
-            allResults.push({ wallet: "unknown", ok: false, error: json?.error || `HTTP ${res.status}` } as SweepResult);
-            failed++;
-          }
-        } else {
-          const part: SweepResult[] = json.results || [];
-          allResults.push(...part);
-          success += json.success || 0;
-          failed += json.failed || 0;
-          totalSweptNum += Number(json.total_swept_celo || 0);
-        }
-        setSweepResults([...allResults]);
-        setSweepProgress({ done: allResults.length, total: keys.length, success, failed });
-      }
-
-      totalSweptStr = totalSweptNum.toString();
-      setSweepSummary({
-        total: keys.length,
-        success,
-        failed,
-        total_swept_celo: totalSweptStr,
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/celo-sweep-submit`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+          apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string,
+        },
+        body: JSON.stringify({ keys, receiver: receiver.trim() }),
       });
+      const json = await res.json();
+      if (!res.ok || !json?.ok) {
+        toast({ title: "Submit failed", description: json?.error || `HTTP ${res.status}`, variant: "destructive" });
+        setSweeping(false);
+        return;
+      }
+      setActiveSweepJobId(json.job_id);
       setSweepKeys("");
-      toast({ title: `Swept ${success}/${keys.length} wallets`, description: `${totalSweptNum.toFixed(4)} CELO sent` });
+      toast({
+        title: `Sweep started on server`,
+        description: `${json.total} wallets queued. Safe to close the browser.`,
+      });
     } catch (e: any) {
       toast({ title: "Network error", description: e?.message || String(e), variant: "destructive" });
-    } finally {
       setSweeping(false);
     }
+  };
+
+  const stopSweep = async () => {
+    if (!activeSweepJobId) return;
+    if (!confirm("Stop the running sweep job? Pending wallets will not be swept.")) return;
+    const { error } = await supabase
+      .from("celo_sweep_jobs")
+      .update({ status: "stopped", finished_at: new Date().toISOString() })
+      .eq("id", activeSweepJobId);
+    if (error) {
+      toast({ title: "Stop failed", description: error.message, variant: "destructive" });
+      return;
+    }
+    setSweeping(false);
+    toast({ title: "Sweep stopped" });
   };
 
   if (authLoading) {
@@ -552,10 +583,20 @@ export default function Farmer() {
                     Keys are not saved. Each wallet's CELO balance (minus gas) will be sent to the receiver.
                   </p>
                 </div>
-                <Button onClick={runSweep} disabled={sweeping} className="w-full">
-                  {sweeping ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
-                  {sweeping ? "Sweeping…" : "Run sweep"}
-                </Button>
+                <div className="flex gap-2">
+                  <Button onClick={runSweep} disabled={sweeping} className="flex-1">
+                    {sweeping ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
+                    {sweeping ? "Sweeping on server…" : "Run sweep"}
+                  </Button>
+                  {sweeping && activeSweepJobId && (
+                    <Button onClick={stopSweep} variant="destructive">
+                      <Square className="size-4" /> Stop
+                    </Button>
+                  )}
+                </div>
+                <p className="text-[11px] text-muted-foreground -mt-1">
+                  Runs in the background on our servers — safe to close the browser.
+                </p>
 
                 {sweepProgress && sweeping && (
                   <div className="mt-2 p-3 rounded bg-muted/40 border border-border">
