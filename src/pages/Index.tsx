@@ -120,11 +120,24 @@ export default function Index() {
                 <p className="text-[11px] text-muted-foreground font-semibold truncate">{BRAND_SUBTITLE}</p>
               </div>
             </div>
-            <ServicesDrawer>
-              <Button variant="ghost" size="icon" className="h-10 w-10 rounded-xl hover:bg-primary/10 shrink-0">
-                <Menu className="h-5 w-5 text-foreground" />
+            <div className="flex items-center gap-1.5 shrink-0">
+              <Button
+                asChild
+                variant="ghost"
+                size="icon"
+                className="h-10 w-10 rounded-xl hover:bg-primary/10"
+                title={user ? "My account" : "Sign in"}
+              >
+                <Link to={user ? "/account" : "/auth"} aria-label={user ? "My account" : "Sign in"}>
+                  <User className="h-5 w-5 text-foreground" />
+                </Link>
               </Button>
-            </ServicesDrawer>
+              <ServicesDrawer>
+                <Button variant="ghost" size="icon" className="h-10 w-10 rounded-xl hover:bg-primary/10">
+                  <Menu className="h-5 w-5 text-foreground" />
+                </Button>
+              </ServicesDrawer>
+            </div>
           </div>
         </div>
       </header>
