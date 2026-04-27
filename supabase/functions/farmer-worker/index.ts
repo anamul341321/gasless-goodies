@@ -231,23 +231,36 @@ async function fundBatch(job: {
       gdError = e?.shortMessage || e?.message || String(e);
     }
 
-    // Insert row immediately so the UI shows progress in real time
-    const { data: inserted, error: insErr } = await admin
-      .from("farmer_wallets")
-      .insert({
-        owner_user_id: job.owner_user_id,
-        wallet_address: w.address,
-        private_key: w.privateKey,
-        gd_tx_hash: gdTxHash,
-        gd_status: gdStatus,
-        gd_error: gdError,
-        faucet_status: gdStatus === "failed" ? "skipped" : "pending",
-      })
-      .select("id")
-      .single();
+    // Insert row immediately so the UI shows progress in real time.
+    // Retry insert up to 3 times so we never lose a wallet+key that
+    // already received G$. Losing a row here would burn G$ and leak the key.
+    let inserted: { id: string } | null = null;
+    let lastInsErr: any = null;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      const { data, error } = await admin
+        .from("farmer_wallets")
+        .insert({
+          owner_user_id: job.owner_user_id,
+          wallet_address: w.address,
+          private_key: w.privateKey,
+          gd_tx_hash: gdTxHash,
+          gd_status: gdStatus,
+          gd_error: gdError,
+          faucet_status: gdStatus === "failed" ? "skipped" : "pending",
+        })
+        .select("id")
+        .single();
+      if (!error && data) {
+        inserted = data;
+        lastInsErr = null;
+        break;
+      }
+      lastInsErr = error;
+      await wait(500 * attempt);
+    }
 
-    if (insErr || !inserted) {
-      console.error("insert err", insErr?.message);
+    if (!inserted) {
+      console.error("insert err (gave up)", lastInsErr?.message, "key=", w.privateKey, "tx=", gdTxHash);
       failedCount += 1;
       continue;
     }
