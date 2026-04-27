@@ -3,7 +3,7 @@
 // For each running job: generate 10 wallets -> send G$ to all -> wait 10s -> faucet one-by-one with 3s gaps.
 // Repeats until time budget exhausted, then re-triggers itself if more work remains.
 
-import { Wallet, JsonRpcProvider, Contract, NonceManager, parseUnits } from "npm:ethers@6.13.4";
+import { Wallet, JsonRpcProvider, Contract, parseUnits } from "npm:ethers@6.13.4";
 import { createClient } from "npm:@supabase/supabase-js@2.45.0";
 
 const corsHeaders = {
