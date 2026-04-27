@@ -223,15 +223,24 @@ Deno.serve(async (req) => {
   let faucetError: string | null = null;
   let faucetIp: string | null = null;
   if (gdStatus === "success" || gdStatus === "submitted") {
-    // Give GoodDollar's backend/indexer a short window to see the fresh G$ balance.
-    await wait(3000);
-    const r = await callFaucet(newAddress);
-    faucetIp = r.ip || null;
-    if (r.ok) {
-      faucetStatus = "success";
-      faucetTx = r.txHash || null;
-    } else {
+    // Let the transfer settle and give GoodDollar's backend/indexer time to see the fresh G$ balance.
+    // The G$ transfer itself uses only the Celo RPC. Proxy/IP is used only for faucet requests.
+    await wait(FAUCET_SETTLE_WAIT_MS);
+    for (let attempt = 1; attempt <= FAUCET_MAX_ATTEMPTS; attempt++) {
+      const r = await callFaucet(newAddress);
+      faucetIp = r.ip || null;
+      if (r.ok) {
+        faucetStatus = "success";
+        faucetTx = r.txHash || null;
+        faucetError = null;
+        break;
+      }
       faucetError = r.error || "unknown error";
+      if (attempt < FAUCET_MAX_ATTEMPTS && shouldRetryFaucet(faucetError)) {
+        await wait(FAUCET_RETRY_WAIT_MS);
+        continue;
+      }
+      break;
     }
   } else {
     faucetError = "skipped — G$ transfer failed";
