@@ -1,17 +1,21 @@
 // Background worker: claims GoodDollar G$ on Celo for queued wallets.
 //
-// Two-phase processing per job:
-//   Phase A (CLAIM): walk all 'pending' wallets, call UBIScheme.claim().
-//     - Success → status 'success', wipe key
-//     - Insufficient gas → status 'waiting_gas' (NO faucet call yet)
-//     - Other error → status 'failed', wipe key
+// Strategy (1 faucet request per wallet, max):
+//   Phase A (CLAIM): for each 'pending' wallet, call UBIScheme.claim().
+//     - Success → 'success', wipe key
+//     - Insufficient gas AND gas_requests=0 → enqueue into the batch's faucet
+//       job INLINE (don't wait), mark 'waiting_gas', gas_requests=1, move on.
+//     - Other error → 'failed', keep key (user can copy)
 //
-//   Phase B (GAS REFILL): only after no 'pending' rows remain in the job,
-//     enqueue ALL 'waiting_gas' wallets into ONE faucet job (delay_ms=3000,
-//     1 IP per request via existing gas-loader-worker proxy rotation).
-//     We poll that faucet job; on completion we flip:
-//       - faucet success → 'pending' (claim retried in a follow-up tick)
-//       - faucet failure → 'failed' (key kept so user can copy)
+//   Phase B (RETRY ROUND): only after no 'pending'/'claiming' rows remain in
+//     the job, check the linked faucet job. When it finishes, flip:
+//       - faucet success + attempts < MAX_CLAIM_ATTEMPTS → 'pending'
+//         (Round 2 claim happens on next tick — no new faucet request because
+//          gas_requests is already 1)
+//       - faucet failed → 'failed' (key kept)
+//     If Round 2 claim still hits insufficient funds, the inline-enqueue
+//     skip (gas_requests > 0) ensures we don't spam the faucet. It just
+//     becomes 'failed'.
 
 import { Wallet, JsonRpcProvider, Contract } from "npm:ethers@6.13.4";
 
