@@ -35,7 +35,7 @@ const GD_FAUCET_URL = "https://goodserver.gooddollar.org/verify/topWallet";
 
 const BATCH_SIZE = 15;                  // wallets per cycle (sequential G$ transfer)
 const GD_BATCH_SETTLE_MS = 15_000;      // strict 15s wait after all G$ submitted
-const FAUCET_GAP_MS = 2_000;            // gap between faucet calls
+const FAUCET_GAP_MS = 1_000;            // gap between faucet calls
 const FAUCET_RETRY_WAIT_MS = 3_000;     // wait before retry with new IP
 const FAUCET_MAX_ATTEMPTS = 2;          // 1 initial + 1 retry with fresh IP
 
