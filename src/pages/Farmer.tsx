@@ -538,7 +538,7 @@ export default function Farmer() {
                 </div>
                 <div>
                   <label className="text-xs font-medium text-muted-foreground mb-1 block">
-                    Private keys (one per line — max 1000)
+                    Private keys (one per line — unlimited, processed in parallel batches of 50)
                   </label>
                   <Textarea
                     value={sweepKeys}
@@ -556,6 +556,35 @@ export default function Farmer() {
                   {sweeping ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
                   {sweeping ? "Sweeping…" : "Run sweep"}
                 </Button>
+
+                {sweepProgress && sweeping && (
+                  <div className="mt-2 p-3 rounded bg-muted/40 border border-border">
+                    <div className="flex items-center justify-between text-xs mb-2">
+                      <span className="text-muted-foreground">Live progress</span>
+                      <span className="font-mono">{sweepProgress.done} / {sweepProgress.total}</span>
+                    </div>
+                    <div className="h-2 w-full bg-muted rounded overflow-hidden">
+                      <div
+                        className="h-full bg-primary transition-all"
+                        style={{ width: `${sweepProgress.total ? (sweepProgress.done / sweepProgress.total) * 100 : 0}%` }}
+                      />
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 mt-3 text-center">
+                      <div>
+                        <p className="text-sm font-bold text-success">{sweepProgress.success}</p>
+                        <p className="text-[10px] text-muted-foreground uppercase">done</p>
+                      </div>
+                      <div>
+                        <p className="text-sm font-bold text-destructive">{sweepProgress.failed}</p>
+                        <p className="text-[10px] text-muted-foreground uppercase">failed</p>
+                      </div>
+                      <div>
+                        <p className="text-sm font-bold">{sweepProgress.total - sweepProgress.done}</p>
+                        <p className="text-[10px] text-muted-foreground uppercase">left</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
 
