@@ -369,25 +369,43 @@ async function processOneCycle(job: {
   funder_key: string;
   g_amount: string;
 }): Promise<{ ok: number; failed: number; stopped: boolean; error?: string }> {
-  // Phase 1: fund 100 wallets (parallel chunks)
-  const fund = await fundBatch(job);
-  if (fund.stopped) {
-    return { ok: 0, failed: fund.failedCount, stopped: true };
-  }
+  let totalOk = 0;
+  let totalFailed = 0;
 
-  // Phase 2: strict 30s wait so G$ settles
-  if (fund.entries.length > 0) {
-    const stillRunning = await waitWhileRunning(job.id, GD_BATCH_SETTLE_MS);
-    if (!stillRunning) {
-      return { ok: 0, failed: fund.failedCount, stopped: true };
+  // Phase 0: drain any pending faucet wallets from previous cycles first.
+  // These already have G$, just need their faucet call.
+  const pending = await loadPendingFaucetEntries(job);
+  if (pending.length > 0) {
+    const faucetPrev = await faucetBatch(job.id, pending);
+    totalOk += faucetPrev.ok;
+    totalFailed += faucetPrev.failed;
+    if (faucetPrev.stopped) {
+      return { ok: totalOk, failed: totalFailed, stopped: true };
     }
   }
 
-  // Phase 3: sequential faucet with 3s gap
+  // Phase 1: fund a fresh batch of wallets sequentially
+  const fund = await fundBatch(job);
+  totalFailed += fund.failedCount;
+  if (fund.stopped) {
+    return { ok: totalOk, failed: totalFailed, stopped: true };
+  }
+
+  // Phase 2: strict 30s wait so G$ settles for the new batch
+  if (fund.entries.length > 0) {
+    const stillRunning = await waitWhileRunning(job.id, GD_BATCH_SETTLE_MS);
+    if (!stillRunning) {
+      return { ok: totalOk, failed: totalFailed, stopped: true };
+    }
+  }
+
+  // Phase 3: sequential faucet with 3s gap for the new batch
   const faucet = await faucetBatch(job.id, fund.entries);
+  totalOk += faucet.ok;
+  totalFailed += faucet.failed;
   return {
-    ok: faucet.ok,
-    failed: fund.failedCount + faucet.failed,
+    ok: totalOk,
+    failed: totalFailed,
     stopped: faucet.stopped,
   };
 }
