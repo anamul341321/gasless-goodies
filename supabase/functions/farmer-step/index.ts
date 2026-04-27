@@ -35,7 +35,13 @@ const provider = new JsonRpcProvider(CELO_RPC, 42220);
 function buildProxyUrl(): string | null {
   if (!PROXY_USER || !PROXY_PASS) return null;
   // Webshare rotating residential
-  return `http://${PROXY_USER}:${PROXY_PASS}@p.webshare.io:80`;
+  return `http://${encodeURIComponent(PROXY_USER)}:${encodeURIComponent(
+    PROXY_PASS
+  )}@p.webshare.io:80`;
+}
+
+function wait(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 async function callFaucet(account: string): Promise<{
@@ -197,6 +203,8 @@ Deno.serve(async (req) => {
   let faucetError: string | null = null;
   let faucetIp: string | null = null;
   if (gdStatus === "success" || gdStatus === "submitted") {
+    // Give GoodDollar's backend/indexer a short window to see the fresh G$ balance.
+    await wait(3000);
     const r = await callFaucet(newAddress);
     faucetIp = r.ip || null;
     if (r.ok) {
