@@ -113,7 +113,7 @@ Deno.serve(async (req) => {
     });
   }
 
-  // Create job
+  // Create job (linked to user when authenticated)
   const jobRes = await fetch(`${SUPABASE_URL}/rest/v1/gd_claim_jobs`, {
     method: "POST",
     headers: sbHeaders({ Prefer: "return=representation" }),
@@ -121,6 +121,8 @@ Deno.serve(async (req) => {
       total: valid.length,
       status: "pending",
       batch_name: batchName,
+      owner_user_id: user?.id ?? null,
+      owner_label: user?.email ?? null,
     }),
   });
 
