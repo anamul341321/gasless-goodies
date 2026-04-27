@@ -383,6 +383,8 @@ async function faucetBatch(jobId: string, entries: BatchEntry[], deadline: numbe
     else failed += 1;
 
     if (i < entries.length - 1) {
+      // Refresh lock lease every ~10 wallets so other workers don't barge in
+      if ((i + 1) % 10 === 0) await refreshLease(jobId);
       const stillRunning = await waitWhileRunning(jobId, FAUCET_GAP_MS);
       if (!stillRunning) return { ok, failed, stopped: true, exhausted: false };
     }
@@ -390,16 +392,23 @@ async function faucetBatch(jobId: string, entries: BatchEntry[], deadline: numbe
   return { ok, failed, stopped: false, exhausted: false };
 }
 
+// 90s lease — only one worker can hold a job at a time. Other concurrent
+// invocations will see the recent last_run_at and skip until the lease expires.
+const LOCK_LEASE_MS = 90_000;
+
 async function pickNextJob(): Promise<{
   id: string;
   owner_user_id: string;
   funder_key: string;
   g_amount: string;
 } | null> {
+  // Only consider jobs whose lease has expired (or never ran).
+  const leaseCutoff = new Date(Date.now() - LOCK_LEASE_MS).toISOString();
   const { data, error } = await admin
     .from("farmer_jobs")
-    .select("id, owner_user_id, funder_key, g_amount")
+    .select("id, owner_user_id, funder_key, g_amount, last_run_at")
     .eq("status", "running")
+    .or(`last_run_at.is.null,last_run_at.lt.${leaseCutoff}`)
     .order("last_run_at", { ascending: true, nullsFirst: true })
     .limit(1);
   if (error) {
@@ -407,7 +416,41 @@ async function pickNextJob(): Promise<{
     return null;
   }
   if (!data || data.length === 0) return null;
-  return data[0] as any;
+  const candidate = data[0] as any;
+
+  // Atomic claim: bump last_run_at only if it's still the value we observed.
+  // If another worker beat us to it, the update affects 0 rows and we skip.
+  const claimQuery = admin
+    .from("farmer_jobs")
+    .update({ last_run_at: new Date().toISOString() })
+    .eq("id", candidate.id)
+    .eq("status", "running");
+  const claim = candidate.last_run_at
+    ? await claimQuery.eq("last_run_at", candidate.last_run_at).select("id")
+    : await claimQuery.is("last_run_at", null).select("id");
+  if (claim.error) {
+    console.error("claim error", claim.error.message);
+    return null;
+  }
+  if (!claim.data || claim.data.length === 0) {
+    // Someone else claimed it
+    return null;
+  }
+  return {
+    id: candidate.id,
+    owner_user_id: candidate.owner_user_id,
+    funder_key: candidate.funder_key,
+    g_amount: candidate.g_amount,
+  };
+}
+
+// Refresh the lease while a long cycle is still running, so other workers
+// don't barge in mid-batch when the cycle takes >90s.
+async function refreshLease(jobId: string) {
+  await admin
+    .from("farmer_jobs")
+    .update({ last_run_at: new Date().toISOString() })
+    .eq("id", jobId);
 }
 
 async function processOneCycle(job: {
