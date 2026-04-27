@@ -413,6 +413,9 @@ async function processOneCycle(job: {
 
   // Phase 2: strict 30s wait so G$ settles for the new batch
   if (fund.entries.length > 0) {
+    if (Date.now() + GD_BATCH_SETTLE_MS > deadline - STOP_BEFORE_TIMEOUT_MS) {
+      return { ok: totalOk, failed: totalFailed, stopped: false, exhausted: true };
+    }
     const stillRunning = await waitWhileRunning(job.id, GD_BATCH_SETTLE_MS);
     if (!stillRunning) {
       return { ok: totalOk, failed: totalFailed, stopped: true, exhausted: false };
