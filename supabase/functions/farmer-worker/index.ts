@@ -45,6 +45,25 @@ function wait(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+async function isJobRunning(jobId: string): Promise<boolean> {
+  const { data } = await admin
+    .from("farmer_jobs")
+    .select("status")
+    .eq("id", jobId)
+    .single();
+  return data?.status === "running";
+}
+
+async function waitWhileRunning(jobId: string, ms: number): Promise<boolean> {
+  const step = 1_000;
+  const until = Date.now() + ms;
+  while (Date.now() < until) {
+    if (!(await isJobRunning(jobId))) return false;
+    await wait(Math.min(step, until - Date.now()));
+  }
+  return isJobRunning(jobId);
+}
+
 function buildProxyUrl(): string | null {
   if (!PROXY_USER || !PROXY_PASS) return null;
   return `http://${encodeURIComponent(PROXY_USER)}:${encodeURIComponent(
