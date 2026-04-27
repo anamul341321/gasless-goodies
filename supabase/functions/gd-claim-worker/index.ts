@@ -527,38 +527,49 @@ async function processClaimPhase(): Promise<number> {
 }
 
 async function processGasPhaseForJob(jobId: string) {
-  // If pending/claiming still exist, do not start gas phase yet.
+  // Wait until all pending/claiming wallets are processed.
   if (await jobHasPending(jobId)) return;
 
   const waiting = await getWaitingGasWallets(jobId);
   if (waiting.length === 0) return;
 
-  // Find or create the linked faucet job
-  let faucetJobId = await findActiveFaucetJob(jobId);
+  // Faucet job was created/appended inline during Phase A. Find it.
+  const faucetJobId = await findActiveFaucetJob(jobId);
 
   if (!faucetJobId) {
-    // Only enqueue wallets that have not yet had a gas attempt
-    const fresh = waiting.filter((w) => w.gas_requests === 0);
-    if (fresh.length === 0) {
-      // All waiting_gas already had their one shot but faucet job is gone →
-      // mark them failed (shouldn't normally happen).
-      for (const w of waiting) {
-        await fetch(`${SUPABASE_URL}/rest/v1/gd_claim_queue?id=eq.${w.id}`, {
-          method: "PATCH",
-          headers: sbHeaders({ Prefer: "return=minimal" }),
-          body: JSON.stringify({
-            status: "failed",
-            error_message: "faucet not delivered",
-            processed_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          }),
-        });
+    // No active faucet job and waiting_gas wallets exist → faucet job already
+    // completed (or never created). Try one last lookup including completed.
+    const tag = `gd-claim:${jobId}`;
+    const r = await fetch(
+      `${SUPABASE_URL}/rest/v1/gas_load_jobs?batch_name=eq.${encodeURIComponent(tag)}&select=id,status&order=created_at.desc&limit=1`,
+      { headers: sbHeaders() }
+    );
+    if (r.ok) {
+      const arr = await r.json();
+      if (Array.isArray(arr) && arr[0]) {
+        const fjid = arr[0].id as string;
+        const fst = arr[0].status as string;
+        if (fst === "completed" || fst === "failed") {
+          await applyFaucetResults(jobId, fjid);
+          return;
+        }
       }
-      await refreshJobAggregate(jobId);
-      return;
     }
-    faucetJobId = await createFaucetJob(jobId, fresh);
-    return; // wait for next tick to check faucet results
+    // No faucet job at all → mark them failed.
+    for (const w of waiting) {
+      await fetch(`${SUPABASE_URL}/rest/v1/gd_claim_queue?id=eq.${w.id}`, {
+        method: "PATCH",
+        headers: sbHeaders({ Prefer: "return=minimal" }),
+        body: JSON.stringify({
+          status: "failed",
+          error_message: "faucet not delivered",
+          processed_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }),
+      });
+    }
+    await refreshJobAggregate(jobId);
+    return;
   }
 
   // Faucet job exists — check status
@@ -573,7 +584,7 @@ async function processGasPhaseForJob(jobId: string) {
     return;
   }
 
-  // Faucet finished — apply results
+  // Faucet finished — apply results (waiting_gas → pending or failed)
   await applyFaucetResults(jobId, faucetJobId);
 }
 
