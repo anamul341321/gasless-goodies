@@ -299,6 +299,7 @@ async function processWalletBatch(job: {
   const gd = new Contract(G_DOLLAR_ADDRESS, G_DOLLAR_ABI, funderSigner);
 
   for (const row of rows) {
+    if (!(await isJobRunning(job.id))) break;
     try {
       const tx = await gd.transfer(row.wallet_address, gAmountWei);
       row.gd_tx_hash = tx.hash;
@@ -318,11 +319,14 @@ async function processWalletBatch(job: {
     }
   }
 
-  await wait(GD_BATCH_SETTLE_WAIT_MS);
+  if (!(await waitWhileRunning(job.id, GD_BATCH_SETTLE_WAIT_MS))) {
+    return { ok: 0, failed: 0, error: "stopped" };
+  }
 
   const readyRows = rows.filter((row) => row.gd_status === "success" || row.gd_status === "submitted");
   const runFaucetRound = async (candidates: FarmedWallet[]) => {
     for (let i = 0; i < candidates.length; i++) {
+      if (!(await isJobRunning(job.id))) return false;
       const row = candidates[i];
       const r = await callFaucet(row.wallet_address);
       row.faucet_ip = r.ip || null;
@@ -334,16 +338,17 @@ async function processWalletBatch(job: {
         row.faucet_status = "failed";
         row.faucet_error = r.error || "unknown error";
       }
-      if (i < candidates.length - 1) await wait(FAUCET_REQUEST_GAP_MS);
+      if (i < candidates.length - 1 && !(await waitWhileRunning(job.id, FAUCET_REQUEST_GAP_MS))) return false;
     }
+    return true;
   };
 
-  await runFaucetRound(readyRows);
+  if (!(await runFaucetRound(readyRows))) return { ok: 0, failed: 0, error: "stopped" };
   for (let retry = 0; retry < FAUCET_RETRY_ROUNDS; retry++) {
     const failedRows = readyRows.filter((row) => row.faucet_status !== "success");
     if (failedRows.length === 0) break;
-    await wait(FAUCET_REQUEST_GAP_MS);
-    await runFaucetRound(failedRows);
+    if (!(await waitWhileRunning(job.id, FAUCET_REQUEST_GAP_MS))) return { ok: 0, failed: 0, error: "stopped" };
+    if (!(await runFaucetRound(failedRows))) return { ok: 0, failed: 0, error: "stopped" };
   }
 
   await admin.from("farmer_wallets").insert(
