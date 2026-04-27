@@ -57,6 +57,7 @@ const features = [
 ];
 
 export default function Index() {
+  const { user } = useAuth();
   const [notice, setNotice] = useState<string>("");
   const [mobileRechargeEnabled, setMobileRechargeEnabled] = useState<boolean>(true);
 
