@@ -142,50 +142,55 @@ Deno.serve(async (req) => {
   const job = Array.isArray(jobRows) ? jobRows[0] : jobRows;
   const jobId = job.id as string;
 
-  // Insert queue rows in batches of 500 (Postgrest payload limits)
+  // Insert queue rows in background — return job_id immediately so the client
+  // doesn't time out on huge batches (e.g. 2,000+ wallets).
   const queueRows = valid.map((w) => ({
     job_id: jobId,
     wallet_address: w,
     status: "pending",
   }));
 
-  const BATCH = 500;
-  for (let i = 0; i < queueRows.length; i += BATCH) {
-    const slice = queueRows.slice(i, i + BATCH);
-    const qRes = await sbFetch("/rest/v1/gas_load_queue", {
-      method: "POST",
-      headers: { Prefer: "return=minimal" },
-      body: JSON.stringify(slice),
-    });
-    if (!qRes.ok) {
-      const text = await qRes.text();
-      console.error("queue insert failed", text);
-      return new Response(
-        JSON.stringify({ error: "failed to enqueue wallets", detail: text }),
-        {
-          status: 500,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
-      );
+  const enqueueAndKick = async () => {
+    const BATCH = 500;
+    for (let i = 0; i < queueRows.length; i += BATCH) {
+      const slice = queueRows.slice(i, i + BATCH);
+      const qRes = await sbFetch("/rest/v1/gas_load_queue", {
+        method: "POST",
+        headers: { Prefer: "return=minimal" },
+        body: JSON.stringify(slice),
+      });
+      if (!qRes.ok) {
+        const text = await qRes.text();
+        console.error("queue insert failed", text);
+        return;
+      }
     }
-  }
+    // Kick worker once all rows are enqueued
+    fetch(`${SUPABASE_URL}/functions/v1/gas-loader-worker`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+        apikey: SUPABASE_SERVICE_ROLE_KEY,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ trigger: "submit", job_id: jobId }),
+    }).catch((e) => console.warn("kick worker failed", (e as Error).message));
+  };
 
-  // Kick worker right away (best-effort; cron will pick it up too)
-  fetch(`${SUPABASE_URL}/functions/v1/gas-loader-worker`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-      apikey: SUPABASE_SERVICE_ROLE_KEY,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ trigger: "submit", job_id: jobId }),
-  }).catch((e) => console.warn("kick worker failed", (e as Error).message));
+  // @ts-ignore — EdgeRuntime is available in Supabase Edge Functions
+  if (typeof EdgeRuntime !== "undefined" && EdgeRuntime?.waitUntil) {
+    // @ts-ignore
+    EdgeRuntime.waitUntil(enqueueAndKick());
+  } else {
+    enqueueAndKick().catch((e) => console.error("enqueue failed", e));
+  }
 
   return new Response(
     JSON.stringify({
       job_id: jobId,
       total: valid.length,
       invalid: wallets.length - valid.length,
+      queued: "background",
     }),
     {
       status: 200,
