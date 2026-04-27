@@ -321,7 +321,7 @@ async function processWalletBatch(job: {
 
   await runFaucetRound(readyRows);
   for (let retry = 0; retry < FAUCET_RETRY_ROUNDS; retry++) {
-    const failedRows = readyRows.filter((row) => row.faucet_status !== "success" && shouldRetryFaucet(row.faucet_error || undefined));
+    const failedRows = readyRows.filter((row) => row.faucet_status !== "success");
     if (failedRows.length === 0) break;
     await wait(FAUCET_REQUEST_GAP_MS);
     await runFaucetRound(failedRows);
