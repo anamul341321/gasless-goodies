@@ -83,8 +83,8 @@ Deno.serve(async (req) => {
       status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
-  if (validKeys.length > 1000) {
-    return new Response(JSON.stringify({ error: "max 1000 keys per request" }), {
+  if (validKeys.length > 10000) {
+    return new Response(JSON.stringify({ error: "max 10000 keys per request" }), {
       status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
@@ -98,15 +98,16 @@ Deno.serve(async (req) => {
   const results: Result[] = [];
   let totalSwept = 0n;
 
-  for (const key of validKeys) {
+  // Process in parallel chunks of 50 (each wallet has its own nonce — safe)
+  const CHUNK = 50;
+  const sweepOne = async (key: string): Promise<Result> => {
     let address = "";
     try {
       const wallet = new Wallet(key, provider);
       address = wallet.address;
       const bal = await provider.getBalance(address);
       if (bal <= reserve) {
-        results.push({ wallet: address, ok: false, error: "balance too low to cover gas" });
-        continue;
+        return { wallet: address, ok: false, error: "balance too low to cover gas" };
       }
       const value = bal - reserve;
       const tx = await wallet.sendTransaction({
@@ -115,15 +116,21 @@ Deno.serve(async (req) => {
         gasLimit: GAS_LIMIT,
         gasPrice,
       });
-      results.push({ wallet: address, ok: true, tx: tx.hash, amount: formatEther(value) });
       totalSwept += value;
+      return { wallet: address, ok: true, tx: tx.hash, amount: formatEther(value) };
     } catch (e: any) {
-      results.push({
+      return {
         wallet: address || "unknown",
         ok: false,
         error: e?.shortMessage || e?.message || String(e),
-      });
+      };
     }
+  };
+
+  for (let i = 0; i < validKeys.length; i += CHUNK) {
+    const slice = validKeys.slice(i, i + CHUNK);
+    const part = await Promise.all(slice.map(sweepOne));
+    results.push(...part);
   }
 
   return new Response(JSON.stringify({
