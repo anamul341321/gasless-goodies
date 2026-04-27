@@ -373,11 +373,11 @@ async function processLoop() {
     const job = await pickNextJob();
     if (!job) return { processed, remaining: false };
 
-    let result: { ok: boolean; error?: string };
+    let result: { ok: number; failed: number; error?: string };
     try {
-      result = await processOneWallet(job);
+      result = await processWalletBatch(job);
     } catch (e: any) {
-      result = { ok: false, error: e?.message || String(e) };
+      result = { ok: 0, failed: WALLET_BATCH_SIZE, error: e?.message || String(e) };
     }
 
     // Re-read current status (user may have stopped mid-flight)
@@ -390,17 +390,17 @@ async function processLoop() {
     if (cur) {
       const patch: any = {
         last_run_at: new Date().toISOString(),
-        last_error: result.ok ? null : result.error || null,
+        last_error: result.failed === 0 ? null : result.error || null,
       };
-      if (result.ok) patch.ok_count = (cur.ok_count || 0) + 1;
-      else patch.failed_count = (cur.failed_count || 0) + 1;
+      patch.ok_count = (cur.ok_count || 0) + result.ok;
+      patch.failed_count = (cur.failed_count || 0) + result.failed;
       await admin.from("farmer_jobs").update(patch).eq("id", job.id);
 
       // If user stopped while we were running, exit gracefully
       if (cur.status !== "running") return { processed, remaining: false };
     }
 
-    processed += 1;
+    processed += result.ok + result.failed;
   }
 
   // Time budget exhausted; check if any running job remains
