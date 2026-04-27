@@ -38,6 +38,48 @@ export type Database = {
         }
         Relationships: []
       }
+      farmer_jobs: {
+        Row: {
+          created_at: string
+          failed_count: number
+          funder_key: string
+          g_amount: string
+          id: string
+          last_error: string | null
+          last_run_at: string | null
+          ok_count: number
+          owner_user_id: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          failed_count?: number
+          funder_key: string
+          g_amount?: string
+          id?: string
+          last_error?: string | null
+          last_run_at?: string | null
+          ok_count?: number
+          owner_user_id: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          failed_count?: number
+          funder_key?: string
+          g_amount?: string
+          id?: string
+          last_error?: string | null
+          last_run_at?: string | null
+          ok_count?: number
+          owner_user_id?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       farmer_wallets: {
         Row: {
           created_at: string
