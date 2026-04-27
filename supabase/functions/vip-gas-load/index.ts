@@ -94,12 +94,7 @@ Deno.serve(async (req) => {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
-  if (wallets.length > 350) {
-    return new Response(JSON.stringify({ error: "max 350 wallets per submission" }), {
-      status: 400,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
-  }
+  // No per-submission cap; worker processes the queue in chunks via cron.
 
   // 1. Active membership check
   const nowIso = new Date().toISOString();
