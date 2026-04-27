@@ -94,7 +94,7 @@ type KycResult = {
 
 const Claim = () => {
   const { toast } = useToast();
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const [rawInput, setRawInput] = useState("");
   const [batchName, setBatchName] = useState("");
   const [submitting, setSubmitting] = useState(false);
