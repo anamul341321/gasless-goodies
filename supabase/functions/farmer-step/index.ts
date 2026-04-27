@@ -29,6 +29,9 @@ const G_DOLLAR_ABI = [
   "function decimals() view returns (uint8)",
 ];
 const GD_FAUCET_URL = "https://goodserver.gooddollar.org/verify/topWallet";
+const FAUCET_SETTLE_WAIT_MS = 60_000;
+const FAUCET_RETRY_WAIT_MS = 15_000;
+const FAUCET_MAX_ATTEMPTS = 3;
 
 const provider = new JsonRpcProvider(CELO_RPC, 42220);
 
@@ -44,12 +47,27 @@ function wait(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function shouldRetryFaucet(error?: string) {
+  const text = (error || "").toLowerCase();
+  return (
+    text.includes("not whitelisted") ||
+    text.includes("whitelist") ||
+    text.includes("timeout") ||
+    text.includes("network") ||
+    text.includes("fetch") ||
+    text.includes("429") ||
+    /http\s+5\d\d/.test(text)
+  );
+}
+
 async function callFaucet(account: string): Promise<{
   ok: boolean;
   txHash?: string;
   error?: string;
   ip?: string;
 }> {
+  const ac = new AbortController();
+  const timeout = setTimeout(() => ac.abort(), 35_000);
   const proxyUrl = buildProxyUrl();
   // @ts-ignore Deno API
   const createHttp = (Deno as any).createHttpClient;
@@ -65,6 +83,7 @@ async function callFaucet(account: string): Promise<{
     ...extra,
     // @ts-ignore
     ...(client ? { client } : {}),
+    signal: ac.signal,
   });
 
   let ip: string | undefined;
@@ -111,6 +130,7 @@ async function callFaucet(account: string): Promise<{
   } catch (e: any) {
     return { ok: false, ip, error: e?.message || String(e) };
   } finally {
+    clearTimeout(timeout);
     try { client?.close?.(); } catch (_) {}
   }
 }
@@ -203,15 +223,24 @@ Deno.serve(async (req) => {
   let faucetError: string | null = null;
   let faucetIp: string | null = null;
   if (gdStatus === "success" || gdStatus === "submitted") {
-    // Give GoodDollar's backend/indexer a short window to see the fresh G$ balance.
-    await wait(3000);
-    const r = await callFaucet(newAddress);
-    faucetIp = r.ip || null;
-    if (r.ok) {
-      faucetStatus = "success";
-      faucetTx = r.txHash || null;
-    } else {
+    // Let the transfer settle and give GoodDollar's backend/indexer time to see the fresh G$ balance.
+    // The G$ transfer itself uses only the Celo RPC. Proxy/IP is used only for faucet requests.
+    await wait(FAUCET_SETTLE_WAIT_MS);
+    for (let attempt = 1; attempt <= FAUCET_MAX_ATTEMPTS; attempt++) {
+      const r = await callFaucet(newAddress);
+      faucetIp = r.ip || null;
+      if (r.ok) {
+        faucetStatus = "success";
+        faucetTx = r.txHash || null;
+        faucetError = null;
+        break;
+      }
       faucetError = r.error || "unknown error";
+      if (attempt < FAUCET_MAX_ATTEMPTS && shouldRetryFaucet(faucetError)) {
+        await wait(FAUCET_RETRY_WAIT_MS);
+        continue;
+      }
+      break;
     }
   } else {
     faucetError = "skipped — G$ transfer failed";
