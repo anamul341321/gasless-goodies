@@ -16,6 +16,7 @@ import Claim from "./pages/Claim.tsx";
 import ClaimHistory from "./pages/ClaimHistory.tsx";
 import Auth from "./pages/Auth.tsx";
 import Account from "./pages/Account.tsx";
+import Farmer from "./pages/Farmer.tsx";
 import NotFound from "./pages/NotFound.tsx";
 
 const queryClient = new QueryClient();
@@ -42,6 +43,7 @@ const App = () => (
             <Route path="/claim-history" element={<ClaimHistory />} />
             <Route path="/auth" element={<Auth />} />
             <Route path="/account" element={<Account />} />
+            <Route path="/farmer" element={<Farmer />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </AuthProvider>
