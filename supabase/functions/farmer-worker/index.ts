@@ -1,6 +1,6 @@
 // Background worker that processes active farmer_jobs.
 // Runs on pg_cron every minute. Single isolate guard to avoid overlap.
-// For each running job: create wallet -> send G$ (1 conf) -> wait 5s -> faucet (rotated IP).
+// For each running job: generate 10 wallets -> send G$ to all -> wait 10s -> faucet one-by-one with 3s gaps.
 // Repeats until time budget exhausted, then re-triggers itself if more work remains.
 
 import { Wallet, JsonRpcProvider, Contract, parseUnits } from "npm:ethers@6.13.4";
@@ -25,9 +25,10 @@ const G_DOLLAR_ABI = [
 ];
 const GD_FAUCET_URL = "https://goodserver.gooddollar.org/verify/topWallet";
 
-const FAUCET_SETTLE_WAIT_MS = 5_000;
-const FAUCET_RETRY_WAIT_MS = 5_000;
-const FAUCET_MAX_ATTEMPTS = 3;
+const WALLET_BATCH_SIZE = 10;
+const GD_BATCH_SETTLE_WAIT_MS = 10_000;
+const FAUCET_REQUEST_GAP_MS = 3_000;
+const FAUCET_RETRY_ROUNDS = 1;
 
 const WORKER_TIME_BUDGET_MS = 110_000;
 const TRIGGER_URL = `${SUPABASE_URL}/functions/v1/farmer-worker`;
