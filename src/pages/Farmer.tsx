@@ -39,6 +39,16 @@ type SweepResult = {
 const FUNDER_KEY_STORAGE = "farmer_funder_key";
 const G_AMOUNT_STORAGE = "farmer_g_amount";
 
+type FarmerJob = {
+  id: string;
+  status: string;
+  ok_count: number;
+  failed_count: number;
+  last_error: string | null;
+  last_run_at: string | null;
+  created_at: string;
+};
+
 export default function Farmer() {
   const { user, loading: authLoading } = useAuth();
   const { toast } = useToast();
@@ -46,13 +56,9 @@ export default function Farmer() {
   // ----- Faucet Farmer state -----
   const [funderKey, setFunderKey] = useState("");
   const [gAmount, setGAmount] = useState("0.5");
-  const [intervalSec, setIntervalSec] = useState("3");
-  const [running, setRunning] = useState(false);
+  const [job, setJob] = useState<FarmerJob | null>(null);
   const [busy, setBusy] = useState(false);
   const [rows, setRows] = useState<FarmerRow[]>([]);
-  const [stats, setStats] = useState({ ok: 0, failed: 0 });
-  const runningRef = useRef(false);
-  const timerRef = useRef<number | null>(null);
 
   // ----- Sweeper state -----
   const [sweepKeys, setSweepKeys] = useState("");
@@ -60,6 +66,8 @@ export default function Farmer() {
   const [sweeping, setSweeping] = useState(false);
   const [sweepResults, setSweepResults] = useState<SweepResult[] | null>(null);
   const [sweepSummary, setSweepSummary] = useState<{ total: number; success: number; failed: number; total_swept_celo: string } | null>(null);
+
+  const running = job?.status === "running";
 
   // Restore from localStorage
   useEffect(() => {
@@ -69,7 +77,6 @@ export default function Farmer() {
     if (a) setGAmount(a);
   }, []);
 
-  // Persist funder key & amount locally
   useEffect(() => {
     if (funderKey) localStorage.setItem(FUNDER_KEY_STORAGE, funderKey);
   }, [funderKey]);
@@ -91,55 +98,33 @@ export default function Farmer() {
     setRows((data as FarmerRow[]) || []);
   };
 
-  useEffect(() => { if (user) loadRows(); }, [user]);
-
-  const callStep = async (): Promise<boolean> => {
-    const { data: sess } = await supabase.auth.getSession();
-    const token = sess.session?.access_token;
-    if (!token) {
-      toast({ title: "Session expired", variant: "destructive" });
-      return false;
-    }
-    try {
-      const res = await fetch(`${SUPABASE_URL}/functions/v1/farmer-step`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-          apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string,
-        },
-        body: JSON.stringify({ funder_key: funderKey.trim(), g_amount: gAmount.trim() }),
-      });
-      const json = await res.json();
-      if (!res.ok || !json?.ok) {
-        setStats(s => ({ ...s, failed: s.failed + 1 }));
-        toast({
-          title: "Step failed",
-          description: json?.error || `HTTP ${res.status}`,
-          variant: "destructive",
-        });
-        return false;
-      }
-      setStats(s => ({ ...s, ok: s.ok + 1 }));
-      // Optimistic prepend
-      setRows(prev => [{
-        id: crypto.randomUUID(),
-        wallet_address: json.wallet_address,
-        private_key: json.private_key,
-        gd_status: json.gd?.status || "unknown",
-        gd_tx_hash: json.gd?.tx || null,
-        faucet_status: json.faucet?.status || "unknown",
-        faucet_tx_hash: json.faucet?.tx || null,
-        faucet_error: json.faucet?.error || null,
-        created_at: new Date().toISOString(),
-      }, ...prev].slice(0, 500));
-      return true;
-    } catch (e: any) {
-      setStats(s => ({ ...s, failed: s.failed + 1 }));
-      toast({ title: "Network error", description: e?.message || String(e), variant: "destructive" });
-      return false;
-    }
+  const loadJob = async () => {
+    if (!user) return;
+    const { data } = await supabase
+      .from("farmer_jobs")
+      .select("id, status, ok_count, failed_count, last_error, last_run_at, created_at")
+      .eq("owner_user_id", user.id)
+      .order("created_at", { ascending: false })
+      .limit(1);
+    setJob((data && data[0]) ? (data[0] as FarmerJob) : null);
   };
+
+  useEffect(() => {
+    if (user) {
+      loadRows();
+      loadJob();
+    }
+  }, [user]);
+
+  // Poll job + rows while running so user sees progress in real time
+  useEffect(() => {
+    if (!user || !running) return;
+    const t = window.setInterval(() => {
+      loadJob();
+      loadRows();
+    }, 5000);
+    return () => clearInterval(t);
+  }, [user, running]);
 
   const start = async () => {
     if (!/^0x[a-fA-F0-9]{64}$/.test(funderKey.trim())) {
@@ -151,32 +136,76 @@ export default function Farmer() {
       toast({ title: "Invalid G$ amount", variant: "destructive" });
       return;
     }
-    const sec = Math.max(1, Math.min(60, parseInt(intervalSec) || 3));
-    setIntervalSec(String(sec));
-    setRunning(true);
-    runningRef.current = true;
+    setBusy(true);
+    try {
+      // Upsert: if a previous job row exists for this user, update it; else insert.
+      let saved: FarmerJob | null = null;
+      if (job) {
+        const { data, error } = await supabase
+          .from("farmer_jobs")
+          .update({
+            funder_key: funderKey.trim(),
+            g_amount: gAmount.trim(),
+            status: "running",
+            last_error: null,
+          })
+          .eq("id", job.id)
+          .select("id, status, ok_count, failed_count, last_error, last_run_at, created_at")
+          .single();
+        if (error) throw error;
+        saved = data as FarmerJob;
+      } else {
+        const { data, error } = await supabase
+          .from("farmer_jobs")
+          .insert({
+            owner_user_id: user!.id,
+            funder_key: funderKey.trim(),
+            g_amount: gAmount.trim(),
+            status: "running",
+          })
+          .select("id, status, ok_count, failed_count, last_error, last_run_at, created_at")
+          .single();
+        if (error) throw error;
+        saved = data as FarmerJob;
+      }
+      setJob(saved);
 
-    const loop = async () => {
-      if (!runningRef.current) return;
-      setBusy(true);
-      await callStep();
+      // Kick the worker immediately so user doesn't wait for the next cron tick
+      const { data: sess } = await supabase.auth.getSession();
+      const token = sess.session?.access_token;
+      fetch(`${SUPABASE_URL}/functions/v1/farmer-worker`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+          apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string,
+        },
+        body: JSON.stringify({ trigger: "manual" }),
+      }).catch(() => {});
+
+      toast({ title: "Farming started", description: "Runs in background — you can close the app." });
+    } catch (e: any) {
+      toast({ title: "Could not start", description: e?.message || String(e), variant: "destructive" });
+    } finally {
       setBusy(false);
-      if (!runningRef.current) return;
-      timerRef.current = window.setTimeout(loop, sec * 1000);
-    };
-    loop();
-  };
-
-  const stop = () => {
-    runningRef.current = false;
-    setRunning(false);
-    if (timerRef.current) {
-      clearTimeout(timerRef.current);
-      timerRef.current = null;
     }
   };
 
-  useEffect(() => () => { runningRef.current = false; if (timerRef.current) clearTimeout(timerRef.current); }, []);
+  const stop = async () => {
+    if (!job) return;
+    setBusy(true);
+    const { error } = await supabase
+      .from("farmer_jobs")
+      .update({ status: "stopped" })
+      .eq("id", job.id);
+    setBusy(false);
+    if (error) {
+      toast({ title: "Could not stop", description: error.message, variant: "destructive" });
+      return;
+    }
+    setJob(j => j ? { ...j, status: "stopped" } : j);
+    toast({ title: "Farming stopped" });
+  };
 
   const copyAllKeys = () => {
     if (rows.length === 0) {
@@ -212,7 +241,6 @@ export default function Farmer() {
       return;
     }
     setRows([]);
-    setStats({ ok: 0, failed: 0 });
     toast({ title: "All wallets deleted" });
   };
 
@@ -329,55 +357,55 @@ export default function Farmer() {
                     Stored only in your browser. Used to send G$ to each newly created wallet.
                   </p>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-xs font-medium text-muted-foreground mb-1 block">G$ per wallet</label>
-                    <Input
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      value={gAmount}
-                      onChange={e => setGAmount(e.target.value)}
-                      disabled={running}
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs font-medium text-muted-foreground mb-1 block">Interval (seconds)</label>
-                    <Input
-                      type="number"
-                      min="1"
-                      max="60"
-                      value={intervalSec}
-                      onChange={e => setIntervalSec(e.target.value)}
-                      disabled={running}
-                    />
-                  </div>
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground mb-1 block">G$ per wallet</label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={gAmount}
+                    onChange={e => setGAmount(e.target.value)}
+                    disabled={running}
+                  />
+                </div>
+
+                <div className="rounded-md bg-primary/5 border border-primary/20 p-2.5 text-[11px] text-muted-foreground">
+                  Runs in the background on our servers. You can close the app or
+                  switch off your phone — farming continues until you press Stop.
                 </div>
 
                 <div className="flex items-center gap-2">
                   {!running ? (
-                    <Button onClick={start} className="flex-1">
-                      <Play className="size-4" /> Start farming
+                    <Button onClick={start} disabled={busy} className="flex-1">
+                      {busy ? <Loader2 className="size-4 animate-spin" /> : <Play className="size-4" />}
+                      Start farming
                     </Button>
                   ) : (
-                    <Button onClick={stop} variant="destructive" className="flex-1">
-                      <Square className="size-4" /> Stop
+                    <Button onClick={stop} disabled={busy} variant="destructive" className="flex-1">
+                      {busy ? <Loader2 className="size-4 animate-spin" /> : <Square className="size-4" />}
+                      Stop
                     </Button>
                   )}
-                  <Button variant="outline" onClick={loadRows} disabled={running}>
+                  <Button variant="outline" onClick={() => { loadJob(); loadRows(); }}>
                     <RefreshCw className="size-4" />
                   </Button>
                 </div>
 
-                {(running || stats.ok > 0 || stats.failed > 0) && (
-                  <div className="flex items-center gap-3 text-sm pt-2 border-t border-border">
+                {(job || rows.length > 0) && (
+                  <div className="flex items-center gap-3 text-sm pt-2 border-t border-border flex-wrap">
                     {running && <span className="inline-flex items-center gap-1 text-primary">
-                      <Loader2 className={`size-3 ${busy ? "animate-spin" : ""}`} /> {busy ? "Working…" : "Idle (next tick)"}
+                      <Loader2 className="size-3 animate-spin" /> Running…
                     </span>}
-                    <span className="text-success">✓ {stats.ok}</span>
-                    <span className="text-destructive">✗ {stats.failed}</span>
+                    {!running && job && <span className="text-muted-foreground">Stopped</span>}
+                    <span className="text-success">✓ {job?.ok_count ?? 0}</span>
+                    <span className="text-destructive">✗ {job?.failed_count ?? 0}</span>
                     <span className="ml-auto text-muted-foreground">{rows.length} stored</span>
                   </div>
+                )}
+                {job?.last_error && !running && (
+                  <p className="text-[11px] text-destructive/80 break-words">
+                    Last error: {job.last_error}
+                  </p>
                 )}
               </CardContent>
             </Card>
