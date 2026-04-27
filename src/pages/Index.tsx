@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import {
   ArrowRight, Coins, Fuel, Megaphone, Menu, Shield, Smartphone,
   Sparkles, Zap, CheckCircle2, Clock, Wallet, Lock, TrendingUp, User,
+  LogIn,
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import appLogo from "@/assets/logo.png";
@@ -123,13 +124,14 @@ export default function Index() {
             <div className="flex items-center gap-1.5 shrink-0">
               <Button
                 asChild
-                variant="ghost"
-                size="icon"
-                className="h-10 w-10 rounded-xl hover:bg-primary/10"
+                variant={user ? "default" : "outline"}
+                size="sm"
+                className="h-10 rounded-xl px-3 font-bold"
                 title={user ? "My account" : "Sign in"}
               >
                 <Link to={user ? "/account" : "/auth"} aria-label={user ? "My account" : "Sign in"}>
-                  <User className="h-5 w-5 text-foreground" />
+                  {user ? <User className="h-4 w-4" /> : <LogIn className="h-4 w-4" />}
+                  <span className="hidden min-[380px]:inline">{user ? "Account" : "Login"}</span>
                 </Link>
               </Button>
               <ServicesDrawer>
