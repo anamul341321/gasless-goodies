@@ -1,7 +1,7 @@
 // Public endpoint: accepts pasted private keys, derives addresses,
 // creates a gd_claim_jobs row + queue rows, kicks the worker.
 
-import { Wallet } from "https://esm.sh/ethers@6.13.4";
+import { Wallet } from "npm:ethers@6.13.4";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 
 const corsHeaders = {

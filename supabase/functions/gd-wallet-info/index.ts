@@ -12,7 +12,7 @@ import {
   Interface,
   formatUnits,
   getAddress,
-} from "https://esm.sh/ethers@6.13.4";
+} from "npm:ethers@6.13.4";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
