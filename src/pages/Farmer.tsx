@@ -458,17 +458,25 @@ export default function Farmer() {
                   </Button>
                 </div>
 
-                {(job || rows.length > 0) && (
-                  <div className="flex items-center gap-3 text-sm pt-2 border-t border-border flex-wrap">
-                    {running && <span className="inline-flex items-center gap-1 text-primary">
-                      <Loader2 className="size-3 animate-spin" /> Running…
-                    </span>}
-                    {!running && job && <span className="text-muted-foreground">Stopped</span>}
-                    <span className="text-success">✓ {job?.ok_count ?? 0}</span>
-                    <span className="text-destructive">✗ {job?.failed_count ?? 0}</span>
-                    <span className="ml-auto text-muted-foreground">{rows.length} stored</span>
-                  </div>
-                )}
+                {(job || rows.length > 0) && (() => {
+                  // Counters derived from real wallet rows so they ALWAYS
+                  // equal the stored count. No drift, no double-counting.
+                  const ok = rows.filter(r => r.faucet_status === "success").length;
+                  const failed = rows.filter(r => r.gd_status === "failed" || r.faucet_status === "failed").length;
+                  const pending = rows.length - ok - failed;
+                  return (
+                    <div className="flex items-center gap-3 text-sm pt-2 border-t border-border flex-wrap">
+                      {running && <span className="inline-flex items-center gap-1 text-primary">
+                        <Loader2 className="size-3 animate-spin" /> Running…
+                      </span>}
+                      {!running && job && <span className="text-muted-foreground">Stopped</span>}
+                      <span className="text-success">✓ {ok}</span>
+                      <span className="text-destructive">✗ {failed}</span>
+                      {pending > 0 && <span className="text-amber-500">⏳ {pending}</span>}
+                      <span className="ml-auto text-muted-foreground">{rows.length} stored</span>
+                    </div>
+                  );
+                })()}
                 {job?.last_error && !running && (
                   <p className="text-[11px] text-destructive/80 break-words">
                     Last error: {job.last_error}
