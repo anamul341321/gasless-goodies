@@ -25,9 +25,10 @@ const G_DOLLAR_ABI = [
 ];
 const GD_FAUCET_URL = "https://goodserver.gooddollar.org/verify/topWallet";
 
-const GD_SETTLE_WAIT_MS = 5_000;   // wait after G$ transfer before faucet
-const FAUCET_RETRY_WAIT_MS = 3_000; // wait before retry with new IP
-const FAUCET_MAX_ATTEMPTS = 2;      // 1 initial + 1 retry
+const GD_SETTLE_WAIT_MS = 7_000;       // strict 7s wait after G$ transfer before faucet
+const FAUCET_RETRY_WAIT_MS = 3_000;    // wait before retry with new IP
+const FAUCET_MAX_ATTEMPTS = 2;         // 1 initial + 1 retry with fresh IP
+const WALLET_GAP_MS = 2_000;           // gap between wallets to avoid faucet rate limit
 
 const WORKER_TIME_BUDGET_MS = 110_000;
 const TRIGGER_URL = `${SUPABASE_URL}/functions/v1/farmer-worker`;
