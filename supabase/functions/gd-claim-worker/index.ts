@@ -41,7 +41,7 @@ const WORKER_TRIGGER_URL = `${SUPABASE_URL}/functions/v1/gd-claim-worker`;
 const PER_WALLET_DELAY_MS = 30_000; // 30s between claim() calls (~2 per minute)
 const FAUCET_DELAY_MS = 10_000;      // 10s between gas refill calls (1 IP per req)
 const WORKER_TIME_BUDGET_MS = 110_000;
-const MAX_CLAIM_ATTEMPTS = 3;        // total claim() tries per wallet (incl. post-gas)
+const MAX_CLAIM_ATTEMPTS = 2;        // 1 initial + 1 retry after gas refill
 
 function sbHeaders(extra: Record<string, string> = {}) {
   return {
