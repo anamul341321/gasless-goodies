@@ -15,6 +15,12 @@ const WEBSHARE_HOST = "p.webshare.io";
 const WEBSHARE_PORT = "80";
 const BALANCE_VERIFY_ATTEMPTS = 4;
 const BALANCE_VERIFY_DELAY_MS = 3_000;
+// GoodDollar faucet only tops up wallets below this threshold.
+// If wallet already has >= this much CELO, faucet returns {ok:1} but does NOT
+// send a tx — that is expected behavior, not a failure. We treat it as success.
+// Threshold mirrors GoodDollar's server-side check (~0.001 CELO minimum top-up trigger;
+// we use 0.003 CELO as a safe ceiling — well above gas needed for a G$ claim tx).
+const FAUCET_SKIP_THRESHOLD_WEI = 3_000_000_000_000_000n; // 0.003 CELO
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -146,6 +152,14 @@ async function callFaucet(
     }
 
     const beforeBalance = await getCeloBalanceWei(account);
+
+    // Pre-check: if the wallet already has enough CELO for a G$ claim,
+    // skip calling the faucet entirely. GoodDollar returns {ok:1} but does
+    // not actually send anything, which previously looked like a failure.
+    if (beforeBalance !== null && beforeBalance >= FAUCET_SKIP_THRESHOLD_WEI) {
+      return { ok: true, ip, error: undefined };
+    }
+
     const res = await fetch(
       GD_FAUCET_URL,
       fetchOpts({
@@ -197,6 +211,21 @@ async function callFaucet(
           body?.error ||
           body?.message ||
           `faucet rejected: ${text.slice(0, 200)}`,
+      };
+    }
+
+    // If wallet already has enough CELO for a G$ claim, GoodDollar faucet
+    // returns {ok:1} without sending a tx. Treat that as success — the wallet
+    // can already pay gas, which is the whole point of the gas loader.
+    if (
+      beforeBalance !== null &&
+      beforeBalance >= FAUCET_SKIP_THRESHOLD_WEI
+    ) {
+      return {
+        ok: true,
+        ip,
+        txHash: txHash || undefined,
+        error: undefined,
       };
     }
 
