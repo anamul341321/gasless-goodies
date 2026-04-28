@@ -331,6 +331,20 @@ async function loadPendingFaucetEntries(job: {
   }));
 }
 
+async function hasAnyPendingFaucetEntries(ownerUserId: string): Promise<boolean> {
+  const { count, error } = await admin
+    .from("farmer_wallets")
+    .select("id", { count: "exact", head: true })
+    .eq("owner_user_id", ownerUserId)
+    .eq("faucet_status", "pending")
+    .in("gd_status", ["submitted", "success"]);
+  if (error) {
+    console.error("hasAnyPendingFaucetEntries err", error.message);
+    return true;
+  }
+  return (count || 0) > 0;
+}
+
 /**
  * Phase 3: sequentially call faucet for each entry with FAUCET_GAP_MS gap.
  */
@@ -475,6 +489,10 @@ async function processOneCycle(job: {
   }
 
   if (!hasTimeLeft(deadline)) {
+    return { ok: totalOk, failed: totalFailed, stopped: false, exhausted: true };
+  }
+
+  if (await hasAnyPendingFaucetEntries(job.owner_user_id)) {
     return { ok: totalOk, failed: totalFailed, stopped: false, exhausted: true };
   }
 
