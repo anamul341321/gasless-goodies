@@ -196,6 +196,62 @@ type BatchEntry = {
   gdStatus: string;
 };
 
+async function submitGdChunk(job: {
+  id: string;
+  funder_key: string;
+  g_amount: string;
+}, entries: BatchEntry[], deadline: number): Promise<{ ready: BatchEntry[]; failedCount: number; stopped: boolean; exhausted: boolean }> {
+  if (entries.length === 0) return { ready: [], failedCount: 0, stopped: false, exhausted: false };
+  let gAmountWei: bigint;
+  try {
+    gAmountWei = parseUnits(job.g_amount || "0.5", 18);
+    if (gAmountWei <= 0n) throw new Error("amount must be > 0");
+  } catch (_) {
+    return { ready: [], failedCount: 0, stopped: false, exhausted: false };
+  }
+  if (!/^0x[a-fA-F0-9]{64}$/.test(job.funder_key)) {
+    return { ready: [], failedCount: 0, stopped: false, exhausted: false };
+  }
+  if (!hasTimeLeft(deadline)) return { ready: [], failedCount: 0, stopped: false, exhausted: true };
+  if (!(await isJobRunning(job.id))) return { ready: [], failedCount: 0, stopped: true, exhausted: false };
+
+  const funderSigner = new Wallet(job.funder_key, provider);
+  const gd = new Contract(G_DOLLAR_ADDRESS, G_DOLLAR_ABI, funderSigner);
+  let nextNonce: number;
+  try {
+    nextNonce = await provider.getTransactionCount(funderSigner.address, "pending");
+  } catch (e: any) {
+    console.error("getTransactionCount failed", e?.message);
+    return { ready: [], failedCount: 0, stopped: false, exhausted: false };
+  }
+
+  const group = entries.slice(0, GD_PARALLEL);
+  const results = await Promise.all(group.map(async (entry, idx) => {
+    try {
+      const tx = await gd.transfer(entry.address, gAmountWei, { nonce: nextNonce + idx });
+      return { entry, gdTxHash: tx.hash as string, gdStatus: "submitted", gdError: null as string | null };
+    } catch (e: any) {
+      const msg = e?.shortMessage || e?.message || String(e);
+      return { entry, gdTxHash: null, gdStatus: "failed", gdError: msg };
+    }
+  }));
+
+  const ready: BatchEntry[] = [];
+  let failedCount = 0;
+  await Promise.all(results.map(async ({ entry, gdTxHash, gdStatus, gdError }) => {
+    await admin.from("farmer_wallets").update({
+      gd_tx_hash: gdTxHash,
+      gd_status: gdStatus,
+      gd_error: gdError,
+      faucet_status: gdStatus === "failed" ? "skipped" : "pending",
+    }).eq("id", entry.rowId);
+    if (gdStatus === "submitted") ready.push({ ...entry, gdStatus });
+    else failedCount += 1;
+  }));
+  await refreshLease(job.id);
+  return { ready, failedCount, stopped: false, exhausted: entries.length > GD_PARALLEL };
+}
+
 /**
  * Phase 1/2: create BATCH_SIZE wallets first, then submit G$ in parallel chunks.
  * Every tx receives a unique explicit nonce before Promise.all, so 50 requests can
