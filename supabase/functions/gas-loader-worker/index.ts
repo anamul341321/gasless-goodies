@@ -206,6 +206,21 @@ async function callFaucet(
       };
     }
 
+    // If wallet already has enough CELO for a G$ claim, GoodDollar faucet
+    // returns {ok:1} without sending a tx. Treat that as success — the wallet
+    // can already pay gas, which is the whole point of the gas loader.
+    if (
+      beforeBalance !== null &&
+      beforeBalance >= FAUCET_SKIP_THRESHOLD_WEI
+    ) {
+      return {
+        ok: true,
+        ip,
+        txHash: txHash || undefined,
+        error: undefined,
+      };
+    }
+
     const confirmation = await waitForBalanceIncrease(account, beforeBalance);
     if (!confirmation.increased) {
       return {
