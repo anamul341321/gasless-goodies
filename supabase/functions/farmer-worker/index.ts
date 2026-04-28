@@ -121,11 +121,9 @@ async function callFaucet(account: string): Promise<{
     signal: ac.signal,
   });
 
+  // Do not pre-fetch proxy IP here: if that diagnostic request hangs, it can
+  // consume the same timeout signal and abort the real faucet call.
   let ip: string | undefined;
-  try {
-    const ipRes = await fetch("https://api.ipify.org?format=json", opts());
-    if (ipRes.ok) ip = (await ipRes.json()).ip;
-  } catch (_) {}
 
   try {
     const res = await fetch(
