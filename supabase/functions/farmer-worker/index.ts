@@ -390,6 +390,30 @@ async function loadPendingFaucetEntries(job: {
   }));
 }
 
+async function loadPendingGdEntries(job: {
+  id: string;
+  owner_user_id: string;
+}): Promise<BatchEntry[]> {
+  const { data, error } = await admin
+    .from("farmer_wallets")
+    .select("id, wallet_address, private_key, gd_status")
+    .eq("owner_user_id", job.owner_user_id)
+    .eq("gd_status", "pending")
+    .eq("faucet_status", "pending")
+    .order("created_at", { ascending: true })
+    .limit(GD_PARALLEL);
+  if (error) {
+    console.error("loadPendingGdEntries err", error.message);
+    return [];
+  }
+  return (data || []).map((r: any) => ({
+    rowId: r.id,
+    address: r.wallet_address,
+    privKey: r.private_key,
+    gdStatus: r.gd_status,
+  }));
+}
+
 async function hasAnyPendingFaucetEntries(ownerUserId: string): Promise<boolean> {
   const { count, error } = await admin
     .from("farmer_wallets")
