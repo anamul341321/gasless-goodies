@@ -477,7 +477,9 @@ async function processOneCycle(job: {
     return { ok: totalOk, failed: totalFailed, stopped: false, exhausted: true };
   }
 
-  // Phase 1: fund a fresh batch of wallets sequentially
+  // Phase 1: fund a fresh batch, then exit. A later cron/self-trigger drains
+  // faucet after GD_BATCH_SETTLE_MS. This prevents mid-function shutdowns from
+  // freezing the UI with pending rows and a stale lease.
   const fund = await fundBatch(job, deadline);
   totalFailed += fund.failedCount;
   if (fund.stopped) {
@@ -486,28 +488,11 @@ async function processOneCycle(job: {
   if (fund.exhausted) {
     return { ok: totalOk, failed: totalFailed, stopped: false, exhausted: true };
   }
-
-  // Phase 2: strict 30s wait so G$ settles for the new batch
   if (fund.entries.length > 0) {
-    if (Date.now() + GD_BATCH_SETTLE_MS > deadline - STOP_BEFORE_TIMEOUT_MS) {
-      return { ok: totalOk, failed: totalFailed, stopped: false, exhausted: true };
-    }
-    const stillRunning = await waitWhileRunning(job.id, GD_BATCH_SETTLE_MS);
-    if (!stillRunning) {
-      return { ok: totalOk, failed: totalFailed, stopped: true, exhausted: false };
-    }
+    return { ok: totalOk, failed: totalFailed, stopped: false, exhausted: true };
   }
 
-  // Phase 3: sequential faucet with 3s gap for the new batch
-  const faucet = await faucetBatch(job.id, fund.entries, deadline);
-  totalOk += faucet.ok;
-  totalFailed += faucet.failed;
-  return {
-    ok: totalOk,
-    failed: totalFailed,
-    stopped: faucet.stopped,
-    exhausted: faucet.exhausted,
-  };
+  return { ok: totalOk, failed: totalFailed, stopped: false, exhausted: false };
 }
 
 async function processLoop() {
