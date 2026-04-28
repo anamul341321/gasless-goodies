@@ -6,9 +6,9 @@
 //                          in parallel using a managed nonce. Each wallet is
 //                          inserted into farmer_wallets immediately with
 //                          gd_status = success/submitted/failed and faucet_status = pending.
-//   Phase 2: strict 30s wait so the G$ indexer recognizes balances.
-//   Phase 3: sequential faucet calls for the same batch, 3s gap between wallets,
-//            1 retry with a fresh IP per wallet on retryable errors.
+//   Phase 2: return quickly and re-trigger after settle time so the platform
+//            never kills the function mid-batch.
+//   Phase 3: drain settled faucet wallets in short chunks, then re-trigger.
 // Stop checks happen between every step so the user can halt instantly.
 
 import { Wallet, JsonRpcProvider, Contract, parseUnits } from "npm:ethers@6.13.4";
@@ -33,15 +33,18 @@ const G_DOLLAR_ABI = [
 ];
 const GD_FAUCET_URL = "https://goodserver.gooddollar.org/verify/topWallet";
 
-const BATCH_SIZE = 15;                  // wallets per cycle (sequential G$ transfer)
+const BATCH_SIZE = 15;                  // wallets per cycle
 const GD_BATCH_SETTLE_MS = 15_000;      // strict 15s wait after all G$ submitted
 const FAUCET_GAP_MS = 250;              // gap between faucet calls
-const FAUCET_RETRY_WAIT_MS = 3_000;     // wait before retry with new IP
+const FAUCET_RETRY_WAIT_MS = 1_500;     // wait before retry with new IP
 const FAUCET_MAX_ATTEMPTS = 2;          // 1 initial + 1 retry with fresh IP
+const FAUCET_CALL_TIMEOUT_MS = 8_000;   // keep each request under worker budget
+const FAUCET_MAX_PER_CYCLE = 8;         // short drain chunk to avoid platform kill
 
-const WORKER_TIME_BUDGET_MS = 110_000;
-const STOP_BEFORE_TIMEOUT_MS = 15_000;
+const WORKER_TIME_BUDGET_MS = 18_000;
+const STOP_BEFORE_TIMEOUT_MS = 3_000;
 const TRIGGER_URL = `${SUPABASE_URL}/functions/v1/farmer-worker`;
+const CONTINUE_DELAY_MS = 16_000;
 
 const provider = new JsonRpcProvider(CELO_RPC, 42220);
 const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
@@ -99,7 +102,7 @@ async function callFaucet(account: string): Promise<{
   ip?: string;
 }> {
   const ac = new AbortController();
-  const timeout = setTimeout(() => ac.abort(), 35_000);
+  const timeout = setTimeout(() => ac.abort(), FAUCET_CALL_TIMEOUT_MS);
   const proxyUrl = buildProxyUrl();
   // @ts-ignore Deno API
   const createHttp = (Deno as any).createHttpClient;
@@ -118,11 +121,9 @@ async function callFaucet(account: string): Promise<{
     signal: ac.signal,
   });
 
+  // Do not pre-fetch proxy IP here: if that diagnostic request hangs, it can
+  // consume the same timeout signal and abort the real faucet call.
   let ip: string | undefined;
-  try {
-    const ipRes = await fetch("https://api.ipify.org?format=json", opts());
-    if (ipRes.ok) ip = (await ipRes.json()).ip;
-  } catch (_) {}
 
   try {
     const res = await fetch(
@@ -169,6 +170,26 @@ async function callFaucet(account: string): Promise<{
 
 function hasTimeLeft(deadline: number) {
   return Date.now() < deadline - STOP_BEFORE_TIMEOUT_MS;
+}
+
+function triggerContinueAfterDelay() {
+  const run = async () => {
+    await wait(CONTINUE_DELAY_MS);
+    await fetch(TRIGGER_URL, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+        apikey: SUPABASE_SERVICE_ROLE_KEY,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ trigger: "continue" }),
+    });
+  };
+  try {
+    (globalThis as any).EdgeRuntime?.waitUntil?.(run());
+  } catch (_) {
+    run().catch(() => {});
+  }
 }
 
 type BatchEntry = {
@@ -224,26 +245,25 @@ async function fundBatch(job: {
     return { entries: [], failedCount: 0, stopped: true, exhausted: false };
   }
 
-  // PARALLEL SUBMIT: pre-assign nonces to BATCH_SIZE wallets and fire all
-  // transfers concurrently. Same funder, sequential nonces — no race.
+  // Create all wallets together, but submit G$ txs one-by-one with explicit
+  // nonces. Fully parallel tx submission was faster, but RPC/mempool lag can
+  // reuse nonces and freeze a batch with replacement/nonce errors.
   const wallets = Array.from({ length: BATCH_SIZE }, () => Wallet.createRandom());
 
-  const submitResults = await Promise.all(
-    wallets.map(async (w, idx) => {
-      const nonce = nextNonce + idx;
-      try {
-        const tx = await gd.transfer(w.address, gAmountWei, { nonce });
-        return { w, gdTxHash: tx.hash as string, gdStatus: "submitted", gdError: null as string | null };
-      } catch (e: any) {
-        return {
-          w,
-          gdTxHash: null as string | null,
-          gdStatus: "failed",
-          gdError: e?.shortMessage || e?.message || String(e),
-        };
+  const submitResults: Array<{ w: Wallet; gdTxHash: string | null; gdStatus: string; gdError: string | null }> = [];
+  for (const w of wallets) {
+    if (!hasTimeLeft(deadline)) break;
+    try {
+      const tx = await gd.transfer(w.address, gAmountWei, { nonce: nextNonce++ });
+      submitResults.push({ w, gdTxHash: tx.hash as string, gdStatus: "submitted", gdError: null });
+    } catch (e: any) {
+      const msg = e?.shortMessage || e?.message || String(e);
+      if (msg.toLowerCase().includes("nonce") || msg.toLowerCase().includes("replacement")) {
+        try { nextNonce = await provider.getTransactionCount(funderSigner.address, "pending"); } catch (_) {}
       }
-    })
-  );
+      submitResults.push({ w, gdTxHash: null, gdStatus: "failed", gdError: msg });
+    }
+  }
 
   const ready: BatchEntry[] = [];
   let failedCount = 0;
@@ -316,7 +336,7 @@ async function loadPendingFaucetEntries(job: {
     .in("gd_status", ["submitted", "success"])
     .lte("created_at", settledBefore)
     .order("created_at", { ascending: true })
-    .limit(500);
+    .limit(FAUCET_MAX_PER_CYCLE);
   if (error) {
     console.error("loadPendingFaucetEntries err", error.message);
     return [];
@@ -327,6 +347,20 @@ async function loadPendingFaucetEntries(job: {
     privKey: r.private_key,
     gdStatus: r.gd_status,
   }));
+}
+
+async function hasAnyPendingFaucetEntries(ownerUserId: string): Promise<boolean> {
+  const { count, error } = await admin
+    .from("farmer_wallets")
+    .select("id", { count: "exact", head: true })
+    .eq("owner_user_id", ownerUserId)
+    .eq("faucet_status", "pending")
+    .in("gd_status", ["submitted", "success"]);
+  if (error) {
+    console.error("hasAnyPendingFaucetEntries err", error.message);
+    return true;
+  }
+  return (count || 0) > 0;
 }
 
 /**
@@ -386,9 +420,9 @@ async function faucetBatch(jobId: string, entries: BatchEntry[], deadline: numbe
   return { ok, failed, stopped: false, exhausted: false };
 }
 
-// 90s lease — only one worker can hold a job at a time. Other concurrent
-// invocations will see the recent last_run_at and skip until the lease expires.
-const LOCK_LEASE_MS = 90_000;
+// Short lease — each request is intentionally small, but G$ nonce submission
+// still needs enough room so another invocation does not claim the same funder.
+const LOCK_LEASE_MS = 45_000;
 
 async function pickNextJob(): Promise<{
   id: string;
@@ -469,13 +503,20 @@ async function processOneCycle(job: {
     if (faucetPrev.exhausted) {
       return { ok: totalOk, failed: totalFailed, stopped: false, exhausted: true };
     }
+    return { ok: totalOk, failed: totalFailed, stopped: false, exhausted: true };
   }
 
   if (!hasTimeLeft(deadline)) {
     return { ok: totalOk, failed: totalFailed, stopped: false, exhausted: true };
   }
 
-  // Phase 1: fund a fresh batch of wallets sequentially
+  if (await hasAnyPendingFaucetEntries(job.owner_user_id)) {
+    return { ok: totalOk, failed: totalFailed, stopped: false, exhausted: true };
+  }
+
+  // Phase 1: fund a fresh batch, then exit. A later cron/self-trigger drains
+  // faucet after GD_BATCH_SETTLE_MS. This prevents mid-function shutdowns from
+  // freezing the UI with pending rows and a stale lease.
   const fund = await fundBatch(job, deadline);
   totalFailed += fund.failedCount;
   if (fund.stopped) {
@@ -484,28 +525,11 @@ async function processOneCycle(job: {
   if (fund.exhausted) {
     return { ok: totalOk, failed: totalFailed, stopped: false, exhausted: true };
   }
-
-  // Phase 2: strict 30s wait so G$ settles for the new batch
   if (fund.entries.length > 0) {
-    if (Date.now() + GD_BATCH_SETTLE_MS > deadline - STOP_BEFORE_TIMEOUT_MS) {
-      return { ok: totalOk, failed: totalFailed, stopped: false, exhausted: true };
-    }
-    const stillRunning = await waitWhileRunning(job.id, GD_BATCH_SETTLE_MS);
-    if (!stillRunning) {
-      return { ok: totalOk, failed: totalFailed, stopped: true, exhausted: false };
-    }
+    return { ok: totalOk, failed: totalFailed, stopped: false, exhausted: true };
   }
 
-  // Phase 3: sequential faucet with 3s gap for the new batch
-  const faucet = await faucetBatch(job.id, fund.entries, deadline);
-  totalOk += faucet.ok;
-  totalFailed += faucet.failed;
-  return {
-    ok: totalOk,
-    failed: totalFailed,
-    stopped: faucet.stopped,
-    exhausted: faucet.exhausted,
-  };
+  return { ok: totalOk, failed: totalFailed, stopped: false, exhausted: false };
 }
 
 async function processLoop() {
@@ -588,15 +612,7 @@ Deno.serve(async (req) => {
     const result = await processLoop();
 
     if (result.remaining) {
-      fetch(TRIGGER_URL, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-          apikey: SUPABASE_SERVICE_ROLE_KEY,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ trigger: "continue" }),
-      }).catch(() => {});
+      triggerContinueAfterDelay();
     }
 
     return new Response(JSON.stringify({ ok: true, ...result }), {
