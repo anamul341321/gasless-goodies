@@ -351,6 +351,9 @@ async function fundBatch(job: {
     }));
 
     await refreshLease(job.id);
+    if (i + GD_PARALLEL < wallets.length) {
+      return { entries: ready, failedCount, stopped: false, exhausted: true };
+    }
   }
 
   return { entries: ready, failedCount, stopped: false, exhausted: false };
