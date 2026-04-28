@@ -134,6 +134,7 @@ async function callFaucet(
       // ignore
     }
 
+    const beforeBalance = await getCeloBalanceWei(account);
     const res = await fetch(
       GD_FAUCET_URL,
       fetchOpts({
@@ -185,6 +186,16 @@ async function callFaucet(
           body?.error ||
           body?.message ||
           `faucet rejected: ${text.slice(0, 200)}`,
+      };
+    }
+
+    const confirmation = await waitForBalanceIncrease(account, beforeBalance);
+    if (!confirmation.increased) {
+      return {
+        ok: false,
+        ip,
+        txHash: txHash || undefined,
+        error: `faucet returned success but CELO balance did not increase (before=${confirmation.before ?? "unknown"}, after=${confirmation.after ?? "unknown"})`,
       };
     }
 
