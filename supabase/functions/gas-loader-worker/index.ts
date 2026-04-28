@@ -111,7 +111,6 @@ async function logHistory(row: {
 function isTerminalFaucetError(error?: string | null): boolean {
   const msg = (error || "").toLowerCase();
   return (
-    msg.includes("balance did not increase") ||
     msg.includes("insufficient funds for gas") ||
     msg.includes("insufficient funds")
   );
@@ -368,9 +367,9 @@ async function finalizeWallet(
     }
     const allDone = pending === 0 && total > 0;
 
-    // Auto-retry only likely temporary failures. If the external faucet reports
-    // success but no CELO arrives, or its signer has no CELO, retrying only
-    // makes the UI sit on "running" for 1–2 minutes with the same result.
+    // Auto-retry likely temporary failures with a fresh proxy. The GoodDollar
+    // faucet can return success without sending CELO for a specific IP/session,
+    // so "balance did not increase" must retry instead of becoming final fail.
     if (allDone && failed > 0) {
       const terminalFailures = (all || []).filter(
         (r: any) => r.status === "failed" && isTerminalFaucetError(r.error_message)
