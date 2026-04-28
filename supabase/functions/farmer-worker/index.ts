@@ -420,9 +420,9 @@ async function faucetBatch(jobId: string, entries: BatchEntry[], deadline: numbe
   return { ok, failed, stopped: false, exhausted: false };
 }
 
-// Short lease — each request is intentionally small. Other concurrent
-// invocations will see the recent last_run_at and skip until the lease expires.
-const LOCK_LEASE_MS = 12_000;
+// Short lease — each request is intentionally small, but G$ nonce submission
+// still needs enough room so another invocation does not claim the same funder.
+const LOCK_LEASE_MS = 45_000;
 
 async function pickNextJob(): Promise<{
   id: string;
