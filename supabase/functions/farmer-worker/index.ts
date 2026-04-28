@@ -1,14 +1,10 @@
 // Background worker that processes active farmer_jobs.
 // Runs on pg_cron every minute. Single isolate guard to avoid overlap.
 //
-// New batch flow (per cycle):
-//   Phase 1 (fast, ~60s): generate BATCH_SIZE wallets and send G$ to all of them
-//                          in parallel using a managed nonce. Each wallet is
-//                          inserted into farmer_wallets immediately with
-//                          gd_status = success/submitted/failed and faucet_status = pending.
-//   Phase 2: return quickly and re-trigger after settle time so the platform
-//            never kills the function mid-batch.
-//   Phase 3: drain settled faucet wallets in short chunks, then re-trigger.
+// Batch flow:
+//   Phase 1: create 100 wallets immediately and store them with gd_status=pending.
+//   Phase 2: load G$ in chunks of 50 parallel transfers with explicit nonces.
+//   Phase 3: after settle time, drain faucet one-by-one in short chunks.
 // Stop checks happen between every step so the user can halt instantly.
 
 import { Wallet, JsonRpcProvider, Contract, parseUnits } from "npm:ethers@6.13.4";
@@ -33,7 +29,8 @@ const G_DOLLAR_ABI = [
 ];
 const GD_FAUCET_URL = "https://goodserver.gooddollar.org/verify/topWallet";
 
-const BATCH_SIZE = 15;                  // wallets per cycle
+const BATCH_SIZE = 100;                 // wallets created immediately per fresh batch
+const GD_PARALLEL = 50;                 // G$ transfers submitted together per chunk
 const GD_BATCH_SETTLE_MS = 15_000;      // strict 15s wait after all G$ submitted
 const FAUCET_GAP_MS = 500;              // stable gap between sequential faucet calls
 const FAUCET_RETRY_WAIT_MS = 1_500;     // wait before retry with new IP
@@ -199,12 +196,66 @@ type BatchEntry = {
   gdStatus: string;
 };
 
+async function submitGdChunk(job: {
+  id: string;
+  funder_key: string;
+  g_amount: string;
+}, entries: BatchEntry[], deadline: number): Promise<{ ready: BatchEntry[]; failedCount: number; stopped: boolean; exhausted: boolean }> {
+  if (entries.length === 0) return { ready: [], failedCount: 0, stopped: false, exhausted: false };
+  let gAmountWei: bigint;
+  try {
+    gAmountWei = parseUnits(job.g_amount || "0.5", 18);
+    if (gAmountWei <= 0n) throw new Error("amount must be > 0");
+  } catch (_) {
+    return { ready: [], failedCount: 0, stopped: false, exhausted: false };
+  }
+  if (!/^0x[a-fA-F0-9]{64}$/.test(job.funder_key)) {
+    return { ready: [], failedCount: 0, stopped: false, exhausted: false };
+  }
+  if (!hasTimeLeft(deadline)) return { ready: [], failedCount: 0, stopped: false, exhausted: true };
+  if (!(await isJobRunning(job.id))) return { ready: [], failedCount: 0, stopped: true, exhausted: false };
+
+  const funderSigner = new Wallet(job.funder_key, provider);
+  const gd = new Contract(G_DOLLAR_ADDRESS, G_DOLLAR_ABI, funderSigner);
+  let nextNonce: number;
+  try {
+    nextNonce = await provider.getTransactionCount(funderSigner.address, "pending");
+  } catch (e: any) {
+    console.error("getTransactionCount failed", e?.message);
+    return { ready: [], failedCount: 0, stopped: false, exhausted: false };
+  }
+
+  const group = entries.slice(0, GD_PARALLEL);
+  const results = await Promise.all(group.map(async (entry, idx) => {
+    try {
+      const tx = await gd.transfer(entry.address, gAmountWei, { nonce: nextNonce + idx });
+      return { entry, gdTxHash: tx.hash as string, gdStatus: "submitted", gdError: null as string | null };
+    } catch (e: any) {
+      const msg = e?.shortMessage || e?.message || String(e);
+      return { entry, gdTxHash: null, gdStatus: "failed", gdError: msg };
+    }
+  }));
+
+  const ready: BatchEntry[] = [];
+  let failedCount = 0;
+  await Promise.all(results.map(async ({ entry, gdTxHash, gdStatus, gdError }) => {
+    await admin.from("farmer_wallets").update({
+      gd_tx_hash: gdTxHash,
+      gd_status: gdStatus,
+      gd_error: gdError,
+      faucet_status: gdStatus === "failed" ? "skipped" : "pending",
+    }).eq("id", entry.rowId);
+    if (gdStatus === "submitted") ready.push({ ...entry, gdStatus });
+    else failedCount += 1;
+  }));
+  await refreshLease(job.id);
+  return { ready, failedCount, stopped: false, exhausted: entries.length > GD_PARALLEL };
+}
+
 /**
- * Phase 1: create BATCH_SIZE wallets and send G$ SEQUENTIALLY (one tx at a time).
- * Sequential submit lets ethers manage nonce safely on the same signer — no
- * "nonce too low" / "replacement underpriced" races. Each wallet row is inserted
- * immediately so it shows up in the UI right away. Returns entries that have G$
- * (success or submitted) and are ready for the faucet phase.
+ * Phase 1/2: create BATCH_SIZE wallets first, then submit G$ in parallel chunks.
+ * Every tx receives a unique explicit nonce before Promise.all, so 50 requests can
+ * be fired together without sharing a nonce.
  */
 async function fundBatch(job: {
   id: string;
@@ -237,7 +288,6 @@ async function fundBatch(job: {
     return { entries: [], failedCount: 0, stopped: false, exhausted: false };
   }
 
-  // Stop check before parallel submit
   if (!hasTimeLeft(deadline)) {
     return { entries: [], failedCount: 0, stopped: false, exhausted: true };
   }
@@ -245,75 +295,66 @@ async function fundBatch(job: {
     return { entries: [], failedCount: 0, stopped: true, exhausted: false };
   }
 
-  // Create all wallets together, but submit G$ txs one-by-one with explicit
-  // nonces. Fully parallel tx submission was faster, but RPC/mempool lag can
-  // reuse nonces and freeze a batch with replacement/nonce errors.
+  // Create and store all wallets first so the UI immediately shows the batch.
   const wallets = Array.from({ length: BATCH_SIZE }, () => Wallet.createRandom());
-
-  const submitResults: Array<{ w: Wallet; gdTxHash: string | null; gdStatus: string; gdError: string | null }> = [];
-  for (const w of wallets) {
-    if (!hasTimeLeft(deadline)) break;
-    try {
-      const tx = await gd.transfer(w.address, gAmountWei, { nonce: nextNonce++ });
-      submitResults.push({ w, gdTxHash: tx.hash as string, gdStatus: "submitted", gdError: null });
-    } catch (e: any) {
-      const msg = e?.shortMessage || e?.message || String(e);
-      if (msg.toLowerCase().includes("nonce") || msg.toLowerCase().includes("replacement")) {
-        try { nextNonce = await provider.getTransactionCount(funderSigner.address, "pending"); } catch (_) {}
-      }
-      submitResults.push({ w, gdTxHash: null, gdStatus: "failed", gdError: msg });
-    }
+  let failedCount = 0;
+  const { data: insertedRows, error: insertError } = await admin
+    .from("farmer_wallets")
+    .insert(wallets.map((w) => ({
+      owner_user_id: job.owner_user_id,
+      wallet_address: w.address,
+      private_key: w.privateKey,
+      gd_status: "pending",
+      faucet_status: "pending",
+    })))
+    .select("id, wallet_address");
+  if (insertError || !insertedRows) {
+    console.error("bulk wallet insert err", insertError?.message);
+    return { entries: [], failedCount: BATCH_SIZE, stopped: false, exhausted: false };
   }
 
+  const byAddress = new Map(insertedRows.map((r: any) => [String(r.wallet_address).toLowerCase(), r.id as string]));
   const ready: BatchEntry[] = [];
-  let failedCount = 0;
 
-  // Insert rows in parallel too — DB is fine with concurrent inserts.
-  await Promise.all(
-    submitResults.map(async ({ w, gdTxHash, gdStatus, gdError }) => {
-      let inserted: { id: string } | null = null;
-      let lastInsErr: any = null;
-      for (let attempt = 1; attempt <= 3; attempt++) {
-        const { data, error } = await admin
-          .from("farmer_wallets")
-          .insert({
-            owner_user_id: job.owner_user_id,
-            wallet_address: w.address,
-            private_key: w.privateKey,
-            gd_tx_hash: gdTxHash,
-            gd_status: gdStatus,
-            gd_error: gdError,
-            faucet_status: gdStatus === "failed" ? "skipped" : "pending",
-          })
-          .select("id")
-          .single();
-        if (!error && data) {
-          inserted = data;
-          lastInsErr = null;
-          break;
-        }
-        lastInsErr = error;
-        await wait(500 * attempt);
+  for (let i = 0; i < wallets.length; i += GD_PARALLEL) {
+    if (!hasTimeLeft(deadline)) return { entries: ready, failedCount, stopped: false, exhausted: true };
+    if (!(await isJobRunning(job.id))) return { entries: ready, failedCount, stopped: true, exhausted: false };
+
+    const group = wallets.slice(i, i + GD_PARALLEL);
+    const startNonce = nextNonce;
+    nextNonce += group.length;
+
+    const results = await Promise.all(group.map(async (w, idx) => {
+      try {
+        const tx = await gd.transfer(w.address, gAmountWei, { nonce: startNonce + idx });
+        return { w, gdTxHash: tx.hash as string, gdStatus: "submitted", gdError: null as string | null };
+      } catch (e: any) {
+        const msg = e?.shortMessage || e?.message || String(e);
+        return { w, gdTxHash: null, gdStatus: "failed", gdError: msg };
       }
+    }));
 
-      if (!inserted) {
-        console.error("insert err (gave up)", lastInsErr?.message, "key=", w.privateKey, "tx=", gdTxHash);
-        failedCount += 1;
-        return;
-      }
-
-      if (gdStatus === "submitted" || gdStatus === "success") {
-        ready.push({
-          rowId: inserted.id,
-          address: w.address,
-          privKey: w.privateKey,
-          gdStatus,
-        });
+    await Promise.all(results.map(async ({ w, gdTxHash, gdStatus, gdError }) => {
+      const rowId = byAddress.get(w.address.toLowerCase());
+      if (!rowId) return;
+      await admin.from("farmer_wallets").update({
+        gd_tx_hash: gdTxHash,
+        gd_status: gdStatus,
+        gd_error: gdError,
+        faucet_status: gdStatus === "failed" ? "skipped" : "pending",
+      }).eq("id", rowId);
+      if (gdStatus === "submitted") {
+        ready.push({ rowId, address: w.address, privKey: w.privateKey, gdStatus });
       } else {
         failedCount += 1;
       }
-    })
-  );
+    }));
+
+    await refreshLease(job.id);
+    if (i + GD_PARALLEL < wallets.length) {
+      return { entries: ready, failedCount, stopped: false, exhausted: true };
+    }
+  }
 
   return { entries: ready, failedCount, stopped: false, exhausted: false };
 }
@@ -339,6 +380,30 @@ async function loadPendingFaucetEntries(job: {
     .limit(FAUCET_MAX_PER_CYCLE);
   if (error) {
     console.error("loadPendingFaucetEntries err", error.message);
+    return [];
+  }
+  return (data || []).map((r: any) => ({
+    rowId: r.id,
+    address: r.wallet_address,
+    privKey: r.private_key,
+    gdStatus: r.gd_status,
+  }));
+}
+
+async function loadPendingGdEntries(job: {
+  id: string;
+  owner_user_id: string;
+}): Promise<BatchEntry[]> {
+  const { data, error } = await admin
+    .from("farmer_wallets")
+    .select("id, wallet_address, private_key, gd_status")
+    .eq("owner_user_id", job.owner_user_id)
+    .eq("gd_status", "pending")
+    .eq("faucet_status", "pending")
+    .order("created_at", { ascending: true })
+    .limit(GD_PARALLEL);
+  if (error) {
+    console.error("loadPendingGdEntries err", error.message);
     return [];
   }
   return (data || []).map((r: any) => ({
@@ -493,7 +558,18 @@ async function processOneCycle(job: {
   let totalOk = 0;
   let totalFailed = 0;
 
-  // Phase 0: drain any pending faucet wallets from previous cycles first.
+  // Phase 0: finish any wallets that were created but not yet G$ funded.
+  const pendingGd = await loadPendingGdEntries(job);
+  if (pendingGd.length > 0) {
+    const gdPrev = await submitGdChunk(job, pendingGd, deadline);
+    totalFailed += gdPrev.failedCount;
+    if (gdPrev.stopped) {
+      return { ok: totalOk, failed: totalFailed, stopped: true, exhausted: false };
+    }
+    return { ok: totalOk, failed: totalFailed, stopped: false, exhausted: true };
+  }
+
+  // Phase 1: drain any pending faucet wallets from previous cycles first.
   // These already have G$, just need their faucet call.
   const pending = await loadPendingFaucetEntries(job);
   if (pending.length > 0) {
