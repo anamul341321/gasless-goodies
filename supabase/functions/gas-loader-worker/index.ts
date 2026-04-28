@@ -338,8 +338,18 @@ async function finalizeWallet(
     }
     const allDone = pending === 0 && total > 0;
 
-    // Auto-retry failed wallets with fresh IP up to max_retries times
+    // Auto-retry only likely temporary failures. If the external faucet reports
+    // success but no CELO arrives, or its signer has no CELO, retrying only
+    // makes the UI sit on "running" for 1–2 minutes with the same result.
     if (allDone && failed > 0) {
+      const terminalFailures = (all || []).filter(
+        (r: any) => r.status === "failed" && isTerminalFaucetError(r.error_message)
+      ).length;
+      if (terminalFailures === failed) {
+        console.log(
+          `[retry-skip] job ${jobId} — ${failed} terminal faucet failure(s)`
+        );
+      } else {
       const jobInfoRes = await fetch(
         `${SUPABASE_URL}/rest/v1/gas_load_jobs?id=eq.${jobId}&select=retry_round,max_retries`,
         { headers: sbHeaders() }
@@ -386,6 +396,7 @@ async function finalizeWallet(
           );
           return;
         }
+      }
       }
     }
 
