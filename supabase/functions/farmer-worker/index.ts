@@ -245,26 +245,25 @@ async function fundBatch(job: {
     return { entries: [], failedCount: 0, stopped: true, exhausted: false };
   }
 
-  // PARALLEL SUBMIT: pre-assign nonces to BATCH_SIZE wallets and fire all
-  // transfers concurrently. Same funder, sequential nonces — no race.
+  // Create all wallets together, but submit G$ txs one-by-one with explicit
+  // nonces. Fully parallel tx submission was faster, but RPC/mempool lag can
+  // reuse nonces and freeze a batch with replacement/nonce errors.
   const wallets = Array.from({ length: BATCH_SIZE }, () => Wallet.createRandom());
 
-  const submitResults = await Promise.all(
-    wallets.map(async (w, idx) => {
-      const nonce = nextNonce + idx;
-      try {
-        const tx = await gd.transfer(w.address, gAmountWei, { nonce });
-        return { w, gdTxHash: tx.hash as string, gdStatus: "submitted", gdError: null as string | null };
-      } catch (e: any) {
-        return {
-          w,
-          gdTxHash: null as string | null,
-          gdStatus: "failed",
-          gdError: e?.shortMessage || e?.message || String(e),
-        };
+  const submitResults: Array<{ w: Wallet; gdTxHash: string | null; gdStatus: string; gdError: string | null }> = [];
+  for (const w of wallets) {
+    if (!hasTimeLeft(deadline)) break;
+    try {
+      const tx = await gd.transfer(w.address, gAmountWei, { nonce: nextNonce++ });
+      submitResults.push({ w, gdTxHash: tx.hash as string, gdStatus: "submitted", gdError: null });
+    } catch (e: any) {
+      const msg = e?.shortMessage || e?.message || String(e);
+      if (msg.toLowerCase().includes("nonce") || msg.toLowerCase().includes("replacement")) {
+        try { nextNonce = await provider.getTransactionCount(funderSigner.address, "pending"); } catch (_) {}
       }
-    })
-  );
+      submitResults.push({ w, gdTxHash: null, gdStatus: "failed", gdError: msg });
+    }
+  }
 
   const ready: BatchEntry[] = [];
   let failedCount = 0;
