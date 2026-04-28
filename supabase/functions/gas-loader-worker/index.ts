@@ -10,6 +10,7 @@ const corsHeaders = {
 };
 
 const GD_FAUCET_URL = "https://goodserver.gooddollar.org/verify/topWallet";
+const CELO_RPC_URL = "https://forno.celo.org";
 const WEBSHARE_HOST = "p.webshare.io";
 const WEBSHARE_PORT = "80";
 
@@ -38,6 +39,46 @@ function buildProxyUrl(): string | null {
   return `http://${encodeURIComponent(WS_USERNAME)}:${encodeURIComponent(
     WS_PASSWORD
   )}@${WEBSHARE_HOST}:${WEBSHARE_PORT}`;
+}
+
+async function getCeloBalanceWei(address: string): Promise<bigint | null> {
+  try {
+    const res = await fetch(CELO_RPC_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "eth_getBalance",
+        params: [address, "latest"],
+      }),
+    });
+    const json = await res.json();
+    if (!res.ok || json?.error || typeof json?.result !== "string") return null;
+    return BigInt(json.result);
+  } catch (e) {
+    console.error("balance check failed", e);
+    return null;
+  }
+}
+
+async function waitForBalanceIncrease(
+  address: string,
+  before: bigint | null
+): Promise<{ increased: boolean; before: string | null; after: string | null }> {
+  let after: bigint | null = null;
+  for (let i = 0; i < 6; i++) {
+    await new Promise((r) => setTimeout(r, 5_000));
+    after = await getCeloBalanceWei(address);
+    if (before !== null && after !== null && after > before) {
+      return { increased: true, before: before.toString(), after: after.toString() };
+    }
+  }
+  return {
+    increased: false,
+    before: before === null ? null : before.toString(),
+    after: after === null ? null : after.toString(),
+  };
 }
 
 async function logHistory(row: {
@@ -93,6 +134,7 @@ async function callFaucet(
       // ignore
     }
 
+    const beforeBalance = await getCeloBalanceWei(account);
     const res = await fetch(
       GD_FAUCET_URL,
       fetchOpts({
@@ -144,6 +186,16 @@ async function callFaucet(
           body?.error ||
           body?.message ||
           `faucet rejected: ${text.slice(0, 200)}`,
+      };
+    }
+
+    const confirmation = await waitForBalanceIncrease(account, beforeBalance);
+    if (!confirmation.increased) {
+      return {
+        ok: false,
+        ip,
+        txHash: txHash || undefined,
+        error: `faucet returned success but CELO balance did not increase (before=${confirmation.before ?? "unknown"}, after=${confirmation.after ?? "unknown"})`,
       };
     }
 
