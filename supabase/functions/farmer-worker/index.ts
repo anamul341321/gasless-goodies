@@ -188,8 +188,7 @@ function triggerContinueAfterDelay() {
     });
   };
   try {
-    // @ts-ignore EdgeRuntime is available in the deployed edge runtime.
-    EdgeRuntime?.waitUntil?.(run());
+    (globalThis as any).EdgeRuntime?.waitUntil?.(run());
   } catch (_) {
     run().catch(() => {});
   }
