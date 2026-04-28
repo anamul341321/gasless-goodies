@@ -616,15 +616,7 @@ Deno.serve(async (req) => {
     const result = await processLoop();
 
     if (result.remaining) {
-      fetch(TRIGGER_URL, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-          apikey: SUPABASE_SERVICE_ROLE_KEY,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ trigger: "continue" }),
-      }).catch(() => {});
+      triggerContinueAfterDelay();
     }
 
     return new Response(JSON.stringify({ ok: true, ...result }), {
