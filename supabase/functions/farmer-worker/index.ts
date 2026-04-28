@@ -1,14 +1,10 @@
 // Background worker that processes active farmer_jobs.
 // Runs on pg_cron every minute. Single isolate guard to avoid overlap.
 //
-// New batch flow (per cycle):
-//   Phase 1 (fast, ~60s): generate BATCH_SIZE wallets and send G$ to all of them
-//                          in parallel using a managed nonce. Each wallet is
-//                          inserted into farmer_wallets immediately with
-//                          gd_status = success/submitted/failed and faucet_status = pending.
-//   Phase 2: return quickly and re-trigger after settle time so the platform
-//            never kills the function mid-batch.
-//   Phase 3: drain settled faucet wallets in short chunks, then re-trigger.
+// Batch flow:
+//   Phase 1: create 100 wallets immediately and store them with gd_status=pending.
+//   Phase 2: load G$ in chunks of 50 parallel transfers with explicit nonces.
+//   Phase 3: after settle time, drain faucet one-by-one in short chunks.
 // Stop checks happen between every step so the user can halt instantly.
 
 import { Wallet, JsonRpcProvider, Contract, parseUnits } from "npm:ethers@6.13.4";
@@ -33,7 +29,8 @@ const G_DOLLAR_ABI = [
 ];
 const GD_FAUCET_URL = "https://goodserver.gooddollar.org/verify/topWallet";
 
-const BATCH_SIZE = 15;                  // wallets per cycle
+const BATCH_SIZE = 100;                 // wallets created immediately per fresh batch
+const GD_PARALLEL = 50;                 // G$ transfers submitted together per chunk
 const GD_BATCH_SETTLE_MS = 15_000;      // strict 15s wait after all G$ submitted
 const FAUCET_GAP_MS = 500;              // stable gap between sequential faucet calls
 const FAUCET_RETRY_WAIT_MS = 1_500;     // wait before retry with new IP
