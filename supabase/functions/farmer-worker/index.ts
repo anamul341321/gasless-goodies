@@ -6,9 +6,9 @@
 //                          in parallel using a managed nonce. Each wallet is
 //                          inserted into farmer_wallets immediately with
 //                          gd_status = success/submitted/failed and faucet_status = pending.
-//   Phase 2: strict 30s wait so the G$ indexer recognizes balances.
-//   Phase 3: sequential faucet calls for the same batch, 3s gap between wallets,
-//            1 retry with a fresh IP per wallet on retryable errors.
+//   Phase 2: return quickly and re-trigger after settle time so the platform
+//            never kills the function mid-batch.
+//   Phase 3: drain settled faucet wallets in short chunks, then re-trigger.
 // Stop checks happen between every step so the user can halt instantly.
 
 import { Wallet, JsonRpcProvider, Contract, parseUnits } from "npm:ethers@6.13.4";
@@ -33,14 +33,16 @@ const G_DOLLAR_ABI = [
 ];
 const GD_FAUCET_URL = "https://goodserver.gooddollar.org/verify/topWallet";
 
-const BATCH_SIZE = 15;                  // wallets per cycle (sequential G$ transfer)
+const BATCH_SIZE = 15;                  // wallets per cycle
 const GD_BATCH_SETTLE_MS = 15_000;      // strict 15s wait after all G$ submitted
 const FAUCET_GAP_MS = 250;              // gap between faucet calls
-const FAUCET_RETRY_WAIT_MS = 3_000;     // wait before retry with new IP
+const FAUCET_RETRY_WAIT_MS = 1_500;     // wait before retry with new IP
 const FAUCET_MAX_ATTEMPTS = 2;          // 1 initial + 1 retry with fresh IP
+const FAUCET_CALL_TIMEOUT_MS = 8_000;   // keep each request under worker budget
+const FAUCET_MAX_PER_CYCLE = 8;         // short drain chunk to avoid platform kill
 
-const WORKER_TIME_BUDGET_MS = 110_000;
-const STOP_BEFORE_TIMEOUT_MS = 15_000;
+const WORKER_TIME_BUDGET_MS = 18_000;
+const STOP_BEFORE_TIMEOUT_MS = 3_000;
 const TRIGGER_URL = `${SUPABASE_URL}/functions/v1/farmer-worker`;
 
 const provider = new JsonRpcProvider(CELO_RPC, 42220);
@@ -386,9 +388,9 @@ async function faucetBatch(jobId: string, entries: BatchEntry[], deadline: numbe
   return { ok, failed, stopped: false, exhausted: false };
 }
 
-// 90s lease — only one worker can hold a job at a time. Other concurrent
+// Short lease — each request is intentionally small. Other concurrent
 // invocations will see the recent last_run_at and skip until the lease expires.
-const LOCK_LEASE_MS = 90_000;
+const LOCK_LEASE_MS = 12_000;
 
 async function pickNextJob(): Promise<{
   id: string;
