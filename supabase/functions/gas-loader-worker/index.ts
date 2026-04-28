@@ -13,6 +13,8 @@ const GD_FAUCET_URL = "https://goodserver.gooddollar.org/verify/topWallet";
 const CELO_RPC_URL = "https://forno.celo.org";
 const WEBSHARE_HOST = "p.webshare.io";
 const WEBSHARE_PORT = "80";
+const BALANCE_VERIFY_ATTEMPTS = 4;
+const BALANCE_VERIFY_DELAY_MS = 3_000;
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -67,8 +69,8 @@ async function waitForBalanceIncrease(
   before: bigint | null
 ): Promise<{ increased: boolean; before: string | null; after: string | null }> {
   let after: bigint | null = null;
-  for (let i = 0; i < 6; i++) {
-    await new Promise((r) => setTimeout(r, 5_000));
+  for (let i = 0; i < BALANCE_VERIFY_ATTEMPTS; i++) {
+    await new Promise((r) => setTimeout(r, BALANCE_VERIFY_DELAY_MS));
     after = await getCeloBalanceWei(address);
     if (before !== null && after !== null && after > before) {
       return { increased: true, before: before.toString(), after: after.toString() };
@@ -97,6 +99,15 @@ async function logHistory(row: {
   } catch (e) {
     console.error("history log failed", e);
   }
+}
+
+function isTerminalFaucetError(error?: string | null): boolean {
+  const msg = (error || "").toLowerCase();
+  return (
+    msg.includes("balance did not increase") ||
+    msg.includes("insufficient funds for gas") ||
+    msg.includes("insufficient funds")
+  );
 }
 
 async function callFaucet(
