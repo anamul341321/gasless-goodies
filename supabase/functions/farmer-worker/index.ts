@@ -558,7 +558,18 @@ async function processOneCycle(job: {
   let totalOk = 0;
   let totalFailed = 0;
 
-  // Phase 0: drain any pending faucet wallets from previous cycles first.
+  // Phase 0: finish any wallets that were created but not yet G$ funded.
+  const pendingGd = await loadPendingGdEntries(job);
+  if (pendingGd.length > 0) {
+    const gdPrev = await submitGdChunk(job, pendingGd, deadline);
+    totalFailed += gdPrev.failedCount;
+    if (gdPrev.stopped) {
+      return { ok: totalOk, failed: totalFailed, stopped: true, exhausted: false };
+    }
+    return { ok: totalOk, failed: totalFailed, stopped: false, exhausted: true };
+  }
+
+  // Phase 1: drain any pending faucet wallets from previous cycles first.
   // These already have G$, just need their faucet call.
   const pending = await loadPendingFaucetEntries(job);
   if (pending.length > 0) {
