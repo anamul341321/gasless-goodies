@@ -101,7 +101,7 @@ async function callFaucet(account: string): Promise<{
   ip?: string;
 }> {
   const ac = new AbortController();
-  const timeout = setTimeout(() => ac.abort(), 35_000);
+  const timeout = setTimeout(() => ac.abort(), FAUCET_CALL_TIMEOUT_MS);
   const proxyUrl = buildProxyUrl();
   // @ts-ignore Deno API
   const createHttp = (Deno as any).createHttpClient;
@@ -318,7 +318,7 @@ async function loadPendingFaucetEntries(job: {
     .in("gd_status", ["submitted", "success"])
     .lte("created_at", settledBefore)
     .order("created_at", { ascending: true })
-    .limit(500);
+    .limit(FAUCET_MAX_PER_CYCLE);
   if (error) {
     console.error("loadPendingFaucetEntries err", error.message);
     return [];
