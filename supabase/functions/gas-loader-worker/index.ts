@@ -322,7 +322,7 @@ async function finalizeWallet(
   // Bump job counters via RPC-style update — Postgrest doesn't support raw SQL,
   // so we recompute by reading aggregate and patching. Cheap enough at this scale.
   const aggRes = await fetch(
-    `${SUPABASE_URL}/rest/v1/gas_load_queue?job_id=eq.${jobId}&select=status`,
+    `${SUPABASE_URL}/rest/v1/gas_load_queue?job_id=eq.${jobId}&select=status,error_message`,
     { headers: sbHeaders() }
   );
   if (aggRes.ok) {
@@ -350,15 +350,15 @@ async function finalizeWallet(
           `[retry-skip] job ${jobId} — ${failed} terminal faucet failure(s)`
         );
       } else {
-      const jobInfoRes = await fetch(
-        `${SUPABASE_URL}/rest/v1/gas_load_jobs?id=eq.${jobId}&select=retry_round,max_retries`,
-        { headers: sbHeaders() }
-      );
-      if (jobInfoRes.ok) {
-        const jobInfo = await jobInfoRes.json();
-        const info = Array.isArray(jobInfo) && jobInfo[0] ? jobInfo[0] : null;
-        const retryRound = Number(info?.retry_round ?? 0);
-        const maxRetries = Number(info?.max_retries ?? 2);
+        const jobInfoRes = await fetch(
+          `${SUPABASE_URL}/rest/v1/gas_load_jobs?id=eq.${jobId}&select=retry_round,max_retries`,
+          { headers: sbHeaders() }
+        );
+        if (jobInfoRes.ok) {
+          const jobInfo = await jobInfoRes.json();
+          const info = Array.isArray(jobInfo) && jobInfo[0] ? jobInfo[0] : null;
+          const retryRound = Number(info?.retry_round ?? 0);
+          const maxRetries = Number(info?.max_retries ?? 2);
 
         if (retryRound < maxRetries) {
           // Reset all failed queue rows back to pending — fresh IP next attempt
