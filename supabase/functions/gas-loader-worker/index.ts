@@ -13,8 +13,8 @@ const GD_FAUCET_URL = "https://goodserver.gooddollar.org/verify/topWallet";
 const CELO_RPC_URL = "https://forno.celo.org";
 const WEBSHARE_HOST = "p.webshare.io";
 const WEBSHARE_PORT = "80";
-const BALANCE_VERIFY_ATTEMPTS = 4;
-const BALANCE_VERIFY_DELAY_MS = 3_000;
+const BALANCE_VERIFY_ATTEMPTS = 8;
+const BALANCE_VERIFY_DELAY_MS = 4_000;
 // GoodDollar faucet tops up wallets that fall below its internal threshold.
 // Empirically: a wallet with 0.05 CELO still receives top-ups from the faucet
 // (verified via esusuafrica.com). So we should NOT pre-skip wallets at low
