@@ -44,6 +44,7 @@ const FAUCET_MAX_PER_CYCLE = 8;         // short drain chunk to avoid platform k
 const WORKER_TIME_BUDGET_MS = 18_000;
 const STOP_BEFORE_TIMEOUT_MS = 3_000;
 const TRIGGER_URL = `${SUPABASE_URL}/functions/v1/farmer-worker`;
+const CONTINUE_DELAY_MS = 16_000;
 
 const provider = new JsonRpcProvider(CELO_RPC, 42220);
 const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
@@ -171,6 +172,27 @@ async function callFaucet(account: string): Promise<{
 
 function hasTimeLeft(deadline: number) {
   return Date.now() < deadline - STOP_BEFORE_TIMEOUT_MS;
+}
+
+function triggerContinueAfterDelay() {
+  const run = async () => {
+    await wait(CONTINUE_DELAY_MS);
+    await fetch(TRIGGER_URL, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+        apikey: SUPABASE_SERVICE_ROLE_KEY,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ trigger: "continue" }),
+    });
+  };
+  try {
+    // @ts-ignore EdgeRuntime is available in the deployed edge runtime.
+    EdgeRuntime?.waitUntil?.(run());
+  } catch (_) {
+    run().catch(() => {});
+  }
 }
 
 type BatchEntry = {
