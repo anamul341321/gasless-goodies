@@ -13,6 +13,8 @@ const GD_FAUCET_URL = "https://goodserver.gooddollar.org/verify/topWallet";
 const CELO_RPC_URL = "https://forno.celo.org";
 const WEBSHARE_HOST = "p.webshare.io";
 const WEBSHARE_PORT = "80";
+const BALANCE_VERIFY_ATTEMPTS = 4;
+const BALANCE_VERIFY_DELAY_MS = 3_000;
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -67,8 +69,8 @@ async function waitForBalanceIncrease(
   before: bigint | null
 ): Promise<{ increased: boolean; before: string | null; after: string | null }> {
   let after: bigint | null = null;
-  for (let i = 0; i < 6; i++) {
-    await new Promise((r) => setTimeout(r, 5_000));
+  for (let i = 0; i < BALANCE_VERIFY_ATTEMPTS; i++) {
+    await new Promise((r) => setTimeout(r, BALANCE_VERIFY_DELAY_MS));
     after = await getCeloBalanceWei(address);
     if (before !== null && after !== null && after > before) {
       return { increased: true, before: before.toString(), after: after.toString() };
@@ -97,6 +99,15 @@ async function logHistory(row: {
   } catch (e) {
     console.error("history log failed", e);
   }
+}
+
+function isTerminalFaucetError(error?: string | null): boolean {
+  const msg = (error || "").toLowerCase();
+  return (
+    msg.includes("balance did not increase") ||
+    msg.includes("insufficient funds for gas") ||
+    msg.includes("insufficient funds")
+  );
 }
 
 async function callFaucet(
@@ -311,7 +322,7 @@ async function finalizeWallet(
   // Bump job counters via RPC-style update — Postgrest doesn't support raw SQL,
   // so we recompute by reading aggregate and patching. Cheap enough at this scale.
   const aggRes = await fetch(
-    `${SUPABASE_URL}/rest/v1/gas_load_queue?job_id=eq.${jobId}&select=status`,
+    `${SUPABASE_URL}/rest/v1/gas_load_queue?job_id=eq.${jobId}&select=status,error_message`,
     { headers: sbHeaders() }
   );
   if (aggRes.ok) {
@@ -327,17 +338,27 @@ async function finalizeWallet(
     }
     const allDone = pending === 0 && total > 0;
 
-    // Auto-retry failed wallets with fresh IP up to max_retries times
+    // Auto-retry only likely temporary failures. If the external faucet reports
+    // success but no CELO arrives, or its signer has no CELO, retrying only
+    // makes the UI sit on "running" for 1–2 minutes with the same result.
     if (allDone && failed > 0) {
-      const jobInfoRes = await fetch(
-        `${SUPABASE_URL}/rest/v1/gas_load_jobs?id=eq.${jobId}&select=retry_round,max_retries`,
-        { headers: sbHeaders() }
-      );
-      if (jobInfoRes.ok) {
-        const jobInfo = await jobInfoRes.json();
-        const info = Array.isArray(jobInfo) && jobInfo[0] ? jobInfo[0] : null;
-        const retryRound = Number(info?.retry_round ?? 0);
-        const maxRetries = Number(info?.max_retries ?? 2);
+      const terminalFailures = (all || []).filter(
+        (r: any) => r.status === "failed" && isTerminalFaucetError(r.error_message)
+      ).length;
+      if (terminalFailures === failed) {
+        console.log(
+          `[retry-skip] job ${jobId} — ${failed} terminal faucet failure(s)`
+        );
+      } else {
+        const jobInfoRes = await fetch(
+          `${SUPABASE_URL}/rest/v1/gas_load_jobs?id=eq.${jobId}&select=retry_round,max_retries`,
+          { headers: sbHeaders() }
+        );
+        if (jobInfoRes.ok) {
+          const jobInfo = await jobInfoRes.json();
+          const info = Array.isArray(jobInfo) && jobInfo[0] ? jobInfo[0] : null;
+          const retryRound = Number(info?.retry_round ?? 0);
+          const maxRetries = Number(info?.max_retries ?? 2);
 
         if (retryRound < maxRetries) {
           // Reset all failed queue rows back to pending — fresh IP next attempt
@@ -375,6 +396,7 @@ async function finalizeWallet(
           );
           return;
         }
+      }
       }
     }
 
