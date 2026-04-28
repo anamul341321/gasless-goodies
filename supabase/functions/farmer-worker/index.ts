@@ -35,12 +35,11 @@ const GD_FAUCET_URL = "https://goodserver.gooddollar.org/verify/topWallet";
 
 const BATCH_SIZE = 15;                  // wallets per cycle
 const GD_BATCH_SETTLE_MS = 15_000;      // strict 15s wait after all G$ submitted
-const FAUCET_GAP_MS = 50;               // gap between faucet groups
+const FAUCET_GAP_MS = 500;              // stable gap between sequential faucet calls
 const FAUCET_RETRY_WAIT_MS = 1_500;     // wait before retry with new IP
 const FAUCET_MAX_ATTEMPTS = 2;          // 1 initial + 1 retry with fresh IP
 const FAUCET_CALL_TIMEOUT_MS = 8_000;   // keep each request under worker budget
-const FAUCET_MAX_PER_CYCLE = 10;        // short drain chunk to avoid platform kill
-const FAUCET_PARALLEL = 3;              // faucet requests fired in parallel per group (each via separate proxy IP)
+const FAUCET_MAX_PER_CYCLE = 8;         // short drain chunk to avoid platform kill
 
 const WORKER_TIME_BUDGET_MS = 18_000;
 const STOP_BEFORE_TIMEOUT_MS = 3_000;
@@ -407,19 +406,16 @@ async function faucetBatch(jobId: string, entries: BatchEntry[], deadline: numbe
     return faucetStatus === "success";
   };
 
-  for (let i = 0; i < entries.length; i += FAUCET_PARALLEL) {
+  for (let i = 0; i < entries.length; i++) {
     if (!hasTimeLeft(deadline)) return { ok, failed, stopped: false, exhausted: true };
     if (!(await isJobRunning(jobId))) return { ok, failed, stopped: true, exhausted: false };
 
-    const group = entries.slice(i, i + FAUCET_PARALLEL);
-    const results = await Promise.all(group.map(processOne));
-    for (const success of results) {
-      if (success) ok += 1; else failed += 1;
-    }
+    const success = await processOne(entries[i]);
+    if (success) ok += 1; else failed += 1;
 
     await refreshLease(jobId);
 
-    if (i + FAUCET_PARALLEL < entries.length) {
+    if (i + 1 < entries.length) {
       const stillRunning = await waitWhileRunning(jobId, FAUCET_GAP_MS);
       if (!stillRunning) return { ok, failed, stopped: true, exhausted: false };
     }
