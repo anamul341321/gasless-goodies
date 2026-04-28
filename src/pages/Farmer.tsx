@@ -483,11 +483,10 @@ export default function Farmer() {
                 </div>
 
                 {(job || rows.length > 0) && (() => {
-                  // Counters derived from real wallet rows so they ALWAYS
-                  // equal the stored count. No drift, no double-counting.
-                  const ok = rows.filter(r => r.faucet_status === "success").length;
-                  const failed = rows.filter(r => r.gd_status === "failed" || r.faucet_status === "failed").length;
-                  const pending = rows.length - ok - failed;
+                  const ok = walletStats?.ok ?? rows.filter(r => r.faucet_status === "success").length;
+                  const failed = walletStats?.failed ?? rows.filter(r => r.gd_status === "failed" || r.faucet_status === "failed").length;
+                  const pending = walletStats?.pending ?? Math.max(0, rows.length - ok - failed);
+                  const stored = walletStats?.total ?? rows.length;
                   return (
                     <div className="flex items-center gap-3 text-sm pt-2 border-t border-border flex-wrap">
                       {running && <span className="inline-flex items-center gap-1 text-primary">
@@ -497,7 +496,7 @@ export default function Farmer() {
                       <span className="text-success">✓ {ok}</span>
                       <span className="text-destructive">✗ {failed}</span>
                       {pending > 0 && <span className="text-amber-500">⏳ {pending}</span>}
-                      <span className="ml-auto text-muted-foreground">{rows.length} stored</span>
+                      <span className="ml-auto text-muted-foreground">{stored} stored</span>
                     </div>
                   );
                 })()}
