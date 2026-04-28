@@ -152,6 +152,14 @@ async function callFaucet(
     }
 
     const beforeBalance = await getCeloBalanceWei(account);
+
+    // Pre-check: if the wallet already has enough CELO for a G$ claim,
+    // skip calling the faucet entirely. GoodDollar returns {ok:1} but does
+    // not actually send anything, which previously looked like a failure.
+    if (beforeBalance !== null && beforeBalance >= FAUCET_SKIP_THRESHOLD_WEI) {
+      return { ok: true, ip, error: undefined };
+    }
+
     const res = await fetch(
       GD_FAUCET_URL,
       fetchOpts({
