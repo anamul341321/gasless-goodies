@@ -471,6 +471,7 @@ async function processOneCycle(job: {
     if (faucetPrev.exhausted) {
       return { ok: totalOk, failed: totalFailed, stopped: false, exhausted: true };
     }
+    return { ok: totalOk, failed: totalFailed, stopped: false, exhausted: true };
   }
 
   if (!hasTimeLeft(deadline)) {
