@@ -15,12 +15,13 @@ const WEBSHARE_HOST = "p.webshare.io";
 const WEBSHARE_PORT = "80";
 const BALANCE_VERIFY_ATTEMPTS = 4;
 const BALANCE_VERIFY_DELAY_MS = 3_000;
-// GoodDollar faucet only tops up wallets below this threshold.
-// If wallet already has >= this much CELO, faucet returns {ok:1} but does NOT
-// send a tx — that is expected behavior, not a failure. We treat it as success.
-// Threshold mirrors GoodDollar's server-side check (~0.001 CELO minimum top-up trigger;
-// we use 0.003 CELO as a safe ceiling — well above gas needed for a G$ claim tx).
-const FAUCET_SKIP_THRESHOLD_WEI = 3_000_000_000_000_000n; // 0.003 CELO
+// GoodDollar faucet tops up wallets that fall below its internal threshold.
+// Empirically: a wallet with 0.05 CELO still receives top-ups from the faucet
+// (verified via esusuafrica.com). So we should NOT pre-skip wallets at low
+// balances — let the faucet decide. We only treat "no balance increase" as
+// success when the wallet is clearly already well-funded for a G$ claim
+// (> 0.2 CELO — way more than any single claim needs).
+const FAUCET_SKIP_THRESHOLD_WEI = 200_000_000_000_000_000n; // 0.2 CELO
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
