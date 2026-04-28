@@ -49,6 +49,13 @@ type FarmerJob = {
   created_at: string;
 };
 
+type FarmerStats = {
+  total: number;
+  ok: number;
+  failed: number;
+  pending: number;
+};
+
 export default function Farmer() {
   const { user, loading: authLoading } = useAuth();
   const { toast } = useToast();
@@ -59,6 +66,7 @@ export default function Farmer() {
   const [job, setJob] = useState<FarmerJob | null>(null);
   const [busy, setBusy] = useState(false);
   const [rows, setRows] = useState<FarmerRow[]>([]);
+  const [walletStats, setWalletStats] = useState<FarmerStats | null>(null);
 
   // ----- Sweeper state -----
   const [sweepKeys, setSweepKeys] = useState("");
@@ -88,7 +96,8 @@ export default function Farmer() {
 
   const loadRows = async () => {
     if (!user) return;
-    // Fetch ALL wallets in pages of 1000 (Supabase per-request cap)
+    // Fetch ALL wallets in pages of 1000 and keep exact counters separate,
+    // so the header never gets stuck if the visible list is briefly stale.
     const PAGE = 1000;
     let from = 0;
     const all: FarmerRow[] = [];
@@ -108,6 +117,21 @@ export default function Farmer() {
       from += PAGE;
     }
     setRows(all);
+
+    const [{ count: total }, { count: ok }, { count: failed }] = await Promise.all([
+      supabase.from("farmer_wallets").select("id", { count: "exact", head: true }).eq("owner_user_id", user.id),
+      supabase.from("farmer_wallets").select("id", { count: "exact", head: true }).eq("owner_user_id", user.id).eq("faucet_status", "success"),
+      supabase.from("farmer_wallets").select("id", { count: "exact", head: true }).eq("owner_user_id", user.id).or("gd_status.eq.failed,faucet_status.eq.failed"),
+    ]);
+    const exactTotal = total ?? all.length;
+    const exactOk = ok ?? all.filter(r => r.faucet_status === "success").length;
+    const exactFailed = failed ?? all.filter(r => r.gd_status === "failed" || r.faucet_status === "failed").length;
+    setWalletStats({
+      total: exactTotal,
+      ok: exactOk,
+      failed: exactFailed,
+      pending: Math.max(0, exactTotal - exactOk - exactFailed),
+    });
   };
 
   const loadJob = async () => {
@@ -459,11 +483,10 @@ export default function Farmer() {
                 </div>
 
                 {(job || rows.length > 0) && (() => {
-                  // Counters derived from real wallet rows so they ALWAYS
-                  // equal the stored count. No drift, no double-counting.
-                  const ok = rows.filter(r => r.faucet_status === "success").length;
-                  const failed = rows.filter(r => r.gd_status === "failed" || r.faucet_status === "failed").length;
-                  const pending = rows.length - ok - failed;
+                  const ok = walletStats?.ok ?? rows.filter(r => r.faucet_status === "success").length;
+                  const failed = walletStats?.failed ?? rows.filter(r => r.gd_status === "failed" || r.faucet_status === "failed").length;
+                  const pending = walletStats?.pending ?? Math.max(0, rows.length - ok - failed);
+                  const stored = walletStats?.total ?? rows.length;
                   return (
                     <div className="flex items-center gap-3 text-sm pt-2 border-t border-border flex-wrap">
                       {running && <span className="inline-flex items-center gap-1 text-primary">
@@ -473,7 +496,7 @@ export default function Farmer() {
                       <span className="text-success">✓ {ok}</span>
                       <span className="text-destructive">✗ {failed}</span>
                       {pending > 0 && <span className="text-amber-500">⏳ {pending}</span>}
-                      <span className="ml-auto text-muted-foreground">{rows.length} stored</span>
+                      <span className="ml-auto text-muted-foreground">{stored} stored</span>
                     </div>
                   );
                 })()}
