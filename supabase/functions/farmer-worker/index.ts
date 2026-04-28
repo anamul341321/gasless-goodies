@@ -372,19 +372,15 @@ async function faucetBatch(jobId: string, entries: BatchEntry[], deadline: numbe
 }> {
   let ok = 0;
   let failed = 0;
-  for (let i = 0; i < entries.length; i++) {
-    if (!hasTimeLeft(deadline)) return { ok, failed, stopped: false, exhausted: true };
-    if (!(await isJobRunning(jobId))) return { ok, failed, stopped: true, exhausted: false };
-    const e = entries[i];
 
+  const processOne = async (e: BatchEntry) => {
     let faucetTx: string | null = null;
     let faucetStatus = "failed";
     let faucetError: string | null = null;
     let faucetIp: string | null = null;
 
     for (let attempt = 1; attempt <= FAUCET_MAX_ATTEMPTS; attempt++) {
-      if (!hasTimeLeft(deadline)) return { ok, failed, stopped: false, exhausted: true };
-      if (!(await isJobRunning(jobId))) return { ok, failed, stopped: true, exhausted: false };
+      if (!hasTimeLeft(deadline)) break;
       const r = await callFaucet(e.address);
       faucetIp = r.ip || null;
       if (r.ok) {
@@ -408,12 +404,22 @@ async function faucetBatch(jobId: string, entries: BatchEntry[], deadline: numbe
       faucet_ip: faucetIp,
     }).eq("id", e.rowId);
 
-    if (faucetStatus === "success") ok += 1;
-    else failed += 1;
+    return faucetStatus === "success";
+  };
 
-    if (i < entries.length - 1) {
-      // Refresh lock lease every ~10 wallets so other workers don't barge in
-      if ((i + 1) % 10 === 0) await refreshLease(jobId);
+  for (let i = 0; i < entries.length; i += FAUCET_PARALLEL) {
+    if (!hasTimeLeft(deadline)) return { ok, failed, stopped: false, exhausted: true };
+    if (!(await isJobRunning(jobId))) return { ok, failed, stopped: true, exhausted: false };
+
+    const group = entries.slice(i, i + FAUCET_PARALLEL);
+    const results = await Promise.all(group.map(processOne));
+    for (const success of results) {
+      if (success) ok += 1; else failed += 1;
+    }
+
+    await refreshLease(jobId);
+
+    if (i + FAUCET_PARALLEL < entries.length) {
       const stillRunning = await waitWhileRunning(jobId, FAUCET_GAP_MS);
       if (!stillRunning) return { ok, failed, stopped: true, exhausted: false };
     }
