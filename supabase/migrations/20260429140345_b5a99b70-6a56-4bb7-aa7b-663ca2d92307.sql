@@ -1,0 +1,1 @@
+ALTER TABLE public.gas_load_jobs ALTER COLUMN max_retries SET DEFAULT 1;
