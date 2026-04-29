@@ -317,6 +317,48 @@ const GasLoader = () => {
     localStorage.removeItem(ACTIVE_JOB_KEY);
   };
 
+  const handleCancel = async () => {
+    if (!jobId) return;
+    const pw = accessPassword.trim();
+    if (!pw) {
+      toast({ title: "Password required", variant: "destructive" });
+      return;
+    }
+    setCancelling(true);
+    try {
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/gas-loader-cancel`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-admin-password": pw,
+        },
+        body: JSON.stringify({ jobId }),
+      });
+      if (res.status === 401) {
+        toast({ title: "Wrong password", variant: "destructive" });
+        return;
+      }
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data?.error || `HTTP ${res.status}`);
+      }
+      toast({
+        title: "Batch cancelled",
+        description: `${data.cancelled ?? 0} pending wallet(s) marked failed.`,
+      });
+      // Refresh status immediately
+      fetchStatus(jobId);
+    } catch (e: any) {
+      toast({
+        title: "Cancel failed",
+        description: e?.message || "Could not cancel batch",
+        variant: "destructive",
+      });
+    } finally {
+      setCancelling(false);
+    }
+  };
+
   const total = job?.total ?? 0;
   const processed = (job?.done ?? 0) + (job?.failed ?? 0);
   const progressPct = total ? Math.round((processed / total) * 100) : 0;
