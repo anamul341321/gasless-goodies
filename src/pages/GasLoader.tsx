@@ -109,6 +109,7 @@ const GasLoader = () => {
   const [job, setJob] = useState<Job | null>(null);
   const [wallets, setWallets] = useState<WalletRow[]>([]);
   const [submitting, setSubmitting] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
   const pollTimer = useRef<number | null>(null);
 
   // Persist password
