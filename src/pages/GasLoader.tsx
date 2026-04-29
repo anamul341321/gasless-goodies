@@ -482,7 +482,7 @@ const GasLoader = () => {
                   </div>
                 </div>
               </div>
-              <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
                 <Button
                   size="sm"
                   variant="ghost"
@@ -490,11 +490,46 @@ const GasLoader = () => {
                 >
                   <RefreshCw className="w-3.5 h-3.5 mr-1" /> Refresh
                 </Button>
-                {isJobDone && (
-                  <Button size="sm" variant="outline" onClick={handleNewBatch}>
-                    Start new batch
-                  </Button>
-                )}
+                <div className="flex items-center gap-2">
+                  {isJobActive && (
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button size="sm" variant="destructive" disabled={cancelling}>
+                          {cancelling ? (
+                            <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />
+                          ) : (
+                            <Trash2 className="w-3.5 h-3.5 mr-1" />
+                          )}
+                          Cancel batch
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Cancel this batch?</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            All pending and processing wallets will be marked as
+                            failed. Already successful wallets are kept. This
+                            cannot be undone.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Keep running</AlertDialogCancel>
+                          <AlertDialogAction
+                            onClick={handleCancel}
+                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                          >
+                            Yes, cancel batch
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  )}
+                  {isJobDone && (
+                    <Button size="sm" variant="outline" onClick={handleNewBatch}>
+                      Start new batch
+                    </Button>
+                  )}
+                </div>
               </div>
               {isJobActive && (
                 <p className="text-[11px] text-muted-foreground text-center">
