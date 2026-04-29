@@ -460,34 +460,18 @@ async function processLoop(): Promise<{ processed: number; remaining: boolean }>
       return { processed, remaining: false };
     }
 
-    // Per-wallet inner retry: hit the faucet up to FAUCET_MAX_ATTEMPTS times,
-    // waiting FAUCET_RETRY_DELAY_MS (3s) between tries. This is much faster
-    // than waiting for the next cron tick / outer retry round.
-    const FAUCET_MAX_ATTEMPTS = 5;
-    const FAUCET_RETRY_DELAY_MS = 3_000;
-    let result: { ok: boolean; txHash?: string; error?: string; ip?: string } = {
-      ok: false,
-      error: "no attempt",
-    };
-    for (let attempt = 1; attempt <= FAUCET_MAX_ATTEMPTS; attempt++) {
-      if (Date.now() - startedAt >= WORKER_TIME_BUDGET_MS) break;
-      const ac = new AbortController();
-      const t = setTimeout(() => ac.abort(), 45_000);
-      try {
-        result = await callFaucet(item.wallet_address, ac.signal);
-      } catch (e: any) {
-        result = { ok: false, error: e?.message || String(e) };
-      }
-      clearTimeout(t);
-      if (result.ok) break;
-      if (isTerminalFaucetError(result.error)) break; // don't retry insufficient-funds
-      console.log(
-        `[faucet-retry] ${item.wallet_address} attempt ${attempt}/${FAUCET_MAX_ATTEMPTS} failed: ${result.error}`
-      );
-      if (attempt < FAUCET_MAX_ATTEMPTS) {
-        await new Promise((r) => setTimeout(r, FAUCET_RETRY_DELAY_MS));
-      }
+    // ONE attempt per wallet in this round. If it fails, mark it failed and
+    // move on. Failed wallets are re-queued for ONE more retry round after
+    // the whole batch finishes (handled in finalizeWallet via retry_round).
+    const ac = new AbortController();
+    const t = setTimeout(() => ac.abort(), 45_000);
+    let result: { ok: boolean; txHash?: string; error?: string; ip?: string };
+    try {
+      result = await callFaucet(item.wallet_address, ac.signal);
+    } catch (e: any) {
+      result = { ok: false, error: e?.message || String(e) };
     }
+    clearTimeout(t);
 
     await finalizeWallet(item.id, item.job_id, result);
     logHistory({
