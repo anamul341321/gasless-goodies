@@ -21,7 +21,10 @@ const BALANCE_VERIFY_DELAY_MS = 4_000;
 // balances — let the faucet decide. We only treat "no balance increase" as
 // success when the wallet is clearly already well-funded for a G$ claim
 // (> 0.2 CELO — way more than any single claim needs).
-const FAUCET_SKIP_THRESHOLD_WEI = 200_000_000_000_000_000n; // 0.2 CELO
+// A G$ claim costs ~0.001 CELO. If a wallet already has > 0.005 CELO it can
+// pay gas without faucet help. The GD faucet returns {ok:1} without sending
+// anything for already-funded wallets, so we treat that as success.
+const FAUCET_SKIP_THRESHOLD_WEI = 5_000_000_000_000_000n; // 0.005 CELO
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
