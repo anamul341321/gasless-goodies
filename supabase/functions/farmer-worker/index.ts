@@ -31,19 +31,17 @@ const G_DOLLAR_ABI = [
 ];
 const GD_FAUCET_URL = "https://goodserver.gooddollar.org/verify/topWallet";
 
-const BATCH_SIZE = 100;                 // wallets created immediately per fresh batch
-const GD_PARALLEL = 50;                 // G$ transfers submitted together per chunk
-const GD_BATCH_SETTLE_MS = 15_000;      // strict 15s wait after all G$ submitted
-const FAUCET_GAP_MS = 500;              // stable gap between sequential faucet calls
+const GD_SETTLE_MS = 5_000;             // wait 5s after G$ tx submitted, before faucet
+const FAUCET_GAP_MS = 500;              // tiny gap before moving to next wallet
 const FAUCET_RETRY_WAIT_MS = 1_500;     // wait before retry with new IP
 const FAUCET_MAX_ATTEMPTS = 2;          // 1 initial + 1 retry with fresh IP
 const FAUCET_CALL_TIMEOUT_MS = 8_000;   // keep each request under worker budget
-const FAUCET_MAX_PER_CYCLE = 8;         // short drain chunk to avoid platform kill
+const MAX_WALLETS_PER_INVOCATION = 6;   // serial cap per worker run (each ~6-8s)
 
-const WORKER_TIME_BUDGET_MS = 18_000;
-const STOP_BEFORE_TIMEOUT_MS = 3_000;
+const WORKER_TIME_BUDGET_MS = 60_000;
+const STOP_BEFORE_TIMEOUT_MS = 4_000;
 const TRIGGER_URL = `${SUPABASE_URL}/functions/v1/farmer-worker`;
-const CONTINUE_DELAY_MS = 16_000;
+const CONTINUE_DELAY_MS = 2_000;
 
 const provider = new JsonRpcProvider(CELO_RPC, 42220);
 const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
