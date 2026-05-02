@@ -1,10 +1,12 @@
 // Background worker that processes active farmer_jobs.
 // Runs on pg_cron every minute. Single isolate guard to avoid overlap.
 //
-// Batch flow:
-//   Phase 1: create 100 wallets immediately and store them with gd_status=pending.
-//   Phase 2: load G$ in chunks of 50 parallel transfers with explicit nonces.
-//   Phase 3: after settle time, drain faucet one-by-one in short chunks.
+// Serial flow (per wallet, one at a time):
+//   1. Generate 1 fresh wallet and insert it with gd_status=pending.
+//   2. Send G$ to it from the funder wallet (wait for tx submission).
+//   3. Wait 5 seconds for the G$ tx to settle on-chain.
+//   4. Call the GoodDollar faucet for that wallet (gas request).
+//   5. Move on to the next wallet.
 // Stop checks happen between every step so the user can halt instantly.
 
 import { Wallet, JsonRpcProvider, Contract, parseUnits } from "npm:ethers@6.13.4";
