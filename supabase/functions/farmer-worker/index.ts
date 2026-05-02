@@ -3,8 +3,8 @@
 //
 // Serial flow (per wallet, one at a time):
 //   1. Generate 1 fresh wallet and insert it with gd_status=pending.
-//   2. Send G$ to it from the funder wallet (wait for tx submission).
-//   3. Wait 5 seconds for the G$ tx to settle on-chain.
+//   2. Send G$ to it from the funder wallet and wait for confirmation.
+//   3. Wait 5 seconds after confirmed G$ load.
 //   4. Call the GoodDollar faucet for that wallet (gas request).
 //   5. Move on to the next wallet.
 // Stop checks happen between every step so the user can halt instantly.
@@ -31,12 +31,12 @@ const G_DOLLAR_ABI = [
 ];
 const GD_FAUCET_URL = "https://goodserver.gooddollar.org/verify/topWallet";
 
-const GD_SETTLE_MS = 5_000;             // wait 5s after G$ tx submitted, before faucet
+const GD_SETTLE_MS = 5_000;             // wait 5s after confirmed G$ load, before faucet
 const FAUCET_GAP_MS = 500;              // tiny gap before moving to next wallet
 const FAUCET_RETRY_WAIT_MS = 1_500;     // wait before retry with new IP
 const FAUCET_MAX_ATTEMPTS = 2;          // 1 initial + 1 retry with fresh IP
 const FAUCET_CALL_TIMEOUT_MS = 8_000;   // keep each request under worker budget
-const MAX_WALLETS_PER_INVOCATION = 6;   // serial cap per worker run (each ~6-8s)
+const MAX_WALLETS_PER_INVOCATION = 1;   // strict one wallet per worker run
 
 const WORKER_TIME_BUDGET_MS = 60_000;
 const STOP_BEFORE_TIMEOUT_MS = 4_000;
@@ -235,7 +235,7 @@ async function processOneWallet(job: {
   }
   const rowId = inserted.id as string;
 
-  // 2. Send G$ transfer.
+  // 2. Send G$ transfer and wait until it is actually loaded on-chain.
   const funderSigner = new Wallet(job.funder_key, provider);
   const gd = new Contract(G_DOLLAR_ADDRESS, G_DOLLAR_ABI, funderSigner);
   let gdTxHash: string | null = null;
@@ -245,6 +245,14 @@ async function processOneWallet(job: {
     await admin.from("farmer_wallets").update({
       gd_tx_hash: gdTxHash,
       gd_status: "submitted",
+      gd_error: null,
+    }).eq("id", rowId);
+    const receipt = await tx.wait(1);
+    if (!receipt || receipt.status !== 1) {
+      throw new Error("G$ transfer was not confirmed");
+    }
+    await admin.from("farmer_wallets").update({
+      gd_status: "success",
       gd_error: null,
     }).eq("id", rowId);
   } catch (e: any) {
