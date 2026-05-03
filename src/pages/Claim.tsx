@@ -443,7 +443,7 @@ const Claim = () => {
             GoodDollar Batch Claim
           </h1>
           <p className="text-muted-foreground text-xs md:text-sm">
-            Paste private keys · 30s per wallet · auto-fills gas if missing · runs server-side
+            Paste private keys · 100 wallets claimed in parallel · runs server-side
           </p>
         </div>
 
@@ -557,8 +557,8 @@ const Claim = () => {
               </div>
               {isJobActive && (
                 <p className="text-[11px] text-muted-foreground text-center">
-                  Claims run on the server at ~30s per wallet. You can close this page or turn
-                  off your screen — progress continues.
+                  Claims fire 100 wallets in parallel on the server. You can close this page —
+                  progress continues.
                 </p>
               )}
 
@@ -786,13 +786,15 @@ const Claim = () => {
                 <p>
                   <strong className="text-foreground">How it works:</strong> Each wallet calls
                   GoodDollar's <code className="text-primary">UBIScheme.claim()</code> on Celo
-                  Mainnet. If a wallet has no CELO for gas, the system automatically requests a
-                  free-gas refill (with rotating IP) and retries the claim once gas arrives.
+                  Mainnet. Up to <strong className="text-foreground">100 wallets are claimed
+                  in parallel</strong> per server cycle, using the same gas fee as gooddapp.org
+                  (no overrides).
                 </p>
                 <p>
-                  Pacing is fixed at <strong className="text-foreground">10 seconds per wallet</strong>{" "}
-                  to avoid network throttling. Login before starting a batch to keep failed
-                  private keys in your account until you manually delete them.
+                  Failures are split into two recovery boxes: <strong className="text-foreground">
+                  insufficient gas</strong> (load CELO and retry) and <strong className="text-foreground">
+                  not whitelisted</strong> (complete KYC at gooddollar.org). Login before
+                  starting so failed keys remain in your account.
                 </p>
               </div>
             </CardContent>
