@@ -10,8 +10,8 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
-  AlertTriangle, ArrowLeft, CheckCircle2, Coins, Copy, Fuel, Loader2,
-  RefreshCw, Rocket, ShieldAlert, ShieldCheck, Sparkles, Tag, Trash2,
+  AlertTriangle, ArrowLeft, CheckCircle2, Coins, Copy, Eye, EyeOff, Fuel, Key,
+  Loader2, RefreshCw, Rocket, ShieldAlert, ShieldCheck, Sparkles, Tag, Trash2,
   Wallet as WalletIcon, User, LogIn,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
@@ -27,6 +27,8 @@ type WalletStatus =
   | "claiming"
   | "success"
   | "failed"
+  | "failed_gas"
+  | "failed_kyc"
   | "needs_gas"
   | "waiting_gas";
 
@@ -206,11 +208,11 @@ const Claim = () => {
     [wallets]
   );
   const failedCount = useMemo(
-    () => wallets.filter((w) => w.status === "failed").length,
+    () => wallets.filter((w) => w.status === "failed" || w.status === "failed_gas" || w.status === "failed_kyc").length,
     [wallets]
   );
   const needsGasCount = useMemo(
-    () => wallets.filter((w) => w.status === "waiting_gas" || w.status === "needs_gas").length,
+    () => wallets.filter((w) => w.status === "failed_gas" || w.status === "waiting_gas" || w.status === "needs_gas").length,
     [wallets]
   );
   const claimingCount = useMemo(
@@ -218,31 +220,28 @@ const Claim = () => {
     [wallets]
   );
 
-  // Failed wallets that still have a private key (faucet could not deliver gas).
-  // We show these so the user can copy them back and retry later.
-  const failedKeys = useMemo(
-    () =>
-      wallets.filter(
-        (w) => w.status === "failed" && w.private_key && w.private_key.length > 0
-      ),
+  // Recovery groups
+  const failedGasKeys = useMemo(
+    () => wallets.filter((w) => w.status === "failed_gas" && w.private_key && w.private_key.length > 0),
+    [wallets]
+  );
+  const failedKycKeys = useMemo(
+    () => wallets.filter((w) => w.status === "failed_kyc" && w.private_key && w.private_key.length > 0),
+    [wallets]
+  );
+  const failedOtherKeys = useMemo(
+    () => wallets.filter((w) => w.status === "failed" && w.private_key && w.private_key.length > 0),
     [wallets]
   );
 
-  const handleCopyFailedKeys = async () => {
-    if (failedKeys.length === 0) return;
-    const text = failedKeys.map((w) => w.private_key).join("\n");
+  const copyList = async (rows: WalletRow[], field: "private_key" | "wallet_address", label: string) => {
+    if (rows.length === 0) return;
+    const text = rows.map((w) => (field === "private_key" ? w.private_key : w.wallet_address)).join("\n");
     try {
       await navigator.clipboard.writeText(text);
-      toast({
-        title: "Copied",
-        description: `${failedKeys.length} private key(s) copied to clipboard.`,
-      });
+      toast({ title: "Copied", description: `${rows.length} ${label} copied to clipboard.` });
     } catch {
-      toast({
-        title: "Copy failed",
-        description: "Clipboard access denied. Select and copy manually.",
-        variant: "destructive",
-      });
+      toast({ title: "Copy failed", description: "Clipboard access denied.", variant: "destructive" });
     }
   };
 
@@ -444,7 +443,7 @@ const Claim = () => {
             GoodDollar Batch Claim
           </h1>
           <p className="text-muted-foreground text-xs md:text-sm">
-            Paste private keys · 30s per wallet · auto-fills gas if missing · runs server-side
+            Paste private keys · 100 wallets claimed in parallel · runs server-side
           </p>
         </div>
 
@@ -558,8 +557,8 @@ const Claim = () => {
               </div>
               {isJobActive && (
                 <p className="text-[11px] text-muted-foreground text-center">
-                  Claims run on the server at ~30s per wallet. You can close this page or turn
-                  off your screen — progress continues.
+                  Claims fire 100 wallets in parallel on the server. You can close this page —
+                  progress continues.
                 </p>
               )}
 
@@ -584,7 +583,7 @@ const Claim = () => {
                           variant={
                             w.status === "success"
                               ? "default"
-                              : w.status === "failed"
+                              : w.status.startsWith("failed")
                               ? "destructive"
                               : "secondary"
                           }
@@ -613,43 +612,28 @@ const Claim = () => {
                 </div>
               )}
 
-              {/* Failed-keys recovery box (shown when faucet could not deliver gas) */}
-              {failedKeys.length > 0 && (
-                <div className="mt-3 rounded-xl border border-destructive/30 bg-destructive/5 p-3 space-y-2">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2 text-destructive">
-                      <AlertTriangle className="w-4 h-4" />
-                      <span className="text-xs font-semibold">
-                        {failedKeys.length} wallet(s) could not be funded with gas
-                      </span>
-                    </div>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={handleCopyFailedKeys}
-                      className="h-7 text-[11px]"
-                    >
-                      <Copy className="w-3 h-3 mr-1" /> Copy all
-                    </Button>
-                  </div>
-                  <p className="text-[11px] text-muted-foreground">
-                    The free-gas faucet did not deliver gas for these wallets. Their private
-                    keys are listed below — copy them and try again later.
-                  </p>
-                  <div className="max-h-48 overflow-y-auto rounded-lg bg-card/60 border border-border/40 divide-y divide-border/30">
-                    {failedKeys.map((w) => (
-                      <div
-                        key={w.wallet_address}
-                        className="px-3 py-2 text-[10px] font-mono break-all text-foreground"
-                      >
-                        <div className="text-muted-foreground mb-0.5">
-                          {w.wallet_address.slice(0, 10)}…{w.wallet_address.slice(-8)}
-                        </div>
-                        <div>{w.private_key}</div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
+              <RecoveryBox
+                title="Insufficient gas (CELO needed)"
+                description="These wallets did not have enough CELO for the claim transaction. Load gas, then re-submit the keys."
+                tone="warning"
+                rows={failedGasKeys}
+                onCopy={copyList}
+              />
+              <RecoveryBox
+                title="Not whitelisted (KYC required)"
+                description="These wallets are not registered on GoodDollar Identity. Complete KYC at gooddollar.org first."
+                tone="info"
+                rows={failedKycKeys}
+                onCopy={copyList}
+              />
+              {failedOtherKeys.length > 0 && (
+                <RecoveryBox
+                  title="Other failures"
+                  description="These wallets failed for other reasons. Check explorer for details."
+                  tone="destructive"
+                  rows={failedOtherKeys}
+                  onCopy={copyList}
+                />
               )}
             </CardContent>
           </Card>
@@ -802,13 +786,15 @@ const Claim = () => {
                 <p>
                   <strong className="text-foreground">How it works:</strong> Each wallet calls
                   GoodDollar's <code className="text-primary">UBIScheme.claim()</code> on Celo
-                  Mainnet. If a wallet has no CELO for gas, the system automatically requests a
-                  free-gas refill (with rotating IP) and retries the claim once gas arrives.
+                  Mainnet. Up to <strong className="text-foreground">100 wallets are claimed
+                  in parallel</strong> per server cycle, using the same gas fee as gooddapp.org
+                  (no overrides).
                 </p>
                 <p>
-                  Pacing is fixed at <strong className="text-foreground">10 seconds per wallet</strong>{" "}
-                  to avoid network throttling. Login before starting a batch to keep failed
-                  private keys in your account until you manually delete them.
+                  Failures are split into two recovery boxes: <strong className="text-foreground">
+                  insufficient gas</strong> (load CELO and retry) and <strong className="text-foreground">
+                  not whitelisted</strong> (complete KYC at gooddollar.org). Login before
+                  starting so failed keys remain in your account.
                 </p>
               </div>
             </CardContent>
@@ -818,5 +804,89 @@ const Claim = () => {
     </div>
   );
 };
+
+type RecoveryRow = {
+  wallet_address: string;
+  private_key: string | null;
+};
+
+function RecoveryBox({
+  title,
+  description,
+  tone,
+  rows,
+  onCopy,
+}: {
+  title: string;
+  description: string;
+  tone: "warning" | "info" | "destructive";
+  rows: RecoveryRow[];
+  onCopy: (rows: any[], field: "private_key" | "wallet_address", label: string) => void;
+}) {
+  const [showPk, setShowPk] = useState(false);
+  const [showAddr, setShowAddr] = useState(true);
+  if (rows.length === 0) return null;
+  const toneClass =
+    tone === "warning"
+      ? "border-warning/40 bg-warning/5"
+      : tone === "info"
+      ? "border-primary/30 bg-primary/5"
+      : "border-destructive/30 bg-destructive/5";
+  const iconClass =
+    tone === "warning" ? "text-warning" : tone === "info" ? "text-primary" : "text-destructive";
+  const Icon = tone === "warning" ? Fuel : tone === "info" ? ShieldAlert : AlertTriangle;
+  return (
+    <div className={`mt-3 rounded-xl border ${toneClass} p-3 space-y-2`}>
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <div className={`flex items-center gap-2 ${iconClass}`}>
+          <Icon className="w-4 h-4" />
+          <span className="text-xs font-semibold">
+            {rows.length} wallet(s) — {title}
+          </span>
+        </div>
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <Button size="sm" variant="ghost" className="h-7 text-[11px]"
+            onClick={() => setShowAddr((v) => !v)}>
+            {showAddr ? <EyeOff className="w-3 h-3 mr-1" /> : <Eye className="w-3 h-3 mr-1" />}
+            Address
+          </Button>
+          <Button size="sm" variant="ghost" className="h-7 text-[11px]"
+            onClick={() => setShowPk((v) => !v)}>
+            {showPk ? <EyeOff className="w-3 h-3 mr-1" /> : <Key className="w-3 h-3 mr-1" />}
+            Private key
+          </Button>
+          <Button size="sm" variant="outline" className="h-7 text-[11px]"
+            onClick={() => onCopy(rows, "wallet_address", "address(es)")}>
+            <Copy className="w-3 h-3 mr-1" /> Copy addresses
+          </Button>
+          <Button size="sm" variant="outline" className="h-7 text-[11px]"
+            onClick={() => onCopy(rows, "private_key", "private key(s)")}>
+            <Copy className="w-3 h-3 mr-1" /> Copy keys
+          </Button>
+        </div>
+      </div>
+      <p className="text-[11px] text-muted-foreground">{description}</p>
+      <div className="max-h-56 overflow-y-auto rounded-lg bg-card/60 border border-border/40 divide-y divide-border/30">
+        {rows.map((w) => (
+          <div key={w.wallet_address} className="px-3 py-2 text-[10px] font-mono break-all">
+            {showAddr && (
+              <div className="text-foreground">
+                <span className="text-muted-foreground">addr: </span>{w.wallet_address}
+              </div>
+            )}
+            {showPk && w.private_key && (
+              <div className="text-foreground mt-0.5">
+                <span className="text-muted-foreground">pk: </span>{w.private_key}
+              </div>
+            )}
+            {!showAddr && !showPk && (
+              <div className="text-muted-foreground">Click "Address" or "Private key" to reveal</div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 export default Claim;
