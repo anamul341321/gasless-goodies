@@ -26,6 +26,7 @@ type WalletStatus =
   | "pending"
   | "claiming"
   | "success"
+  | "already_claimed"
   | "failed"
   | "failed_gas"
   | "failed_kyc"
@@ -212,7 +213,11 @@ const Claim = () => {
     [wallets]
   );
   const failedCount = useMemo(
-    () => wallets.filter((w) => w.status === "failed" || w.status === "failed_gas" || w.status === "failed_kyc").length,
+    () => wallets.filter((w) => w.status === "failed" || w.status === "failed_gas" || w.status === "failed_kyc" || w.status === "already_claimed").length,
+    [wallets]
+  );
+  const alreadyClaimedKeys = useMemo(
+    () => wallets.filter((w) => w.status === "already_claimed" || (w.status === "failed" && /already claimed|no entitlement|claim no-op/i.test(w.error_message || ""))),
     [wallets]
   );
   const needsGasCount = useMemo(
@@ -230,11 +235,11 @@ const Claim = () => {
     [wallets]
   );
   const failedKycKeys = useMemo(
-    () => wallets.filter((w) => w.status === "failed_kyc" && w.private_key && w.private_key.length > 0),
+    () => wallets.filter((w) => (w.status === "failed_kyc" || (w.status === "failed" && /whitelist|identity|not verified/i.test(w.error_message || ""))) && w.private_key && w.private_key.length > 0),
     [wallets]
   );
   const failedOtherKeys = useMemo(
-    () => wallets.filter((w) => w.status === "failed" && w.private_key && w.private_key.length > 0),
+    () => wallets.filter((w) => w.status === "failed" && !/already claimed|no entitlement|claim no-op|whitelist|identity|not verified/i.test(w.error_message || "") && w.private_key && w.private_key.length > 0),
     [wallets]
   );
 
