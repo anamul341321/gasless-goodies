@@ -131,9 +131,13 @@ const Claim = () => {
 
   const fetchStatus = async (id: string) => {
     try {
+      const { data: sess } = await supabase.auth.getSession();
+      const token = sess?.session?.access_token;
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (token) headers["Authorization"] = `Bearer ${token}`;
       const res = await fetch(`${SUPABASE_URL}/functions/v1/gd-claim-status`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({ job_id: id, include_wallets: true }),
       });
       if (!res.ok) return;
