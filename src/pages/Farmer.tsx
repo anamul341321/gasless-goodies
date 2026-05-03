@@ -15,16 +15,12 @@ import { useAuth } from "@/contexts/AuthContext";
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
 
-type FarmerRow = {
-  id: string;
-  wallet_address: string;
-  private_key: string;
-  gd_status: string;
-  gd_tx_hash: string | null;
-  faucet_status: string;
-  faucet_tx_hash: string | null;
-  faucet_error: string | null;
-  created_at: string;
+type SweepResult = {
+  wallet: string;
+  ok: boolean;
+  tx?: string;
+  amount?: string;
+  error?: string;
 };
 
 type SweepResult = {
