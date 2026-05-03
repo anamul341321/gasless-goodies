@@ -583,7 +583,7 @@ const Claim = () => {
                           variant={
                             w.status === "success"
                               ? "default"
-                              : w.status === "failed"
+                              : w.status.startsWith("failed")
                               ? "destructive"
                               : "secondary"
                           }
