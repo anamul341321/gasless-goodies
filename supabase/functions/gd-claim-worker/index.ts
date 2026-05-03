@@ -3,21 +3,23 @@
 // Strategy:
 //   - Pick up to BATCH_SIZE pending wallets from gd_claim_queue.
 //   - Mark them all 'claiming' atomically.
-//   - Fire UBIScheme.claim() in parallel for ALL of them (no waiting between
-//     wallets, no waiting for receipt before sending the next). Each call
-//     uses the wallet's own nonce so they don't collide.
-//   - For each wallet, await the receipt to record success/failure.
+//   - Read checkEntitlement() before sending a tx; entitlement 0 is marked as
+//     already_claimed so CELO is not spent on wallets already claimed today.
+//   - Fire eligible UBIScheme.claim() calls in parallel. Each call uses the
+//     wallet's own nonce so they don't collide.
+//   - For each sent tx, await the receipt to record success/failure.
 //   - Classify failures:
 //       * insufficient gas       -> status 'failed_gas'  (key kept for user)
 //       * not whitelisted / KYC  -> status 'failed_kyc'  (key kept for user)
+//       * already claimed/no UBI -> status 'already_claimed' (key kept)
 //       * anything else          -> status 'failed'      (key kept for user)
 //   - DOES NOT auto-request gas from any faucet — that responsibility is
 //     handled separately (or not at all).
 //
-//   Gas: ethers picks gas params automatically (no overrides), so the fee
-//   matches what gooddapp.org pays.
+//   Gas: node-estimated gasLimit + current legacy gasPrice, so wallets only
+//   need the real CELO amount the claim needs.
 
-import { Wallet, JsonRpcProvider, Contract } from "npm:ethers@6.13.4";
+import { Wallet, JsonRpcProvider, Contract, formatEther } from "npm:ethers@6.13.4";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -29,8 +31,14 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
 const CELO_RPC = "https://forno.celo.org";
+const IDENTITY_ADDRESS = "0xC361A6E67822a0EDc17D899227dd9FC50BD62F42";
 const UBI_SCHEME_ADDRESS = "0x43d72Ff17701B2DA814620735C39C620Ce0ea4A1";
-const UBI_ABI = ["function claim() returns (bool)"];
+const UBI_ABI = [
+  "function claim() returns (uint256)",
+  "function checkEntitlement(address member) view returns (uint256)",
+  "function checkEntitlement() view returns (uint256)",
+];
+const IDENTITY_ABI = ["function isWhitelisted(address account) view returns (bool)"];
 
 const WORKER_TRIGGER_URL = `${SUPABASE_URL}/functions/v1/gd-claim-worker`;
 
@@ -57,8 +65,14 @@ type QueueRow = {
   attempts: number;
 };
 
-function classifyError(err: any): "gas" | "kyc" | "other" {
+function classifyError(err: any): "gas" | "kyc" | "already" | "other" {
   const raw = (err?.message || err?.shortMessage || err?.reason || String(err) || "").toLowerCase();
+  if (
+    raw.includes("no entitlement") ||
+    raw.includes("already claimed") ||
+    raw.includes("alreadyclaim") ||
+    raw.includes("claim no-op")
+  ) return "already";
   if (
     raw.includes("insufficient funds") ||
     raw.includes("insufficient balance") ||
@@ -72,6 +86,24 @@ function classifyError(err: any): "gas" | "kyc" | "other" {
     raw.includes("not verified")
   ) return "kyc";
   return "other";
+}
+
+async function readEntitlement(ubi: Contract, address: string): Promise<{ amount?: bigint; error?: any }> {
+  try {
+    const value = await (ubi as any)["checkEntitlement(address)"].staticCall(address);
+    return { amount: BigInt(value) };
+  } catch (firstError) {
+    try {
+      const value = await (ubi as any)["checkEntitlement()"].staticCall();
+      return { amount: BigInt(value) };
+    } catch {
+      return { error: firstError };
+    }
+  }
+}
+
+function formatGasNeed(wei: bigint): string {
+  return Number(formatEther(wei)).toFixed(6).replace(/0+$/, "").replace(/\.$/, "");
 }
 
 async function pickPendingBatch(): Promise<QueueRow[]> {
@@ -115,22 +147,68 @@ async function pickPendingBatch(): Promise<QueueRow[]> {
 }
 
 async function claimOne(row: QueueRow): Promise<{
-  status: "success" | "failed_gas" | "failed_kyc" | "failed";
+  status: "success" | "failed_gas" | "failed_kyc" | "already_claimed" | "failed";
   txHash?: string;
   error?: string;
 }> {
   try {
     const signer = new Wallet(row.private_key, provider);
     const ubi = new Contract(UBI_SCHEME_ADDRESS, UBI_ABI, signer);
+    const identity = new Contract(IDENTITY_ADDRESS, IDENTITY_ABI, provider);
+    const addr = (await signer.getAddress()).toLowerCase();
+
+    try {
+      const whitelisted = await identity.isWhitelisted(addr);
+      if (!whitelisted) {
+        return { status: "failed_kyc", error: "not whitelisted — transaction skipped" };
+      }
+    } catch {
+      // If the read fails, continue to claim and let on-chain errors classify it.
+    }
+
+    // Match the uploaded app flow: read entitlement before sending a tx.
+    // If entitlement is 0, do NOT call claim(); this prevents gas being spent
+    // on wallets that already claimed today or are not currently entitled.
+    const entitlement = await readEntitlement(ubi, addr);
+    if (typeof entitlement.amount === "bigint") {
+      if (entitlement.amount === 0n) {
+        return { status: "already_claimed", error: "already claimed today / no entitlement — transaction skipped" };
+      }
+    } else if (entitlement.error) {
+      const cls = classifyError(entitlement.error);
+      const msg = (entitlement.error?.shortMessage || entitlement.error?.reason || entitlement.error?.message || "entitlement check failed").slice(0, 240);
+      if (cls === "gas") return { status: "failed_gas", error: msg };
+      if (cls === "kyc") return { status: "failed_kyc", error: msg };
+      // Unknown read errors are not final; claim may still work on-chain.
+    }
+
     let tx;
     try {
-      // No gas overrides -> ethers + node estimate (matches gooddapp.org).
-      tx = await ubi.claim();
+      // Legacy gasPrice avoids EIP-1559 max-fee over-reserving on Celo.
+      // Gas limit remains node-estimated; nothing is hardcoded.
+      const feeData = await provider.getFeeData();
+      const overrides: Record<string, bigint> = {};
+      if (feeData.gasPrice) overrides.gasPrice = feeData.gasPrice;
+
+      if (overrides.gasPrice) {
+        const estimatedGas = await (ubi as any).claim.estimateGas(overrides);
+        const balance = await provider.getBalance(addr);
+        const required = BigInt(estimatedGas) * overrides.gasPrice;
+        if (balance < required) {
+          return {
+            status: "failed_gas",
+            error: `insufficient CELO for gas: has ${formatGasNeed(balance)}, needs about ${formatGasNeed(required)}`,
+          };
+        }
+      }
+
+      tx = await (ubi as any).claim(overrides);
     } catch (e: any) {
       const cls = classifyError(e);
       const msg = (e?.shortMessage || e?.reason || e?.message || "claim revert").slice(0, 240);
       if (cls === "gas") return { status: "failed_gas", error: msg };
       if (cls === "kyc") return { status: "failed_kyc", error: msg };
+      if (cls === "already") return { status: "already_claimed", error: msg };
       return { status: "failed", error: msg };
     }
     try {
@@ -140,7 +218,6 @@ async function claimOne(row: QueueRow): Promise<{
         // today or is not entitled. In that case the tx mines successfully but
         // emits no logs from the wallet. Require at least one log involving
         // this wallet address as the "real success" signal.
-        const addr = (await signer.getAddress()).toLowerCase();
         const logs = (receipt.logs || []) as any[];
         const touchedWallet = logs.some((l) => {
           const topics: string[] = l.topics || [];
@@ -150,7 +227,7 @@ async function claimOne(row: QueueRow): Promise<{
         if (touchedWallet) {
           return { status: "success", txHash: tx.hash };
         }
-        return { status: "failed", txHash: tx.hash, error: "claim no-op (already claimed today or not entitled)" };
+        return { status: "already_claimed", txHash: tx.hash, error: "claim no-op (already claimed today or not entitled)" };
       }
       return { status: "failed", txHash: tx.hash, error: "tx reverted" };
     } catch (e: any) {
@@ -161,6 +238,7 @@ async function claimOne(row: QueueRow): Promise<{
     const msg = (e?.message || String(e)).slice(0, 240);
     if (cls === "gas") return { status: "failed_gas", error: msg };
     if (cls === "kyc") return { status: "failed_kyc", error: msg };
+    if (cls === "already") return { status: "already_claimed", error: msg };
     return { status: "failed", error: msg };
   }
 }
@@ -194,6 +272,7 @@ async function refreshJobAggregate(jobId: string) {
   for (const r of all || []) {
     if (r.status === "success") done++;
     else if (r.status === "failed_gas") { failed++; needsGas++; }
+    else if (r.status === "already_claimed") failed++;
     else if (r.status === "failed_kyc" || r.status === "failed") failed++;
     if (r.status === "pending" || r.status === "claiming") activeRemaining++;
   }

@@ -73,7 +73,9 @@ export default function Account() {
     if (error) {
       toast({ title: "Could not load wallets", description: error.message, variant: "destructive" });
     } else {
-      const failed = ((data as FailedWallet[]) || []).filter((w) => w.status === "failed");
+      const failed = ((data as FailedWallet[]) || []).filter(
+        (w) => w.status.startsWith("failed") || w.status === "already_claimed"
+      );
       setWalletsByBatch((s) => ({ ...s, [jobId]: failed }));
     }
     setWalletsLoading((s) => ({ ...s, [jobId]: false }));

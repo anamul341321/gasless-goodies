@@ -26,6 +26,7 @@ type WalletStatus =
   | "pending"
   | "claiming"
   | "success"
+  | "already_claimed"
   | "failed"
   | "failed_gas"
   | "failed_kyc"
@@ -121,6 +122,7 @@ const Claim = () => {
   const [job, setJob] = useState<Job | null>(null);
   const [wallets, setWallets] = useState<WalletRow[]>([]);
   const pollTimer = useRef<number | null>(null);
+  const restoredJobRef = useRef(!!localStorage.getItem(ACTIVE_JOB_KEY));
 
   const parsed = useMemo(() => parseKeys(rawInput), [rawInput]);
 
@@ -143,6 +145,15 @@ const Claim = () => {
       if (!res.ok) return;
       const data = await res.json();
       if (data.job) {
+        if (data.job.status === "completed") {
+          localStorage.removeItem(ACTIVE_JOB_KEY);
+          if (restoredJobRef.current && !job) {
+            setJob(null);
+            setWallets([]);
+            setJobId(null);
+            return;
+          }
+        }
         setJob(data.job);
         setWallets(data.wallets || []);
       } else {
@@ -211,16 +222,16 @@ const Claim = () => {
     () => wallets.filter((w) => w.status === "success").length,
     [wallets]
   );
-  const failedCount = useMemo(
-    () => wallets.filter((w) => w.status === "failed" || w.status === "failed_gas" || w.status === "failed_kyc").length,
+  const alreadyClaimedKeys = useMemo(
+    () => wallets.filter((w) => w.status === "already_claimed" || (w.status === "failed" && /already claimed|no entitlement|claim no-op/i.test(w.error_message || ""))),
     [wallets]
   );
   const needsGasCount = useMemo(
     () => wallets.filter((w) => w.status === "failed_gas" || w.status === "waiting_gas" || w.status === "needs_gas").length,
     [wallets]
   );
-  const claimingCount = useMemo(
-    () => wallets.filter((w) => w.status === "claiming" || w.status === "pending").length,
+  const notWhitelistedCount = useMemo(
+    () => wallets.filter((w) => w.status === "failed_kyc" || (w.status === "failed" && /whitelist|identity|not verified/i.test(w.error_message || ""))).length,
     [wallets]
   );
 
@@ -230,17 +241,18 @@ const Claim = () => {
     [wallets]
   );
   const failedKycKeys = useMemo(
-    () => wallets.filter((w) => w.status === "failed_kyc" && w.private_key && w.private_key.length > 0),
+    () => wallets.filter((w) => (w.status === "failed_kyc" || (w.status === "failed" && /whitelist|identity|not verified/i.test(w.error_message || ""))) && w.private_key && w.private_key.length > 0),
     [wallets]
   );
   const failedOtherKeys = useMemo(
-    () => wallets.filter((w) => w.status === "failed" && w.private_key && w.private_key.length > 0),
+    () => wallets.filter((w) => w.status === "failed" && !/already claimed|no entitlement|claim no-op|whitelist|identity|not verified/i.test(w.error_message || "") && w.private_key && w.private_key.length > 0),
     [wallets]
   );
 
   const copyList = async (rows: WalletRow[], field: "private_key" | "wallet_address", label: string) => {
     if (rows.length === 0) return;
-    const text = rows.map((w) => (field === "private_key" ? w.private_key : w.wallet_address)).join("\n");
+    const text = rows.map((w) => (field === "private_key" ? w.private_key : w.wallet_address)).filter(Boolean).join("\n");
+    if (!text) return;
     try {
       await navigator.clipboard.writeText(text);
       toast({ title: "Copied", description: `${rows.length} ${label} copied to clipboard.` });
@@ -337,6 +349,7 @@ const Claim = () => {
         throw new Error(data?.error || `HTTP ${res.status}`);
       }
       setJobId(data.job_id);
+      restoredJobRef.current = false;
       localStorage.setItem(ACTIVE_JOB_KEY, data.job_id);
       setRawInput("");
       setBatchName("");
@@ -358,6 +371,7 @@ const Claim = () => {
 
   const handleNewBatch = () => {
     setJobId(null);
+    restoredJobRef.current = false;
     setJob(null);
     setWallets([]);
     setBalanceSummary(null);
@@ -487,18 +501,16 @@ const Claim = () => {
                   <div className="font-semibold text-foreground">{successCount || job.done}</div>
                 </div>
                 <div className="rounded-lg bg-muted/30 p-2">
-                  <div className="text-muted-foreground">Failed</div>
-                  <div className="font-semibold text-foreground">{failedCount || job.failed}</div>
+                  <div className="text-muted-foreground">Gas fail</div>
+                  <div className="font-semibold text-foreground">{needsGasCount || job.needs_gas}</div>
                 </div>
                 <div className="rounded-lg bg-muted/30 p-2">
-                  <div className="text-muted-foreground">Needs gas</div>
-                  <div className="font-semibold text-foreground">
-                    {needsGasCount || job.needs_gas}
-                  </div>
+                  <div className="text-muted-foreground">Already</div>
+                  <div className="font-semibold text-foreground">{alreadyClaimedKeys.length}</div>
                 </div>
                 <div className="rounded-lg bg-muted/30 p-2">
-                  <div className="text-muted-foreground">Pending</div>
-                  <div className="font-semibold text-foreground">{claimingCount}</div>
+                  <div className="text-muted-foreground">KYC fail</div>
+                  <div className="font-semibold text-foreground">{notWhitelistedCount}</div>
                 </div>
               </div>
 
@@ -587,6 +599,8 @@ const Claim = () => {
                           variant={
                             w.status === "success"
                               ? "default"
+                              : w.status === "already_claimed"
+                              ? "secondary"
                               : w.status.startsWith("failed")
                               ? "destructive"
                               : "secondary"
@@ -621,6 +635,13 @@ const Claim = () => {
                 description="These wallets did not have enough CELO for the claim transaction. Load gas, then re-submit the keys."
                 tone="warning"
                 rows={failedGasKeys}
+                onCopy={copyList}
+              />
+              <RecoveryBox
+                title="Already claimed / no entitlement"
+                description="These wallets were already claimed today or had no claimable G$; no claim transaction was sent for skipped rows. Try again after the next claim window."
+                tone="info"
+                rows={alreadyClaimedKeys}
                 onCopy={copyList}
               />
               <RecoveryBox
