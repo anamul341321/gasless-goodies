@@ -9,6 +9,9 @@ verify_jwt = false
 [functions.gd-claim-worker]
 verify_jwt = false
 
+[functions.celo-balance-check]
+verify_jwt = false
+
 [functions.siwe-nonce]
 verify_jwt = false
 

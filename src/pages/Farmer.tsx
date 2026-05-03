@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, Navigate } from "react-router-dom";
 import {
-  ArrowLeft, Coins, Loader2, Square, Sparkles, Send, ExternalLink,
+  ArrowLeft, Coins, Loader2, Square, Sparkles, Send, ExternalLink, Search, Wallet as WalletIcon, Copy,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -35,6 +35,55 @@ export default function Farmer() {
   const [sweepSummary, setSweepSummary] = useState<{ total: number; success: number; failed: number; total_swept_celo: string } | null>(null);
   const [sweepProgress, setSweepProgress] = useState<{ done: number; total: number; success: number; failed: number } | null>(null);
   const [activeSweepJobId, setActiveSweepJobId] = useState<string | null>(null);
+
+  // ----- Balance checker state -----
+  const [checkInput, setCheckInput] = useState("");
+  const [checking, setChecking] = useState(false);
+  const [checkResults, setCheckResults] = useState<{
+    total_celo: number; ok: number; errors: number;
+    results: { input: string; address?: string; balance?: string; error?: string }[];
+  } | null>(null);
+
+  const runBalanceCheck = async () => {
+    const inputs = checkInput.split(/[\s,;\n]+/).map(s => s.trim()).filter(Boolean);
+    if (inputs.length === 0) {
+      toast({ title: "Paste at least one address or private key", variant: "destructive" });
+      return;
+    }
+    if (inputs.length > 1000) {
+      toast({ title: "Max 1000 entries per check", variant: "destructive" });
+      return;
+    }
+    setChecking(true);
+    setCheckResults(null);
+    try {
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/celo-balance-check`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string,
+        },
+        body: JSON.stringify({ inputs }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        toast({ title: "Check failed", description: json?.error || `HTTP ${res.status}`, variant: "destructive" });
+      } else {
+        setCheckResults(json);
+      }
+    } catch (e: any) {
+      toast({ title: "Network error", description: e?.message || String(e), variant: "destructive" });
+    } finally {
+      setChecking(false);
+    }
+  };
+
+  const copyAddresses = async () => {
+    if (!checkResults) return;
+    const addrs = checkResults.results.filter(r => r.address).map(r => r.address).join("\n");
+    await navigator.clipboard.writeText(addrs);
+    toast({ title: "Addresses copied" });
+  };
 
   // ----- Sweeper (server-side, runs even if browser is closed) -----
 
@@ -164,9 +213,10 @@ export default function Farmer() {
         </div>
 
         <Tabs defaultValue="sweeper" className="space-y-4">
-          <TabsList className="w-full grid grid-cols-2">
-            <TabsTrigger value="claim">Batch G$ Claim</TabsTrigger>
-            <TabsTrigger value="sweeper">CELO Sweeper</TabsTrigger>
+          <TabsList className="w-full grid grid-cols-3">
+            <TabsTrigger value="claim">G$ Claim</TabsTrigger>
+            <TabsTrigger value="sweeper">Sweeper</TabsTrigger>
+            <TabsTrigger value="check">Balance Check</TabsTrigger>
           </TabsList>
 
           {/* ============ CLAIM REDIRECT TAB ============ */}
