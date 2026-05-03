@@ -496,14 +496,14 @@ const Claim = () => {
                   <div className="font-semibold text-foreground">{failedCount || job.failed}</div>
                 </div>
                 <div className="rounded-lg bg-muted/30 p-2">
+                  <div className="text-muted-foreground">Already</div>
+                  <div className="font-semibold text-foreground">{alreadyClaimedKeys.length}</div>
+                </div>
+                <div className="rounded-lg bg-muted/30 p-2">
                   <div className="text-muted-foreground">Needs gas</div>
                   <div className="font-semibold text-foreground">
                     {needsGasCount || job.needs_gas}
                   </div>
-                </div>
-                <div className="rounded-lg bg-muted/30 p-2">
-                  <div className="text-muted-foreground">Pending</div>
-                  <div className="font-semibold text-foreground">{claimingCount}</div>
                 </div>
               </div>
 
@@ -592,6 +592,8 @@ const Claim = () => {
                           variant={
                             w.status === "success"
                               ? "default"
+                              : w.status === "already_claimed"
+                              ? "secondary"
                               : w.status.startsWith("failed")
                               ? "destructive"
                               : "secondary"
@@ -626,6 +628,13 @@ const Claim = () => {
                 description="These wallets did not have enough CELO for the claim transaction. Load gas, then re-submit the keys."
                 tone="warning"
                 rows={failedGasKeys}
+                onCopy={copyList}
+              />
+              <RecoveryBox
+                title="Already claimed / no entitlement"
+                description="These wallets were already claimed today or had no claimable G$; no claim transaction was sent for skipped rows. Try again after the next claim window."
+                tone="info"
+                rows={alreadyClaimedKeys}
                 onCopy={copyList}
               />
               <RecoveryBox
