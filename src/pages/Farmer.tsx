@@ -369,6 +369,86 @@ export default function Farmer() {
               </Card>
             )}
           </TabsContent>
+
+          {/* ============ BALANCE CHECK TAB ============ */}
+          <TabsContent value="check" className="space-y-4">
+            <Card className="glass-card-elevated">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-lg">
+                  <Search className="size-5" /> Wallet CELO balance check
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground mb-1 block">
+                    Paste addresses or private keys (one per line — up to 1000, processed in parallel batches of 100)
+                  </label>
+                  <Textarea
+                    value={checkInput}
+                    onChange={e => setCheckInput(e.target.value)}
+                    placeholder="0xabc... (address)&#10;0xdef... (private key)&#10;..."
+                    rows={8}
+                    className="font-mono text-xs"
+                    disabled={checking}
+                  />
+                  <p className="text-[11px] text-muted-foreground mt-1">
+                    Both wallet addresses (40 hex) and private keys (64 hex) are accepted. Keys are not saved.
+                  </p>
+                </div>
+                <Button onClick={runBalanceCheck} disabled={checking} className="w-full">
+                  {checking ? <Loader2 className="size-4 animate-spin" /> : <Search className="size-4" />}
+                  {checking ? "Checking…" : "Check balances"}
+                </Button>
+
+                {checkResults && (
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-3 gap-2 text-center">
+                      <div className="p-2 rounded bg-primary/10 border border-primary/20">
+                        <p className="text-lg font-bold text-primary">
+                          {checkResults.total_celo.toFixed(4)}
+                        </p>
+                        <p className="text-[10px] text-muted-foreground uppercase">Total CELO</p>
+                      </div>
+                      <div className="p-2 rounded bg-muted/40 border border-border">
+                        <p className="text-lg font-bold text-success">{checkResults.ok}</p>
+                        <p className="text-[10px] text-muted-foreground uppercase">Wallets</p>
+                      </div>
+                      <div className="p-2 rounded bg-muted/40 border border-border">
+                        <p className="text-lg font-bold text-destructive">{checkResults.errors}</p>
+                        <p className="text-[10px] text-muted-foreground uppercase">Errors</p>
+                      </div>
+                    </div>
+
+                    <Button onClick={copyAddresses} variant="outline" size="sm" className="w-full">
+                      <Copy className="size-3.5" /> Copy all addresses
+                    </Button>
+
+                    <div className="space-y-1.5 max-h-[420px] overflow-y-auto pr-1">
+                      {checkResults.results.map((r, i) => (
+                        <div key={i} className="p-2 rounded bg-muted/40 border border-border text-xs">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-mono truncate flex items-center gap-1.5">
+                              <WalletIcon className="size-3 text-muted-foreground shrink-0" />
+                              {r.address || r.input.slice(0, 14) + "…"}
+                            </span>
+                            {r.balance !== undefined ? (
+                              <Badge variant="default" className="text-[10px] shrink-0">
+                                {Number(r.balance).toFixed(4)} CELO
+                              </Badge>
+                            ) : (
+                              <Badge variant="destructive" className="text-[10px] shrink-0">
+                                {r.error || "error"}
+                              </Badge>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
         </Tabs>
       </div>
     </div>
