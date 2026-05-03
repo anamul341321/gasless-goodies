@@ -3,19 +3,21 @@
 // Strategy:
 //   - Pick up to BATCH_SIZE pending wallets from gd_claim_queue.
 //   - Mark them all 'claiming' atomically.
-//   - Fire UBIScheme.claim() in parallel for ALL of them (no waiting between
-//     wallets, no waiting for receipt before sending the next). Each call
-//     uses the wallet's own nonce so they don't collide.
-//   - For each wallet, await the receipt to record success/failure.
+//   - Read checkEntitlement() before sending a tx; entitlement 0 is marked as
+//     already_claimed so CELO is not spent on wallets already claimed today.
+//   - Fire eligible UBIScheme.claim() calls in parallel. Each call uses the
+//     wallet's own nonce so they don't collide.
+//   - For each sent tx, await the receipt to record success/failure.
 //   - Classify failures:
 //       * insufficient gas       -> status 'failed_gas'  (key kept for user)
 //       * not whitelisted / KYC  -> status 'failed_kyc'  (key kept for user)
+//       * already claimed/no UBI -> status 'already_claimed' (key kept)
 //       * anything else          -> status 'failed'      (key kept for user)
 //   - DOES NOT auto-request gas from any faucet — that responsibility is
 //     handled separately (or not at all).
 //
-//   Gas: ethers picks gas params automatically (no overrides), so the fee
-//   matches what gooddapp.org pays.
+//   Gas: node-estimated gasLimit + current legacy gasPrice, so wallets only
+//   need the real CELO amount the claim needs.
 
 import { Wallet, JsonRpcProvider, Contract, formatEther } from "npm:ethers@6.13.4";
 
@@ -204,7 +206,6 @@ async function claimOne(row: QueueRow): Promise<{
         // today or is not entitled. In that case the tx mines successfully but
         // emits no logs from the wallet. Require at least one log involving
         // this wallet address as the "real success" signal.
-        const addr = (await signer.getAddress()).toLowerCase();
         const logs = (receipt.logs || []) as any[];
         const touchedWallet = logs.some((l) => {
           const topics: string[] = l.topics || [];
@@ -214,7 +215,7 @@ async function claimOne(row: QueueRow): Promise<{
         if (touchedWallet) {
           return { status: "success", txHash: tx.hash };
         }
-        return { status: "failed", txHash: tx.hash, error: "claim no-op (already claimed today or not entitled)" };
+        return { status: "already_claimed", txHash: tx.hash, error: "claim no-op (already claimed today or not entitled)" };
       }
       return { status: "failed", txHash: tx.hash, error: "tx reverted" };
     } catch (e: any) {
@@ -225,6 +226,7 @@ async function claimOne(row: QueueRow): Promise<{
     const msg = (e?.message || String(e)).slice(0, 240);
     if (cls === "gas") return { status: "failed_gas", error: msg };
     if (cls === "kyc") return { status: "failed_kyc", error: msg };
+    if (cls === "already") return { status: "already_claimed", error: msg };
     return { status: "failed", error: msg };
   }
 }
@@ -258,6 +260,7 @@ async function refreshJobAggregate(jobId: string) {
   for (const r of all || []) {
     if (r.status === "success") done++;
     else if (r.status === "failed_gas") { failed++; needsGas++; }
+    else if (r.status === "already_claimed") failed++;
     else if (r.status === "failed_kyc" || r.status === "failed") failed++;
     if (r.status === "pending" || r.status === "claiming") activeRemaining++;
   }
