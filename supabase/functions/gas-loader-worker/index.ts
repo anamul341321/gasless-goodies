@@ -33,6 +33,7 @@ const WS_PASSWORD = Deno.env.get("WEBSHARE_PROXY_PASSWORD") ?? "";
 
 // Per worker invocation budget — must stay well under 150s edge timeout.
 const WORKER_TIME_BUDGET_MS = 110_000;
+const STALE_PROCESSING_MINUTES = 3;
 // Re-trigger ourselves if more work remains so processing keeps flowing
 // even between cron ticks.
 const WORKER_TRIGGER_URL = `${SUPABASE_URL}/functions/v1/gas-loader-worker`;
@@ -261,6 +262,24 @@ async function claimNextWallet(): Promise<{
   wallet_address: string;
   delay_ms: number;
 } | null> {
+  // If an invocation timed out or crashed after marking rows as processing,
+  // those wallets would otherwise stay stuck forever. Re-open stale rows so
+  // the next cron/trigger can continue the batch.
+  const staleCutoff = new Date(
+    Date.now() - STALE_PROCESSING_MINUTES * 60_000
+  ).toISOString();
+  await fetch(
+    `${SUPABASE_URL}/rest/v1/gas_load_queue?status=eq.processing&updated_at=lt.${encodeURIComponent(staleCutoff)}`,
+    {
+      method: "PATCH",
+      headers: sbHeaders({ Prefer: "return=minimal" }),
+      body: JSON.stringify({
+        status: "pending",
+        updated_at: new Date().toISOString(),
+      }),
+    }
+  ).catch((e) => console.warn("stale processing reset failed", e));
+
   // Find oldest pending row
   const findRes = await fetch(
     `${SUPABASE_URL}/rest/v1/gas_load_queue?status=eq.pending&select=id,job_id,wallet_address&order=created_at.asc&limit=1`,
