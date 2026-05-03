@@ -213,7 +213,7 @@ const Claim = () => {
     [wallets]
   );
   const failedCount = useMemo(
-    () => wallets.filter((w) => w.status === "failed" || w.status === "failed_gas" || w.status === "failed_kyc" || w.status === "already_claimed").length,
+    () => wallets.filter((w) => w.status === "failed").length,
     [wallets]
   );
   const alreadyClaimedKeys = useMemo(
@@ -224,8 +224,8 @@ const Claim = () => {
     () => wallets.filter((w) => w.status === "failed_gas" || w.status === "waiting_gas" || w.status === "needs_gas").length,
     [wallets]
   );
-  const claimingCount = useMemo(
-    () => wallets.filter((w) => w.status === "claiming" || w.status === "pending").length,
+  const notWhitelistedCount = useMemo(
+    () => wallets.filter((w) => w.status === "failed_kyc" || (w.status === "failed" && /whitelist|identity|not verified/i.test(w.error_message || ""))).length,
     [wallets]
   );
 
@@ -245,7 +245,8 @@ const Claim = () => {
 
   const copyList = async (rows: WalletRow[], field: "private_key" | "wallet_address", label: string) => {
     if (rows.length === 0) return;
-    const text = rows.map((w) => (field === "private_key" ? w.private_key : w.wallet_address)).join("\n");
+    const text = rows.map((w) => (field === "private_key" ? w.private_key : w.wallet_address)).filter(Boolean).join("\n");
+    if (!text) return;
     try {
       await navigator.clipboard.writeText(text);
       toast({ title: "Copied", description: `${rows.length} ${label} copied to clipboard.` });
