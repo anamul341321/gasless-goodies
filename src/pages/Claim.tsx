@@ -208,11 +208,11 @@ const Claim = () => {
     [wallets]
   );
   const failedCount = useMemo(
-    () => wallets.filter((w) => w.status === "failed").length,
+    () => wallets.filter((w) => w.status === "failed" || w.status === "failed_gas" || w.status === "failed_kyc").length,
     [wallets]
   );
   const needsGasCount = useMemo(
-    () => wallets.filter((w) => w.status === "waiting_gas" || w.status === "needs_gas").length,
+    () => wallets.filter((w) => w.status === "failed_gas" || w.status === "waiting_gas" || w.status === "needs_gas").length,
     [wallets]
   );
   const claimingCount = useMemo(
@@ -220,31 +220,28 @@ const Claim = () => {
     [wallets]
   );
 
-  // Failed wallets that still have a private key (faucet could not deliver gas).
-  // We show these so the user can copy them back and retry later.
-  const failedKeys = useMemo(
-    () =>
-      wallets.filter(
-        (w) => w.status === "failed" && w.private_key && w.private_key.length > 0
-      ),
+  // Recovery groups
+  const failedGasKeys = useMemo(
+    () => wallets.filter((w) => w.status === "failed_gas" && w.private_key && w.private_key.length > 0),
+    [wallets]
+  );
+  const failedKycKeys = useMemo(
+    () => wallets.filter((w) => w.status === "failed_kyc" && w.private_key && w.private_key.length > 0),
+    [wallets]
+  );
+  const failedOtherKeys = useMemo(
+    () => wallets.filter((w) => w.status === "failed" && w.private_key && w.private_key.length > 0),
     [wallets]
   );
 
-  const handleCopyFailedKeys = async () => {
-    if (failedKeys.length === 0) return;
-    const text = failedKeys.map((w) => w.private_key).join("\n");
+  const copyList = async (rows: WalletRow[], field: "private_key" | "wallet_address", label: string) => {
+    if (rows.length === 0) return;
+    const text = rows.map((w) => (field === "private_key" ? w.private_key : w.wallet_address)).join("\n");
     try {
       await navigator.clipboard.writeText(text);
-      toast({
-        title: "Copied",
-        description: `${failedKeys.length} private key(s) copied to clipboard.`,
-      });
+      toast({ title: "Copied", description: `${rows.length} ${label} copied to clipboard.` });
     } catch {
-      toast({
-        title: "Copy failed",
-        description: "Clipboard access denied. Select and copy manually.",
-        variant: "destructive",
-      });
+      toast({ title: "Copy failed", description: "Clipboard access denied.", variant: "destructive" });
     }
   };
 
