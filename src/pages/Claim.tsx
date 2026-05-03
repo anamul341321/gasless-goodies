@@ -122,6 +122,7 @@ const Claim = () => {
   const [job, setJob] = useState<Job | null>(null);
   const [wallets, setWallets] = useState<WalletRow[]>([]);
   const pollTimer = useRef<number | null>(null);
+  const restoredJobRef = useRef(!!localStorage.getItem(ACTIVE_JOB_KEY));
 
   const parsed = useMemo(() => parseKeys(rawInput), [rawInput]);
 
@@ -144,6 +145,15 @@ const Claim = () => {
       if (!res.ok) return;
       const data = await res.json();
       if (data.job) {
+        if (data.job.status === "completed") {
+          localStorage.removeItem(ACTIVE_JOB_KEY);
+          if (restoredJobRef.current && !job) {
+            setJob(null);
+            setWallets([]);
+            setJobId(null);
+            return;
+          }
+        }
         setJob(data.job);
         setWallets(data.wallets || []);
       } else {
@@ -339,6 +349,7 @@ const Claim = () => {
         throw new Error(data?.error || `HTTP ${res.status}`);
       }
       setJobId(data.job_id);
+      restoredJobRef.current = false;
       localStorage.setItem(ACTIVE_JOB_KEY, data.job_id);
       setRawInput("");
       setBatchName("");
@@ -360,6 +371,7 @@ const Claim = () => {
 
   const handleNewBatch = () => {
     setJobId(null);
+    restoredJobRef.current = false;
     setJob(null);
     setWallets([]);
     setBalanceSummary(null);
