@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, Navigate } from "react-router-dom";
 import {
-  ArrowLeft, Copy, Loader2, Play, Square, Sparkles, Trash2, Send,
-  KeyRound, Wallet as WalletIcon, ExternalLink, RefreshCw,
+  ArrowLeft, Coins, Loader2, Square, Sparkles, Send, ExternalLink,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
