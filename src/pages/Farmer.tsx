@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, Navigate } from "react-router-dom";
 import {
   ArrowLeft, Coins, Loader2, Square, Sparkles, Send, ExternalLink,
