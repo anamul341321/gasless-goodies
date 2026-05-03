@@ -493,18 +493,16 @@ const Claim = () => {
                   <div className="font-semibold text-foreground">{successCount || job.done}</div>
                 </div>
                 <div className="rounded-lg bg-muted/30 p-2">
-                  <div className="text-muted-foreground">Failed</div>
-                  <div className="font-semibold text-foreground">{failedCount || job.failed}</div>
+                  <div className="text-muted-foreground">Gas fail</div>
+                  <div className="font-semibold text-foreground">{needsGasCount || job.needs_gas}</div>
                 </div>
                 <div className="rounded-lg bg-muted/30 p-2">
                   <div className="text-muted-foreground">Already</div>
                   <div className="font-semibold text-foreground">{alreadyClaimedKeys.length}</div>
                 </div>
                 <div className="rounded-lg bg-muted/30 p-2">
-                  <div className="text-muted-foreground">Needs gas</div>
-                  <div className="font-semibold text-foreground">
-                    {needsGasCount || job.needs_gas}
-                  </div>
+                  <div className="text-muted-foreground">KYC fail</div>
+                  <div className="font-semibold text-foreground">{notWhitelistedCount}</div>
                 </div>
               </div>
 
