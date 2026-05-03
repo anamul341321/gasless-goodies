@@ -1,7 +1,8 @@
 // Public endpoint: check CELO balance for a list of addresses or private keys.
-// Uses Multicall3 to batch balance reads (very fast). Up to 1000 wallets.
+// Uses Multicall3 (getEthBalance) to batch native CELO balance reads in a
+// single RPC per chunk. Massively faster than per-wallet getBalance calls.
 
-import { JsonRpcProvider, Contract, getAddress, formatEther, Wallet } from "npm:ethers@6.13.4";
+import { JsonRpcProvider, Contract, Interface, getAddress, formatEther, Wallet } from "npm:ethers@6.13.4";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -13,33 +14,48 @@ const CELO_RPC = "https://forno.celo.org";
 const MULTICALL3_ADDRESS = "0xcA11bde05977b3631167028862bE2a173976CA11";
 const MULTICALL3_ABI = [
   "function getEthBalance(address addr) view returns (uint256)",
-  "function tryAggregate(bool requireSuccess, tuple(address target, bytes callData)[] calls) returns (tuple(bool success, bytes returnData)[])",
+  "function tryAggregate(bool requireSuccess, tuple(address target, bytes callData)[] calls) view returns (tuple(bool success, bytes returnData)[])",
 ];
 
-const provider = new JsonRpcProvider(CELO_RPC, 42220);
+const provider = new JsonRpcProvider(CELO_RPC, 42220, { staticNetwork: true });
 const multicall = new Contract(MULTICALL3_ADDRESS, MULTICALL3_ABI, provider);
+const mcIface = new Interface(MULTICALL3_ABI);
 
-const CHUNK = 100;
+// Pack many wallets per multicall — single RPC per chunk.
+const CHUNK = 250;
 
 type Item = { input: string; address?: string; balance?: string; error?: string };
 
 async function checkChunk(items: Item[]): Promise<void> {
   const valid = items.filter((i) => i.address && !i.error);
   if (valid.length === 0) return;
+  const calls = valid.map((i) => ({
+    target: MULTICALL3_ADDRESS,
+    callData: mcIface.encodeFunctionData("getEthBalance", [i.address!]),
+  }));
   try {
-    const results: bigint[] = await Promise.all(
+    const returns: { success: boolean; returnData: string }[] =
+      await multicall.tryAggregate.staticCall(false, calls);
+    valid.forEach((i, idx) => {
+      const r = returns[idx];
+      if (!r || !r.success) { i.error = "rpc error"; return; }
+      try {
+        const [v] = mcIface.decodeFunctionResult("getEthBalance", r.returnData);
+        i.balance = formatEther(BigInt(v));
+      } catch {
+        i.error = "decode error";
+      }
+    });
+  } catch (e: any) {
+    // Fallback: per-wallet getBalance in parallel for this chunk only
+    const results = await Promise.all(
       valid.map((i) => provider.getBalance(i.address!).catch(() => null as any))
     );
     valid.forEach((i, idx) => {
       const v = results[idx];
-      if (v === null || v === undefined) {
-        i.error = "rpc error";
-      } else {
-        i.balance = formatEther(v);
-      }
+      if (v === null || v === undefined) i.error = (e?.message || "rpc error").slice(0, 120);
+      else i.balance = formatEther(v);
     });
-  } catch (e: any) {
-    valid.forEach((i) => (i.error = (e?.message || String(e)).slice(0, 120)));
   }
 }
 
@@ -59,8 +75,8 @@ Deno.serve(async (req) => {
       status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
-  if (raw.length > 1000) {
-    return new Response(JSON.stringify({ error: "max 1000 items per request" }), {
+  if (raw.length > 2000) {
+    return new Response(JSON.stringify({ error: "max 2000 items per request" }), {
       status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
@@ -82,7 +98,7 @@ Deno.serve(async (req) => {
       } else {
         item.error = "invalid format";
       }
-    } catch (e: any) {
+    } catch {
       item.error = "invalid";
     }
     if (item.address) {
@@ -93,7 +109,7 @@ Deno.serve(async (req) => {
     items.push(item);
   }
 
-  // Chunk and run in parallel
+  // Chunk and run all multicalls in parallel
   const chunks: Item[][] = [];
   for (let i = 0; i < items.length; i += CHUNK) chunks.push(items.slice(i, i + CHUNK));
   await Promise.all(chunks.map((c) => checkChunk(c)));
