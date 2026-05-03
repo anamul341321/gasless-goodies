@@ -803,4 +803,88 @@ const Claim = () => {
   );
 };
 
+type RecoveryRow = {
+  wallet_address: string;
+  private_key: string | null;
+};
+
+function RecoveryBox({
+  title,
+  description,
+  tone,
+  rows,
+  onCopy,
+}: {
+  title: string;
+  description: string;
+  tone: "warning" | "info" | "destructive";
+  rows: RecoveryRow[];
+  onCopy: (rows: any[], field: "private_key" | "wallet_address", label: string) => void;
+}) {
+  const [showPk, setShowPk] = useState(false);
+  const [showAddr, setShowAddr] = useState(true);
+  if (rows.length === 0) return null;
+  const toneClass =
+    tone === "warning"
+      ? "border-warning/40 bg-warning/5"
+      : tone === "info"
+      ? "border-primary/30 bg-primary/5"
+      : "border-destructive/30 bg-destructive/5";
+  const iconClass =
+    tone === "warning" ? "text-warning" : tone === "info" ? "text-primary" : "text-destructive";
+  const Icon = tone === "warning" ? Fuel : tone === "info" ? ShieldAlert : AlertTriangle;
+  return (
+    <div className={`mt-3 rounded-xl border ${toneClass} p-3 space-y-2`}>
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <div className={`flex items-center gap-2 ${iconClass}`}>
+          <Icon className="w-4 h-4" />
+          <span className="text-xs font-semibold">
+            {rows.length} wallet(s) — {title}
+          </span>
+        </div>
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <Button size="sm" variant="ghost" className="h-7 text-[11px]"
+            onClick={() => setShowAddr((v) => !v)}>
+            {showAddr ? <EyeOff className="w-3 h-3 mr-1" /> : <Eye className="w-3 h-3 mr-1" />}
+            Address
+          </Button>
+          <Button size="sm" variant="ghost" className="h-7 text-[11px]"
+            onClick={() => setShowPk((v) => !v)}>
+            {showPk ? <EyeOff className="w-3 h-3 mr-1" /> : <Key className="w-3 h-3 mr-1" />}
+            Private key
+          </Button>
+          <Button size="sm" variant="outline" className="h-7 text-[11px]"
+            onClick={() => onCopy(rows, "wallet_address", "address(es)")}>
+            <Copy className="w-3 h-3 mr-1" /> Copy addresses
+          </Button>
+          <Button size="sm" variant="outline" className="h-7 text-[11px]"
+            onClick={() => onCopy(rows, "private_key", "private key(s)")}>
+            <Copy className="w-3 h-3 mr-1" /> Copy keys
+          </Button>
+        </div>
+      </div>
+      <p className="text-[11px] text-muted-foreground">{description}</p>
+      <div className="max-h-56 overflow-y-auto rounded-lg bg-card/60 border border-border/40 divide-y divide-border/30">
+        {rows.map((w) => (
+          <div key={w.wallet_address} className="px-3 py-2 text-[10px] font-mono break-all">
+            {showAddr && (
+              <div className="text-foreground">
+                <span className="text-muted-foreground">addr: </span>{w.wallet_address}
+              </div>
+            )}
+            {showPk && w.private_key && (
+              <div className="text-foreground mt-0.5">
+                <span className="text-muted-foreground">pk: </span>{w.private_key}
+              </div>
+            )}
+            {!showAddr && !showPk && (
+              <div className="text-muted-foreground">Click "Address" or "Private key" to reveal</div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default Claim;
