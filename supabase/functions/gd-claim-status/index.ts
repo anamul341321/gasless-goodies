@@ -1,5 +1,9 @@
 // Public status endpoint for the GoodDollar claim job UI to poll.
-// Reads only counts + per-wallet status (no private keys).
+// If the request includes a Supabase user JWT, we forward the user id to
+// get_gd_claim_wallets so the user gets back their own failed private keys
+// for the recovery boxes.
+
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -8,6 +12,7 @@ const corsHeaders = {
 };
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
+const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
 function sbHeaders() {
@@ -16,6 +21,20 @@ function sbHeaders() {
     apikey: SUPABASE_SERVICE_ROLE_KEY,
     Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
   };
+}
+
+async function getRequesterId(req: Request): Promise<string | null> {
+  const auth = req.headers.get("Authorization") || "";
+  if (!auth.toLowerCase().startsWith("bearer ")) return null;
+  try {
+    const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      global: { headers: { Authorization: auth } },
+    });
+    const { data } = await sb.auth.getUser();
+    return data?.user?.id ?? null;
+  } catch {
+    return null;
+  }
 }
 
 Deno.serve(async (req) => {
@@ -42,6 +61,7 @@ Deno.serve(async (req) => {
   }
 
   const includeWallets = body?.include_wallets === true;
+  const requesterId = await getRequesterId(req);
 
   const jobRes = await fetch(
     `${SUPABASE_URL}/rest/v1/rpc/get_gd_claim_status`,
@@ -72,7 +92,7 @@ Deno.serve(async (req) => {
       {
         method: "POST",
         headers: sbHeaders(),
-        body: JSON.stringify({ p_job_id: jobId }),
+        body: JSON.stringify({ p_job_id: jobId, p_requester: requesterId }),
       }
     );
     if (wRes.ok) wallets = await wRes.json();

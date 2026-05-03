@@ -136,7 +136,21 @@ async function claimOne(row: QueueRow): Promise<{
     try {
       const receipt = await tx.wait(1, RECEIPT_TIMEOUT_MS);
       if (receipt && receipt.status === 1) {
-        return { status: "success", txHash: tx.hash };
+        // UBIScheme.claim() returns false (no revert) if user already claimed
+        // today or is not entitled. In that case the tx mines successfully but
+        // emits no logs from the wallet. Require at least one log involving
+        // this wallet address as the "real success" signal.
+        const addr = (await signer.getAddress()).toLowerCase();
+        const logs = (receipt.logs || []) as any[];
+        const touchedWallet = logs.some((l) => {
+          const topics: string[] = l.topics || [];
+          // Topic[1]/[2] are 32-byte padded addresses for ERC20 Transfer
+          return topics.some((t) => typeof t === "string" && t.toLowerCase().endsWith(addr.slice(2)));
+        });
+        if (touchedWallet) {
+          return { status: "success", txHash: tx.hash };
+        }
+        return { status: "failed", txHash: tx.hash, error: "claim no-op (already claimed today or not entitled)" };
       }
       return { status: "failed", txHash: tx.hash, error: "tx reverted" };
     } catch (e: any) {
