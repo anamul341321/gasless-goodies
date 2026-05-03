@@ -612,43 +612,28 @@ const Claim = () => {
                 </div>
               )}
 
-              {/* Failed-keys recovery box (shown when faucet could not deliver gas) */}
-              {failedKeys.length > 0 && (
-                <div className="mt-3 rounded-xl border border-destructive/30 bg-destructive/5 p-3 space-y-2">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2 text-destructive">
-                      <AlertTriangle className="w-4 h-4" />
-                      <span className="text-xs font-semibold">
-                        {failedKeys.length} wallet(s) could not be funded with gas
-                      </span>
-                    </div>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={handleCopyFailedKeys}
-                      className="h-7 text-[11px]"
-                    >
-                      <Copy className="w-3 h-3 mr-1" /> Copy all
-                    </Button>
-                  </div>
-                  <p className="text-[11px] text-muted-foreground">
-                    The free-gas faucet did not deliver gas for these wallets. Their private
-                    keys are listed below — copy them and try again later.
-                  </p>
-                  <div className="max-h-48 overflow-y-auto rounded-lg bg-card/60 border border-border/40 divide-y divide-border/30">
-                    {failedKeys.map((w) => (
-                      <div
-                        key={w.wallet_address}
-                        className="px-3 py-2 text-[10px] font-mono break-all text-foreground"
-                      >
-                        <div className="text-muted-foreground mb-0.5">
-                          {w.wallet_address.slice(0, 10)}…{w.wallet_address.slice(-8)}
-                        </div>
-                        <div>{w.private_key}</div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
+              <RecoveryBox
+                title="Insufficient gas (CELO needed)"
+                description="These wallets did not have enough CELO for the claim transaction. Load gas, then re-submit the keys."
+                tone="warning"
+                rows={failedGasKeys}
+                onCopy={copyList}
+              />
+              <RecoveryBox
+                title="Not whitelisted (KYC required)"
+                description="These wallets are not registered on GoodDollar Identity. Complete KYC at gooddollar.org first."
+                tone="info"
+                rows={failedKycKeys}
+                onCopy={copyList}
+              />
+              {failedOtherKeys.length > 0 && (
+                <RecoveryBox
+                  title="Other failures"
+                  description="These wallets failed for other reasons. Check explorer for details."
+                  tone="destructive"
+                  rows={failedOtherKeys}
+                  onCopy={copyList}
+                />
               )}
             </CardContent>
           </Card>
