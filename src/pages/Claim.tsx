@@ -212,10 +212,6 @@ const Claim = () => {
     () => wallets.filter((w) => w.status === "success").length,
     [wallets]
   );
-  const failedCount = useMemo(
-    () => wallets.filter((w) => w.status === "failed").length,
-    [wallets]
-  );
   const alreadyClaimedKeys = useMemo(
     () => wallets.filter((w) => w.status === "already_claimed" || (w.status === "failed" && /already claimed|no entitlement|claim no-op/i.test(w.error_message || ""))),
     [wallets]
