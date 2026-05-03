@@ -27,6 +27,8 @@ type WalletStatus =
   | "claiming"
   | "success"
   | "failed"
+  | "failed_gas"
+  | "failed_kyc"
   | "needs_gas"
   | "waiting_gas";
 
