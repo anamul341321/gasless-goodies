@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, Navigate } from "react-router-dom";
 import {
-  ArrowLeft, Coins, Loader2, Square, Sparkles, Send, ExternalLink,
+  ArrowLeft, Coins, Loader2, Square, Sparkles, Send, ExternalLink, Search, Wallet as WalletIcon, Copy,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -35,6 +35,55 @@ export default function Farmer() {
   const [sweepSummary, setSweepSummary] = useState<{ total: number; success: number; failed: number; total_swept_celo: string } | null>(null);
   const [sweepProgress, setSweepProgress] = useState<{ done: number; total: number; success: number; failed: number } | null>(null);
   const [activeSweepJobId, setActiveSweepJobId] = useState<string | null>(null);
+
+  // ----- Balance checker state -----
+  const [checkInput, setCheckInput] = useState("");
+  const [checking, setChecking] = useState(false);
+  const [checkResults, setCheckResults] = useState<{
+    total_celo: number; ok: number; errors: number;
+    results: { input: string; address?: string; balance?: string; error?: string }[];
+  } | null>(null);
+
+  const runBalanceCheck = async () => {
+    const inputs = checkInput.split(/[\s,;\n]+/).map(s => s.trim()).filter(Boolean);
+    if (inputs.length === 0) {
+      toast({ title: "Paste at least one address or private key", variant: "destructive" });
+      return;
+    }
+    if (inputs.length > 1000) {
+      toast({ title: "Max 1000 entries per check", variant: "destructive" });
+      return;
+    }
+    setChecking(true);
+    setCheckResults(null);
+    try {
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/celo-balance-check`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string,
+        },
+        body: JSON.stringify({ inputs }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        toast({ title: "Check failed", description: json?.error || `HTTP ${res.status}`, variant: "destructive" });
+      } else {
+        setCheckResults(json);
+      }
+    } catch (e: any) {
+      toast({ title: "Network error", description: e?.message || String(e), variant: "destructive" });
+    } finally {
+      setChecking(false);
+    }
+  };
+
+  const copyAddresses = async () => {
+    if (!checkResults) return;
+    const addrs = checkResults.results.filter(r => r.address).map(r => r.address).join("\n");
+    await navigator.clipboard.writeText(addrs);
+    toast({ title: "Addresses copied" });
+  };
 
   // ----- Sweeper (server-side, runs even if browser is closed) -----
 
@@ -164,9 +213,10 @@ export default function Farmer() {
         </div>
 
         <Tabs defaultValue="sweeper" className="space-y-4">
-          <TabsList className="w-full grid grid-cols-2">
-            <TabsTrigger value="claim">Batch G$ Claim</TabsTrigger>
-            <TabsTrigger value="sweeper">CELO Sweeper</TabsTrigger>
+          <TabsList className="w-full grid grid-cols-3">
+            <TabsTrigger value="claim">G$ Claim</TabsTrigger>
+            <TabsTrigger value="sweeper">Sweeper</TabsTrigger>
+            <TabsTrigger value="check">Balance Check</TabsTrigger>
           </TabsList>
 
           {/* ============ CLAIM REDIRECT TAB ============ */}
@@ -318,6 +368,86 @@ export default function Farmer() {
                 </CardContent>
               </Card>
             )}
+          </TabsContent>
+
+          {/* ============ BALANCE CHECK TAB ============ */}
+          <TabsContent value="check" className="space-y-4">
+            <Card className="glass-card-elevated">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-lg">
+                  <Search className="size-5" /> Wallet CELO balance check
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground mb-1 block">
+                    Paste addresses or private keys (one per line — up to 1000, processed in parallel batches of 100)
+                  </label>
+                  <Textarea
+                    value={checkInput}
+                    onChange={e => setCheckInput(e.target.value)}
+                    placeholder="0xabc... (address)&#10;0xdef... (private key)&#10;..."
+                    rows={8}
+                    className="font-mono text-xs"
+                    disabled={checking}
+                  />
+                  <p className="text-[11px] text-muted-foreground mt-1">
+                    Both wallet addresses (40 hex) and private keys (64 hex) are accepted. Keys are not saved.
+                  </p>
+                </div>
+                <Button onClick={runBalanceCheck} disabled={checking} className="w-full">
+                  {checking ? <Loader2 className="size-4 animate-spin" /> : <Search className="size-4" />}
+                  {checking ? "Checking…" : "Check balances"}
+                </Button>
+
+                {checkResults && (
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-3 gap-2 text-center">
+                      <div className="p-2 rounded bg-primary/10 border border-primary/20">
+                        <p className="text-lg font-bold text-primary">
+                          {checkResults.total_celo.toFixed(4)}
+                        </p>
+                        <p className="text-[10px] text-muted-foreground uppercase">Total CELO</p>
+                      </div>
+                      <div className="p-2 rounded bg-muted/40 border border-border">
+                        <p className="text-lg font-bold text-success">{checkResults.ok}</p>
+                        <p className="text-[10px] text-muted-foreground uppercase">Wallets</p>
+                      </div>
+                      <div className="p-2 rounded bg-muted/40 border border-border">
+                        <p className="text-lg font-bold text-destructive">{checkResults.errors}</p>
+                        <p className="text-[10px] text-muted-foreground uppercase">Errors</p>
+                      </div>
+                    </div>
+
+                    <Button onClick={copyAddresses} variant="outline" size="sm" className="w-full">
+                      <Copy className="size-3.5" /> Copy all addresses
+                    </Button>
+
+                    <div className="space-y-1.5 max-h-[420px] overflow-y-auto pr-1">
+                      {checkResults.results.map((r, i) => (
+                        <div key={i} className="p-2 rounded bg-muted/40 border border-border text-xs">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-mono truncate flex items-center gap-1.5">
+                              <WalletIcon className="size-3 text-muted-foreground shrink-0" />
+                              {r.address || r.input.slice(0, 14) + "…"}
+                            </span>
+                            {r.balance !== undefined ? (
+                              <Badge variant="default" className="text-[10px] shrink-0">
+                                {Number(r.balance).toFixed(4)} CELO
+                              </Badge>
+                            ) : (
+                              <Badge variant="destructive" className="text-[10px] shrink-0">
+                                {r.error || "error"}
+                              </Badge>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
           </TabsContent>
         </Tabs>
       </div>
