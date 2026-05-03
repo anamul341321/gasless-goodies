@@ -31,12 +31,14 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
 const CELO_RPC = "https://forno.celo.org";
+const IDENTITY_ADDRESS = "0xC361A6E67822a0EDc17D899227dd9FC50BD62F42";
 const UBI_SCHEME_ADDRESS = "0x43d72Ff17701B2DA814620735C39C620Ce0ea4A1";
 const UBI_ABI = [
   "function claim() returns (uint256)",
   "function checkEntitlement(address member) view returns (uint256)",
   "function checkEntitlement() view returns (uint256)",
 ];
+const IDENTITY_ABI = ["function isWhitelisted(address account) view returns (bool)"];
 
 const WORKER_TRIGGER_URL = `${SUPABASE_URL}/functions/v1/gd-claim-worker`;
 
@@ -152,7 +154,17 @@ async function claimOne(row: QueueRow): Promise<{
   try {
     const signer = new Wallet(row.private_key, provider);
     const ubi = new Contract(UBI_SCHEME_ADDRESS, UBI_ABI, signer);
+    const identity = new Contract(IDENTITY_ADDRESS, IDENTITY_ABI, provider);
     const addr = (await signer.getAddress()).toLowerCase();
+
+    try {
+      const whitelisted = await identity.isWhitelisted(addr);
+      if (!whitelisted) {
+        return { status: "failed_kyc", error: "not whitelisted — transaction skipped" };
+      }
+    } catch {
+      // If the read fails, continue to claim and let on-chain errors classify it.
+    }
 
     // Match the uploaded app flow: read entitlement before sending a tx.
     // If entitlement is 0, do NOT call claim(); this prevents gas being spent
