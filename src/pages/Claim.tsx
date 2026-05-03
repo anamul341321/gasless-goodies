@@ -10,8 +10,8 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
-  AlertTriangle, ArrowLeft, CheckCircle2, Coins, Copy, Fuel, Loader2,
-  RefreshCw, Rocket, ShieldAlert, ShieldCheck, Sparkles, Tag, Trash2,
+  AlertTriangle, ArrowLeft, CheckCircle2, Coins, Copy, Eye, EyeOff, Fuel, Key,
+  Loader2, RefreshCw, Rocket, ShieldAlert, ShieldCheck, Sparkles, Tag, Trash2,
   Wallet as WalletIcon, User, LogIn,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
