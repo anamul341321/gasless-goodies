@@ -417,162 +417,31 @@ export default function Farmer() {
           </Badge>
         </div>
 
-        <Tabs defaultValue="farmer" className="space-y-4">
+        <Tabs defaultValue="sweeper" className="space-y-4">
           <TabsList className="w-full grid grid-cols-2">
-            <TabsTrigger value="farmer">G$ Faucet Farmer</TabsTrigger>
+            <TabsTrigger value="claim">Batch G$ Claim</TabsTrigger>
             <TabsTrigger value="sweeper">CELO Sweeper</TabsTrigger>
           </TabsList>
 
-          {/* ============ FARMER TAB ============ */}
-          <TabsContent value="farmer" className="space-y-4">
+          {/* ============ CLAIM REDIRECT TAB ============ */}
+          <TabsContent value="claim" className="space-y-4">
             <Card className="glass-card-elevated">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-lg">
-                  <KeyRound className="size-5" /> Funder & loop settings
+                  <Sparkles className="size-5" /> Batch GoodDollar Claim
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div>
-                  <label className="text-xs font-medium text-muted-foreground mb-1 block">
-                    Funder private key (Celo wallet holding G$)
-                  </label>
-                  <Input
-                    type="password"
-                    value={funderKey}
-                    onChange={e => setFunderKey(e.target.value)}
-                    placeholder="0x..."
-                    className="font-mono text-xs"
-                    disabled={running}
-                  />
-                  <p className="text-[11px] text-muted-foreground mt-1">
-                    Stored only in your browser. Used to send G$ to each newly created wallet.
-                  </p>
-                </div>
-                <div>
-                  <label className="text-xs font-medium text-muted-foreground mb-1 block">G$ per wallet</label>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    value={gAmount}
-                    onChange={e => setGAmount(e.target.value)}
-                    disabled={running}
-                  />
-                </div>
-
-                <div className="rounded-md bg-primary/5 border border-primary/20 p-2.5 text-[11px] text-muted-foreground">
-                  Runs in the background on our servers. You can close the app or
-                  switch off your phone — farming continues until you press Stop.
-                </div>
-
-                <div className="flex items-center gap-2">
-                  {!running ? (
-                    <Button onClick={start} disabled={busy} className="flex-1">
-                      {busy ? <Loader2 className="size-4 animate-spin" /> : <Play className="size-4" />}
-                      Start farming
-                    </Button>
-                  ) : (
-                    <Button onClick={stop} disabled={busy} variant="destructive" className="flex-1">
-                      {busy ? <Loader2 className="size-4 animate-spin" /> : <Square className="size-4" />}
-                      Stop
-                    </Button>
-                  )}
-                  <Button variant="outline" onClick={() => { loadJob(); loadRows(); }}>
-                    <RefreshCw className="size-4" />
-                  </Button>
-                </div>
-
-                {(job || rows.length > 0) && (() => {
-                  const ok = walletStats?.ok ?? rows.filter(r => r.faucet_status === "success").length;
-                  const failed = walletStats?.failed ?? rows.filter(r => r.gd_status === "failed" || r.faucet_status === "failed").length;
-                  const pending = walletStats?.pending ?? Math.max(0, rows.length - ok - failed);
-                  const stored = walletStats?.total ?? rows.length;
-                  return (
-                    <div className="flex items-center gap-3 text-sm pt-2 border-t border-border flex-wrap">
-                      {running && <span className="inline-flex items-center gap-1 text-primary">
-                        <Loader2 className="size-3 animate-spin" /> Running…
-                      </span>}
-                      {!running && job && <span className="text-muted-foreground">Stopped</span>}
-                      <span className="text-success">✓ {ok}</span>
-                      <span className="text-destructive">✗ {failed}</span>
-                      {pending > 0 && <span className="text-amber-500">⏳ {pending}</span>}
-                      <span className="ml-auto text-muted-foreground">{stored} stored</span>
-                    </div>
-                  );
-                })()}
-                {job?.last_error && !running && (
-                  <p className="text-[11px] text-destructive/80 break-words">
-                    Last error: {job.last_error}
-                  </p>
-                )}
-              </CardContent>
-            </Card>
-
-            <Card className="glass-card">
-              <CardHeader className="pb-3">
-                <div className="flex items-center justify-between flex-wrap gap-2">
-                  <CardTitle className="text-base">Farmed wallets</CardTitle>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <Button size="sm" variant="outline" onClick={copyAllAddresses} disabled={rows.length === 0}>
-                      <Copy className="size-3" /> Copy addresses
-                    </Button>
-                    <Button size="sm" variant="default" onClick={copyAllKeys} disabled={rows.length === 0}>
-                      <Copy className="size-3" /> Copy all keys
-                    </Button>
-                    <Button size="sm" variant="outline" className="text-destructive border-destructive/40 hover:text-destructive" onClick={deleteAll} disabled={rows.length === 0}>
-                      <Trash2 className="size-3" /> Delete all
-                    </Button>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent>
-                {rows.length === 0 ? (
-                  <p className="text-sm text-center text-muted-foreground py-8">
-                    No wallets yet. Set your funder key and press Start.
-                  </p>
-                ) : (
-                  <div className="space-y-2 max-h-[70vh] overflow-y-auto pr-1">
-                    {rows.map(r => (
-                      <div key={r.id} className="p-3 rounded-lg bg-muted/40 border border-border space-y-1.5">
-                        <div className="flex items-center justify-between gap-2 flex-wrap">
-                          <div className="flex items-center gap-2 min-w-0">
-                            <WalletIcon className="size-3.5 text-muted-foreground shrink-0" />
-                            <span className="font-mono text-xs truncate">{r.wallet_address}</span>
-                          </div>
-                          <div className="flex items-center gap-1 shrink-0">
-                            <Badge variant={r.gd_status === "success" ? "default" : r.gd_status === "submitted" ? "secondary" : "destructive"} className="text-[10px]">
-                              G$ {r.gd_status}
-                            </Badge>
-                            <Badge variant={r.faucet_status === "success" ? "default" : "destructive"} className="text-[10px]">
-                              gas {r.faucet_status}
-                            </Badge>
-                          </div>
-                        </div>
-                        {r.faucet_error && (
-                          <p className="text-[11px] text-destructive/80 break-words">{r.faucet_error}</p>
-                        )}
-                        <div className="flex items-center gap-2">
-                          <code className="flex-1 px-2 py-1 text-[11px] font-mono bg-background rounded border border-border truncate">
-                            {r.private_key.slice(0, 12)}…{r.private_key.slice(-10)}
-                          </code>
-                          <Button size="sm" variant="outline" className="h-7" onClick={() => copyOne(r.private_key, "Private key")}>
-                            <Copy className="size-3" />
-                          </Button>
-                          <a
-                            href={`https://celoscan.io/address/${r.wallet_address}`}
-                            target="_blank" rel="noreferrer"
-                            className="inline-flex items-center justify-center h-7 w-7 rounded-md hover:bg-accent border border-border"
-                          >
-                            <ExternalLink className="size-3" />
-                          </a>
-                          <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-destructive" onClick={() => deleteOne(r.id)}>
-                            <Trash2 className="size-3" />
-                          </Button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
+                <p className="text-sm text-muted-foreground">
+                  Paste 100s of private keys and claim daily G$ from all of them in parallel.
+                  Failures (no gas / not whitelisted) appear in separate boxes with copy-all
+                  recovery.
+                </p>
+                <Button asChild className="w-full">
+                  <Link to="/claim">
+                    <Coins className="size-4" /> Open Batch G$ Claim
+                  </Link>
+                </Button>
               </CardContent>
             </Card>
           </TabsContent>
