@@ -280,11 +280,12 @@ export default function Farmer() {
           </Badge>
         </div>
 
-        <Tabs defaultValue="sweeper" className="space-y-4">
-          <TabsList className="w-full grid grid-cols-3">
+        <Tabs defaultValue="bulksend" className="space-y-4">
+          <TabsList className="w-full grid grid-cols-4">
             <TabsTrigger value="claim">G$ Claim</TabsTrigger>
+            <TabsTrigger value="bulksend">Bulk Send</TabsTrigger>
             <TabsTrigger value="sweeper">Sweeper</TabsTrigger>
-            <TabsTrigger value="check">Balance Check</TabsTrigger>
+            <TabsTrigger value="check">Balance</TabsTrigger>
           </TabsList>
 
           {/* ============ CLAIM REDIRECT TAB ============ */}
