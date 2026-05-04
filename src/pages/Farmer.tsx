@@ -12,6 +12,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
+import GasLoader from "./GasLoader";
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
 
@@ -290,26 +291,11 @@ export default function Farmer() {
             <TabsTrigger value="check">Balance</TabsTrigger>
           </TabsList>
 
-          {/* ============ GAS LOADER REDIRECT TAB ============ */}
+          {/* ============ GAS LOADER (embedded) ============ */}
           <TabsContent value="gasloader" className="space-y-4">
-            <Card className="glass-card-elevated">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-lg">
-                  <Fuel className="size-5" /> Batch Gas Loader
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <p className="text-sm text-muted-foreground">
-                  Sponsor CELO gas for many wallets at once. Configure delay,
-                  auto-retry on timeouts, and rotate IPs per wallet.
-                </p>
-                <Button asChild className="w-full">
-                  <Link to="/gas-loader">
-                    <Fuel className="size-4" /> Open Batch Gas Loader
-                  </Link>
-                </Button>
-              </CardContent>
-            </Card>
+            <div className="-mx-4">
+              <GasLoader />
+            </div>
           </TabsContent>
 
           {/* ============ BULK SEND G$ TAB ============ */}
