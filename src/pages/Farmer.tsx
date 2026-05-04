@@ -311,7 +311,145 @@ export default function Farmer() {
             </Card>
           </TabsContent>
 
-          {/* ============ SWEEPER TAB ============ */}
+          {/* ============ BULK SEND G$ TAB ============ */}
+          <TabsContent value="bulksend" className="space-y-4">
+            <Card className="glass-card-elevated">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-lg">
+                  <Gift className="size-5" /> Bulk Send G$ (one transaction)
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <p className="text-xs text-muted-foreground">
+                  Send G$ from one wallet to many recipients in a single transaction
+                  using the audited Disperse contract. One gas fee for up to 400
+                  recipients. Larger lists are auto-split into batches.
+                </p>
+
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground mb-1 block">
+                    Sender private key (must hold G$ + a little CELO for gas)
+                  </label>
+                  <Input
+                    type="password"
+                    value={bulkSenderKey}
+                    onChange={e => setBulkSenderKey(e.target.value)}
+                    placeholder="0x..."
+                    className="font-mono text-xs"
+                    disabled={bulkSending}
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground mb-1 block">
+                    Amount of G$ per recipient
+                  </label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={bulkAmount}
+                    onChange={e => setBulkAmount(e.target.value)}
+                    className="font-mono text-xs"
+                    disabled={bulkSending}
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground mb-1 block">
+                    Recipient addresses (one per line)
+                  </label>
+                  <Textarea
+                    value={bulkRecipients}
+                    onChange={e => setBulkRecipients(e.target.value)}
+                    placeholder="0xabc...&#10;0xdef...&#10;0x123..."
+                    rows={8}
+                    className="font-mono text-xs"
+                    disabled={bulkSending}
+                  />
+                  <p className="text-[11px] text-muted-foreground mt-1">
+                    {(() => {
+                      const count = bulkRecipients
+                        .split(/[\s,;\n]+/)
+                        .map(r => r.trim())
+                        .filter(r => /^0x[a-fA-F0-9]{40}$/.test(r)).length;
+                      const amt = Number(bulkAmount) || 0;
+                      return `${count} valid recipient${count === 1 ? "" : "s"} · total ${(count * amt).toFixed(4)} G$`;
+                    })()}
+                  </p>
+                </div>
+
+                <Button onClick={runBulkSend} disabled={bulkSending} className="w-full">
+                  {bulkSending ? <Loader2 className="size-4 animate-spin" /> : <Gift className="size-4" />}
+                  {bulkSending ? "Sending on chain…" : "Run bulk send"}
+                </Button>
+                <p className="text-[11px] text-muted-foreground -mt-1">
+                  First-time use sends a small approve transaction, then the bulk
+                  transfer. Sender key is never stored.
+                </p>
+
+                {bulkResult && (
+                  <div className="space-y-3 pt-2">
+                    <div className="grid grid-cols-2 gap-2 text-center">
+                      <div className="p-2 rounded bg-primary/10 border border-primary/20">
+                        <p className="text-lg font-bold text-primary">
+                          {Number(bulkResult.total_sent).toFixed(2)}
+                        </p>
+                        <p className="text-[10px] text-muted-foreground uppercase">G$ sent</p>
+                      </div>
+                      <div className="p-2 rounded bg-muted/40 border border-border">
+                        <p className="text-lg font-bold">{bulkResult.recipient_count}</p>
+                        <p className="text-[10px] text-muted-foreground uppercase">recipients</p>
+                      </div>
+                    </div>
+
+                    {bulkResult.approve_tx && (
+                      <div className="p-2 rounded bg-muted/40 border border-border text-xs">
+                        <span className="text-muted-foreground">Approve tx: </span>
+                        <a
+                          href={`https://celoscan.io/tx/${bulkResult.approve_tx}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-primary hover:underline inline-flex items-center gap-1"
+                        >
+                          <ExternalLink className="size-3" /> view
+                        </a>
+                      </div>
+                    )}
+
+                    <div className="space-y-1.5">
+                      {bulkResult.batches.map((b, i) => (
+                        <div key={i} className="p-2 rounded bg-muted/40 border border-border text-xs">
+                          <div className="flex items-center justify-between gap-2">
+                            <span>
+                              Batch {i + 1} · {b.recipients} recipient{b.recipients === 1 ? "" : "s"}
+                            </span>
+                            {b.tx ? (
+                              <a
+                                href={`https://celoscan.io/tx/${b.tx}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="text-primary hover:underline inline-flex items-center gap-1"
+                              >
+                                <ExternalLink className="size-3" /> tx
+                              </a>
+                            ) : (
+                              <Badge variant="destructive" className="text-[10px]">failed</Badge>
+                            )}
+                          </div>
+                          {b.error && (
+                            <p className="text-[11px] text-destructive/80 mt-1 break-words">{b.error}</p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+
           <TabsContent value="sweeper" className="space-y-4">
             <Card className="glass-card-elevated">
               <CardHeader>
