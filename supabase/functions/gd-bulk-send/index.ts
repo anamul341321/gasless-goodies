@@ -217,11 +217,11 @@ Deno.serve(async (req) => {
     return json({
       ok: true,
       job_id: jobId,
-      total: fresh.length,
-      skipped,
-      message: skipped > 0
-        ? `Started — ${skipped} already sent, processing ${fresh.length} new.`
-        : `Started — processing ${fresh.length} recipients.`,
+      total: rows.length,
+      skipped: actualSkipped,
+      message: actualSkipped > 0
+        ? `Started — ${actualSkipped} already sent or reserved, processing ${rows.length} new.`
+        : `Started — processing ${rows.length} recipients.`,
     }, 202);
   } catch (e: any) {
     return json({ error: e?.shortMessage || e?.message || String(e) }, 500);
