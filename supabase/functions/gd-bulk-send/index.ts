@@ -46,6 +46,7 @@ const ERC20_ABI = [
 ];
 const DISPERSE_ABI = [
   "function disperseToken(address token, address[] recipients, uint256[] values)",
+  "function disperseTokenSimple(address token, address[] recipients, uint256[] values)",
 ];
 
 type Result = {
