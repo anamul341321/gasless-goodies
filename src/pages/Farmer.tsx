@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, Navigate } from "react-router-dom";
 import {
-  ArrowLeft, Coins, Loader2, Square, Sparkles, Send, ExternalLink, Search, Wallet as WalletIcon, Copy,
+  ArrowLeft, Coins, Loader2, Square, Sparkles, Send, ExternalLink, Search, Wallet as WalletIcon, Copy, Gift,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
