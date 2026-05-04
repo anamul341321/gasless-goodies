@@ -458,11 +458,19 @@ export default function Farmer() {
                           {bulkJob.status}
                         </Badge>
                       </div>
-                      {(bulkJob.status === "completed" || bulkJob.status === "failed") && (
-                        <Button size="sm" variant="ghost" onClick={clearBulkJob}>
-                          Clear
-                        </Button>
-                      )}
+                      <div className="flex items-center gap-2">
+                        {(bulkJob.status === "pending" || bulkJob.status === "processing") && (
+                          <Button size="sm" variant="destructive" onClick={cancelBulkJob} disabled={bulkCancelling}>
+                            {bulkCancelling ? <Loader2 className="size-3 animate-spin" /> : <Square className="size-3" />}
+                            Stop
+                          </Button>
+                        )}
+                        {(bulkJob.status === "completed" || bulkJob.status === "failed" || bulkJob.status === "stopped") && (
+                          <Button size="sm" variant="ghost" onClick={clearBulkJob}>
+                            Clear
+                          </Button>
+                        )}
+                      </div>
                     </div>
 
                     <div className="grid grid-cols-4 gap-2 text-center">
