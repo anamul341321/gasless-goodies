@@ -115,11 +115,10 @@ Deno.serve(async (req) => {
       const chunk = recipients.slice(i, i + MAX_PER_TX);
       const values = chunk.map(() => perRecipient);
       try {
-        // Estimate gas with 25% buffer + capped gas price
+        // Estimate gas with 25% buffer; let ethers/RPC pick gas price automatically
         const est = await disperse.disperseToken.estimateGas(GD_TOKEN, chunk, values);
         const gasLimit = (est * 125n) / 100n;
-        const gasPrice = await safeGasPrice();
-        const tx = await disperse.disperseToken(GD_TOKEN, chunk, values, { gasLimit, gasPrice });
+        const tx = await disperse.disperseToken(GD_TOKEN, chunk, values, { gasLimit });
         await tx.wait();
         result.batches.push({ tx: tx.hash, recipients: chunk.length });
         sentTotal += perRecipient * BigInt(chunk.length);
