@@ -100,14 +100,17 @@ Deno.serve(async (req) => {
     // Find which recipients are already `sent` in any prior job for this
     // (sender + amount) — skip those to make the run resumable.
     const lowered = recipients.map((r) => r.toLowerCase());
-    const { data: prior } = await sb
-      .from("gd_bulk_recipients")
-      .select("wallet_address")
-      .eq("sender_address", senderAddress.toLowerCase())
-      .eq("amount", amountStr)
-      .eq("status", "sent")
-      .in("wallet_address", lowered);
-    const alreadySent = new Set((prior || []).map((r: any) => r.wallet_address.toLowerCase()));
+    const alreadySent = new Set<string>();
+    for (let i = 0; i < lowered.length; i += 500) {
+      const { data: prior } = await sb
+        .from("gd_bulk_recipients")
+        .select("wallet_address")
+        .eq("sender_address", senderAddress.toLowerCase())
+        .eq("amount", amountStr)
+        .eq("status", "sent")
+        .in("wallet_address", lowered.slice(i, i + 500));
+      for (const r of prior || []) alreadySent.add(String(r.wallet_address).toLowerCase());
+    }
     const fresh = recipients.filter((r) => !alreadySent.has(r.toLowerCase()));
     const skipped = recipients.length - fresh.length;
 
@@ -196,20 +199,19 @@ async function processJob(jobId: string) {
     const decimals: number = Number(await token.decimals());
     const perRecipient = ethers.parseUnits(String(job.amount_per_recipient), decimals);
 
-    // Fetch pending recipients
-    const { data: pending } = await sb
+    // Count pending recipients first; the REST API defaults to 1000 rows per read,
+    // so processing must repeatedly fetch pending chunks until none remain.
+    const { count: pendingCount } = await sb
       .from("gd_bulk_recipients")
-      .select("id, wallet_address")
+      .select("id", { count: "exact", head: true })
       .eq("job_id", jobId)
-      .eq("status", "pending")
-      .order("created_at", { ascending: true });
-    const list = pending || [];
-    if (list.length === 0) {
+      .eq("status", "pending");
+    if (!pendingCount) {
       await finalize(sb, jobId);
       return;
     }
 
-    const totalNeeded = perRecipient * BigInt(list.length);
+    const totalNeeded = perRecipient * BigInt(pendingCount);
 
     // Balance checks
     const gdBalance: bigint = await token.balanceOf(wallet.address);
@@ -234,8 +236,17 @@ async function processJob(jobId: string) {
     }
 
     // Process in chunks
-    for (let i = 0; i < list.length; i += MAX_PER_TX) {
-      const chunk = list.slice(i, i + MAX_PER_TX);
+    while (true) {
+      const { data: pending } = await sb
+        .from("gd_bulk_recipients")
+        .select("id, wallet_address")
+        .eq("job_id", jobId)
+        .eq("status", "pending")
+        .order("created_at", { ascending: true })
+        .limit(MAX_PER_TX);
+      const chunk = pending || [];
+      if (chunk.length === 0) break;
+
       const addresses = chunk.map((r: any) => ethers.getAddress(r.wallet_address));
       const values = addresses.map(() => perRecipient);
       const ids = chunk.map((r: any) => r.id);
