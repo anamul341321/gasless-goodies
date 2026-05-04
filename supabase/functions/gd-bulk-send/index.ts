@@ -101,24 +101,10 @@ Deno.serve(async (req) => {
       recipient_count: recipients.length,
     };
 
-    // Cap gas price — Celo normal is 0.5-5 Gwei. Never pay more than 10 Gwei.
-    // Prevents abnormal RPC suggestions (we saw 202 Gwei!) from draining CELO.
-    const MAX_GAS_PRICE = ethers.parseUnits("10", "gwei");
-    async function safeGasPrice(): Promise<bigint> {
-      try {
-        const fee = await provider.getFeeData();
-        const suggested = fee.gasPrice ?? ethers.parseUnits("5", "gwei");
-        return suggested > MAX_GAS_PRICE ? MAX_GAS_PRICE : suggested;
-      } catch {
-        return ethers.parseUnits("5", "gwei");
-      }
-    }
-
-    // Approve once if needed
+    // Approve once if needed — let ethers/RPC pick gas price automatically
     const allowance: bigint = await token.allowance(wallet.address, DISPERSE);
     if (allowance < totalNeeded) {
-      const gasPrice = await safeGasPrice();
-      const approveTx = await token.approve(DISPERSE, ethers.MaxUint256, { gasPrice });
+      const approveTx = await token.approve(DISPERSE, ethers.MaxUint256);
       result.approve_tx = approveTx.hash;
       await approveTx.wait();
     }
