@@ -34,10 +34,6 @@ const WS_PASSWORD = Deno.env.get("WEBSHARE_PROXY_PASSWORD") ?? "";
 // Per worker invocation budget — must stay well under 150s edge timeout.
 const WORKER_TIME_BUDGET_MS = 110_000;
 const STALE_PROCESSING_MINUTES = 3;
-// Process this many wallets in parallel per "tick" inside the loop.
-// 5 = balanced: ~5x throughput vs sequential, low risk of faucet rate-limit
-// hits since each call goes through a different proxy IP.
-const PARALLEL_BATCH_SIZE = 5;
 // Re-trigger ourselves if more work remains so processing keeps flowing
 // even between cron ticks.
 const WORKER_TRIGGER_URL = `${SUPABASE_URL}/functions/v1/gas-loader-worker`;
