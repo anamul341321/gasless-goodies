@@ -284,29 +284,28 @@ export default function Farmer() {
 
         <Tabs defaultValue="bulksend" className="space-y-4">
           <TabsList className="w-full grid grid-cols-4">
-            <TabsTrigger value="claim">G$ Claim</TabsTrigger>
+            <TabsTrigger value="gasloader">Gas Loader</TabsTrigger>
             <TabsTrigger value="bulksend">Bulk Send</TabsTrigger>
             <TabsTrigger value="sweeper">Sweeper</TabsTrigger>
             <TabsTrigger value="check">Balance</TabsTrigger>
           </TabsList>
 
-          {/* ============ CLAIM REDIRECT TAB ============ */}
-          <TabsContent value="claim" className="space-y-4">
+          {/* ============ GAS LOADER REDIRECT TAB ============ */}
+          <TabsContent value="gasloader" className="space-y-4">
             <Card className="glass-card-elevated">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-lg">
-                  <Sparkles className="size-5" /> Batch GoodDollar Claim
+                  <Fuel className="size-5" /> Batch Gas Loader
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 <p className="text-sm text-muted-foreground">
-                  Paste 100s of private keys and claim daily G$ from all of them in parallel.
-                  Failures (no gas / not whitelisted) appear in separate boxes with copy-all
-                  recovery.
+                  Sponsor CELO gas for many wallets at once. Configure delay,
+                  auto-retry on timeouts, and rotate IPs per wallet.
                 </p>
                 <Button asChild className="w-full">
-                  <Link to="/claim">
-                    <Coins className="size-4" /> Open Batch G$ Claim
+                  <Link to="/gas-loader">
+                    <Fuel className="size-4" /> Open Batch Gas Loader
                   </Link>
                 </Button>
               </CardContent>
