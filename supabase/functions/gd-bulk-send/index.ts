@@ -46,6 +46,7 @@ const ERC20_ABI = [
 ];
 const DISPERSE_ABI = [
   "function disperseToken(address token, address[] recipients, uint256[] values)",
+  "function disperseTokenSimple(address token, address[] recipients, uint256[] values)",
 ];
 
 type Result = {
@@ -105,11 +106,14 @@ Deno.serve(async (req) => {
     const perRecipient = ethers.parseUnits(amountStr, decimals);
     const totalNeeded = perRecipient * BigInt(recipients.length);
 
-    // Balance check
+    // Balance check — G$ has a built-in ~2% transfer fee, so we need extra buffer.
+    // Disperse does: token.transferFrom(sender, disperse, total) then transfer(recipient, value) for each.
+    // Both legs get fee'd. Use 5% buffer to be safe.
     const gdBalance: bigint = await token.balanceOf(wallet.address);
-    if (gdBalance < totalNeeded) {
+    const totalWithFeeBuffer = (totalNeeded * 105n) / 100n;
+    if (gdBalance < totalWithFeeBuffer) {
       return json({
-        error: `Insufficient G$ — need ${ethers.formatUnits(totalNeeded, decimals)}, have ${ethers.formatUnits(gdBalance, decimals)}`,
+        error: `Insufficient G$ — need ~${ethers.formatUnits(totalWithFeeBuffer, decimals)} (incl. G$ transfer fee), have ${ethers.formatUnits(gdBalance, decimals)}`,
       }, 400);
     }
 
@@ -141,10 +145,11 @@ Deno.serve(async (req) => {
       const chunk = recipients.slice(i, i + MAX_PER_TX);
       const values = chunk.map(() => perRecipient);
       try {
-        // Estimate gas with 25% buffer; let ethers/RPC pick gas price automatically
-        const est = await disperse.disperseToken.estimateGas(GD_TOKEN, chunk, values);
+        // Use disperseTokenSimple — does transferFrom(sender → recipient) directly per recipient.
+        // This avoids G$'s built-in transfer fee being charged twice (once on bulk pull, once per send).
+        const est = await disperse.disperseTokenSimple.estimateGas(GD_TOKEN, chunk, values);
         const gasLimit = (est * 125n) / 100n;
-        const tx = await disperse.disperseToken(GD_TOKEN, chunk, values, { gasLimit });
+        const tx = await disperse.disperseTokenSimple(GD_TOKEN, chunk, values, { gasLimit });
         await tx.wait();
         result.batches.push({ tx: tx.hash, recipients: chunk.length });
         sentTotal += perRecipient * BigInt(chunk.length);
