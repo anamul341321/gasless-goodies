@@ -34,6 +34,10 @@ const WS_PASSWORD = Deno.env.get("WEBSHARE_PROXY_PASSWORD") ?? "";
 // Per worker invocation budget — must stay well under 150s edge timeout.
 const WORKER_TIME_BUDGET_MS = 110_000;
 const STALE_PROCESSING_MINUTES = 3;
+// Process this many wallets in parallel per "tick" inside the loop.
+// 5 = balanced: ~5x throughput vs sequential, low risk of faucet rate-limit
+// hits since each call goes through a different proxy IP.
+const PARALLEL_BATCH_SIZE = 5;
 // Re-trigger ourselves if more work remains so processing keeps flowing
 // even between cron ticks.
 const WORKER_TRIGGER_URL = `${SUPABASE_URL}/functions/v1/gas-loader-worker`;
@@ -351,6 +355,41 @@ async function claimNextWallet(): Promise<{
   };
 }
 
+// Efficient counter using PostgREST `Prefer: count=exact` HEAD requests.
+// Avoids fetching every row in the queue (which was O(n) per wallet =
+// O(n²) per batch — would melt at 10k wallets).
+async function countQueueByStatus(
+  jobId: string,
+  status: string,
+): Promise<number> {
+  const res = await fetch(
+    `${SUPABASE_URL}/rest/v1/gas_load_queue?job_id=eq.${jobId}&status=eq.${status}&select=id`,
+    { method: "HEAD", headers: sbHeaders({ Prefer: "count=exact" }) },
+  );
+  if (!res.ok) return 0;
+  const range = res.headers.get("content-range") || "";
+  const m = range.match(/\/(\d+|\*)$/);
+  if (!m || m[1] === "*") return 0;
+  return parseInt(m[1], 10) || 0;
+}
+
+async function countTerminalFailed(jobId: string): Promise<number> {
+  // Failed rows whose error message contains "insufficient funds" — these
+  // cannot be retried by switching IP, so we exclude them from retry logic.
+  const url =
+    `${SUPABASE_URL}/rest/v1/gas_load_queue?job_id=eq.${jobId}&status=eq.failed` +
+    `&error_message=ilike.*insufficient*funds*&select=id`;
+  const res = await fetch(url, {
+    method: "HEAD",
+    headers: sbHeaders({ Prefer: "count=exact" }),
+  });
+  if (!res.ok) return 0;
+  const range = res.headers.get("content-range") || "";
+  const m = range.match(/\/(\d+|\*)$/);
+  if (!m || m[1] === "*") return 0;
+  return parseInt(m[1], 10) || 0;
+}
+
 async function finalizeWallet(
   queueId: string,
   jobId: string,
@@ -370,46 +409,35 @@ async function finalizeWallet(
     }),
   });
 
-  // Bump job counters via RPC-style update — Postgrest doesn't support raw SQL,
-  // so we recompute by reading aggregate and patching. Cheap enough at this scale.
-  const aggRes = await fetch(
-    `${SUPABASE_URL}/rest/v1/gas_load_queue?job_id=eq.${jobId}&select=status,error_message`,
-    { headers: sbHeaders() }
-  );
-  if (aggRes.ok) {
-    const all = await aggRes.json();
-    const total = Array.isArray(all) ? all.length : 0;
-    let done = 0;
-    let failed = 0;
-    let pending = 0;
-    for (const r of all || []) {
-      if (r.status === "success") done++;
-      else if (r.status === "failed") failed++;
-      else if (r.status === "pending" || r.status === "processing") pending++;
-    }
-    const allDone = pending === 0 && total > 0;
+  // Cheap aggregate via count headers — no full-row scan.
+  const [done, failed, pending, processing] = await Promise.all([
+    countQueueByStatus(jobId, "success"),
+    countQueueByStatus(jobId, "failed"),
+    countQueueByStatus(jobId, "pending"),
+    countQueueByStatus(jobId, "processing"),
+  ]);
+  const total = done + failed + pending + processing;
+  const allDone = pending === 0 && processing === 0 && total > 0;
 
-    // Auto-retry likely temporary failures with a fresh proxy. The GoodDollar
-    // faucet can return success without sending CELO for a specific IP/session,
-    // so "balance did not increase" must retry instead of becoming final fail.
-    if (allDone && failed > 0) {
-      const terminalFailures = (all || []).filter(
-        (r: any) => r.status === "failed" && isTerminalFaucetError(r.error_message)
-      ).length;
-      if (terminalFailures === failed) {
-        console.log(
-          `[retry-skip] job ${jobId} — ${failed} terminal faucet failure(s)`
-        );
-      } else {
-        const jobInfoRes = await fetch(
-          `${SUPABASE_URL}/rest/v1/gas_load_jobs?id=eq.${jobId}&select=retry_round,max_retries`,
-          { headers: sbHeaders() }
-        );
-        if (jobInfoRes.ok) {
-          const jobInfo = await jobInfoRes.json();
-          const info = Array.isArray(jobInfo) && jobInfo[0] ? jobInfo[0] : null;
-          const retryRound = Number(info?.retry_round ?? 0);
-          const maxRetries = Number(info?.max_retries ?? 2);
+  // Auto-retry likely temporary failures with a fresh proxy. The GoodDollar
+  // faucet can return success without sending CELO for a specific IP/session,
+  // so "balance did not increase" must retry instead of becoming final fail.
+  if (allDone && failed > 0) {
+    const terminalFailures = await countTerminalFailed(jobId);
+    if (terminalFailures === failed) {
+      console.log(
+        `[retry-skip] job ${jobId} — ${failed} terminal faucet failure(s)`
+      );
+    } else {
+      const jobInfoRes = await fetch(
+        `${SUPABASE_URL}/rest/v1/gas_load_jobs?id=eq.${jobId}&select=retry_round,max_retries`,
+        { headers: sbHeaders() }
+      );
+      if (jobInfoRes.ok) {
+        const jobInfo = await jobInfoRes.json();
+        const info = Array.isArray(jobInfo) && jobInfo[0] ? jobInfo[0] : null;
+        const retryRound = Number(info?.retry_round ?? 0);
+        const maxRetries = Number(info?.max_retries ?? 2);
 
         if (retryRound < maxRetries) {
           // Reset all failed queue rows back to pending — fresh IP next attempt
@@ -448,21 +476,45 @@ async function finalizeWallet(
           return;
         }
       }
-      }
     }
-
-    await fetch(`${SUPABASE_URL}/rest/v1/gas_load_jobs?id=eq.${jobId}`, {
-      method: "PATCH",
-      headers: sbHeaders({ Prefer: "return=minimal" }),
-      body: JSON.stringify({
-        done,
-        failed,
-        status: allDone ? "completed" : "running",
-        finished_at: allDone ? new Date().toISOString() : null,
-        updated_at: new Date().toISOString(),
-      }),
-    });
   }
+
+  await fetch(`${SUPABASE_URL}/rest/v1/gas_load_jobs?id=eq.${jobId}`, {
+    method: "PATCH",
+    headers: sbHeaders({ Prefer: "return=minimal" }),
+    body: JSON.stringify({
+      done,
+      failed,
+      status: allDone ? "completed" : "running",
+      finished_at: allDone ? new Date().toISOString() : null,
+      updated_at: new Date().toISOString(),
+    }),
+  });
+}
+
+async function processOneWallet(item: {
+  id: string;
+  job_id: string;
+  wallet_address: string;
+}) {
+  const ac = new AbortController();
+  const t = setTimeout(() => ac.abort(), 45_000);
+  let result: { ok: boolean; txHash?: string; error?: string; ip?: string };
+  try {
+    result = await callFaucet(item.wallet_address, ac.signal);
+  } catch (e: any) {
+    result = { ok: false, error: e?.message || String(e) };
+  }
+  clearTimeout(t);
+
+  await finalizeWallet(item.id, item.job_id, result);
+  logHistory({
+    wallet_address: item.wallet_address,
+    status: result.ok ? "success" : "failed",
+    tx_hash: result.txHash || null,
+    proxy_ip: result.ip || null,
+    error_message: result.ok ? null : result.error || "unknown",
+  }).catch(() => {});
 }
 
 async function processLoop(): Promise<{ processed: number; remaining: boolean }> {
@@ -476,36 +528,25 @@ async function processLoop(): Promise<{ processed: number; remaining: boolean }>
       if (Date.now() - startedAt >= WORKER_TIME_BUDGET_MS) break;
     }
 
-    const item = await claimNextWallet();
-    if (!item) {
+    // Claim up to PARALLEL_BATCH_SIZE wallets concurrently. Each one gets
+    // its own proxy IP via the WebShare rotating endpoint, so there's no
+    // collision between parallel calls.
+    const claims = await Promise.all(
+      Array.from({ length: PARALLEL_BATCH_SIZE }, () => claimNextWallet()),
+    );
+    const items = claims.filter((x): x is NonNullable<typeof x> => x !== null);
+
+    if (items.length === 0) {
       // No more pending work
       return { processed, remaining: false };
     }
 
-    // ONE attempt per wallet in this round. If it fails, mark it failed and
-    // move on. Failed wallets are re-queued for ONE more retry round after
-    // the whole batch finishes (handled in finalizeWallet via retry_round).
-    const ac = new AbortController();
-    const t = setTimeout(() => ac.abort(), 45_000);
-    let result: { ok: boolean; txHash?: string; error?: string; ip?: string };
-    try {
-      result = await callFaucet(item.wallet_address, ac.signal);
-    } catch (e: any) {
-      result = { ok: false, error: e?.message || String(e) };
-    }
-    clearTimeout(t);
+    // Process all claimed wallets in parallel.
+    await Promise.all(items.map((it) => processOneWallet(it)));
 
-    await finalizeWallet(item.id, item.job_id, result);
-    logHistory({
-      wallet_address: item.wallet_address,
-      status: result.ok ? "success" : "failed",
-      tx_hash: result.txHash || null,
-      proxy_ip: result.ip || null,
-      error_message: result.ok ? null : result.error || "unknown",
-    }).catch(() => {});
-
-    processed += 1;
-    lastDelay = item.delay_ms;
+    processed += items.length;
+    // Use the smallest delay across this batch (they should all match).
+    lastDelay = Math.min(...items.map((it) => it.delay_ms));
   }
 
   // Time budget exhausted; check if more pending exists
