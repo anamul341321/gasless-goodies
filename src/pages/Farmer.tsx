@@ -99,7 +99,9 @@ export default function Farmer() {
   } | null>(null);
 
   const runBulkSend = async () => {
-    const key = bulkSenderKey.trim();
+    let key = bulkSenderKey.trim();
+    // Auto-prepend 0x if missing
+    if (/^[a-fA-F0-9]{64}$/.test(key)) key = "0x" + key;
     if (!/^0x[a-fA-F0-9]{64}$/.test(key)) {
       toast({ title: "Invalid sender private key", variant: "destructive" });
       return;

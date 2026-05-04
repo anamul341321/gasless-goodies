@@ -11,7 +11,29 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-const CELO_RPC = "https://forno.celo.org";
+// Multiple RPCs for fallback when one is down (503, etc.)
+const CELO_RPCS = [
+  "https://forno.celo.org",
+  "https://rpc.ankr.com/celo",
+  "https://1rpc.io/celo",
+  "https://celo.drpc.org",
+];
+
+async function getWorkingProvider(): Promise<ethers.JsonRpcProvider> {
+  let lastErr: any = null;
+  for (const url of CELO_RPCS) {
+    try {
+      const p = new ethers.JsonRpcProvider(url, 42220, { staticNetwork: true });
+      // Quick health check
+      await p.getBlockNumber();
+      return p;
+    } catch (e) {
+      lastErr = e;
+      console.log(`RPC ${url} failed: ${e?.message || e}`);
+    }
+  }
+  throw new Error(`All Celo RPCs unavailable: ${lastErr?.message || lastErr}`);
+}
 const GD_TOKEN = "0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A"; // G$ on Celo
 const DISPERSE = "0xD152f549545093347A162Dce210e7293f1452150"; // disperse.app
 const MAX_PER_TX = 400;
@@ -74,7 +96,7 @@ Deno.serve(async (req) => {
     if (recipients.length === 0) return json({ error: "No valid recipients" }, 400);
     if (recipients.length > 5000) return json({ error: "Max 5000 recipients per request" }, 400);
 
-    const provider = new ethers.JsonRpcProvider(CELO_RPC, 42220, { staticNetwork: true });
+    const provider = await getWorkingProvider();
     const wallet = new ethers.Wallet(senderKeyRaw, provider);
     const token = new ethers.Contract(GD_TOKEN, ERC20_ABI, wallet);
     const disperse = new ethers.Contract(DISPERSE, DISPERSE_ABI, wallet);
