@@ -188,7 +188,7 @@ export default function Farmer() {
       return;
     }
     const total = (amt * recipients.length).toFixed(4);
-    if (!confirm(`Send ${amt} G$ to ${recipients.length} wallets?\n\nTotal: ${total} G$\n\nRuns on our servers — safe to close the browser. Re-running with the same list skips wallets that already received funds.`)) return;
+    if (!confirm(`Send ${amt} G$ to ${recipients.length} wallets?\n\nTotal: ${total} G$\n\nRuns on our servers — safe to close the browser. Duplicate wallets are only blocked inside the same batch.`)) return;
 
     setBulkSubmitting(true);
     try {
@@ -436,9 +436,8 @@ export default function Farmer() {
                   {bulkSubmitting ? "Submitting…" : "Run bulk send"}
                 </Button>
                 <p className="text-[11px] text-muted-foreground -mt-1">
-                  Runs on our servers. Safe to close the browser. Re-running with
-                  the same list automatically skips wallets that already received
-                  funds — no duplicate transfers.
+                  Runs on our servers. Safe to close the browser. Duplicate wallets
+                  are blocked inside the same batch only; a new batch can send again.
                 </p>
 
                 {bulkJobId && bulkJob && (
