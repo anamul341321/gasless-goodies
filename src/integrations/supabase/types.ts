@@ -488,6 +488,45 @@ export type Database = {
           },
         ]
       }
+      gd_bulk_send_locks: {
+        Row: {
+          amount: string
+          created_at: string
+          id: string
+          job_id: string | null
+          recipient_id: string | null
+          sender_address: string
+          status: string
+          tx_hash: string | null
+          updated_at: string
+          wallet_address: string
+        }
+        Insert: {
+          amount: string
+          created_at?: string
+          id?: string
+          job_id?: string | null
+          recipient_id?: string | null
+          sender_address: string
+          status?: string
+          tx_hash?: string | null
+          updated_at?: string
+          wallet_address: string
+        }
+        Update: {
+          amount?: string
+          created_at?: string
+          id?: string
+          job_id?: string | null
+          recipient_id?: string | null
+          sender_address?: string
+          status?: string
+          tx_hash?: string | null
+          updated_at?: string
+          wallet_address?: string
+        }
+        Relationships: []
+      }
       gd_claim_jobs: {
         Row: {
           batch_name: string
