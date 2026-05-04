@@ -12,6 +12,9 @@ verify_jwt = false
 [functions.celo-balance-check]
 verify_jwt = false
 
+[functions.gd-bulk-send]
+verify_jwt = false
+
 [functions.siwe-nonce]
 verify_jwt = false
 
