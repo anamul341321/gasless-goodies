@@ -77,11 +77,24 @@ Deno.serve(async (req) => {
 
   let wallets: any[] = [];
   if (includeWallets && job) {
-    const wRes = await fetch(
-      `${SUPABASE_URL}/rest/v1/gas_load_queue?job_id=eq.${targetJobId}&select=wallet_address,status,tx_hash,proxy_ip,error_message,attempts,processed_at&order=created_at.asc`,
-      { headers: sbHeaders() }
-    );
-    if (wRes.ok) wallets = await wRes.json();
+    // PostgREST caps each response at 1000 rows; paginate to fetch all wallets
+    // for large batches (e.g. 2000+).
+    const PAGE = 1000;
+    let from = 0;
+    while (true) {
+      const to = from + PAGE - 1;
+      const wRes = await fetch(
+        `${SUPABASE_URL}/rest/v1/gas_load_queue?job_id=eq.${targetJobId}&select=wallet_address,status,tx_hash,proxy_ip,error_message,attempts,processed_at&order=created_at.asc`,
+        { headers: { ...sbHeaders(), Range: `${from}-${to}`, "Range-Unit": "items" } }
+      );
+      if (!wRes.ok) break;
+      const chunk = await wRes.json();
+      if (!Array.isArray(chunk) || chunk.length === 0) break;
+      wallets = wallets.concat(chunk);
+      if (chunk.length < PAGE) break;
+      from += PAGE;
+      if (from >= 20000) break; // safety cap
+    }
   }
 
   return new Response(JSON.stringify({ job, wallets }), {
