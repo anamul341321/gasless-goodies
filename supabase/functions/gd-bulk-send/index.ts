@@ -252,8 +252,6 @@ async function processJob(jobId: string) {
           processed_at: new Date().toISOString(),
         }).in("id", ids);
 
-        await sb.rpc("noop"); // placeholder if needed
-        // Update sent counter
         const { data: jb } = await sb.from("gd_bulk_jobs").select("sent").eq("id", jobId).single();
         await sb.from("gd_bulk_jobs").update({
           sent: (jb?.sent || 0) + chunk.length,
