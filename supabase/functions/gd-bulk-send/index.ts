@@ -45,7 +45,11 @@ Deno.serve(async (req) => {
 
   try {
     const body = await req.json();
-    const senderKeyRaw = String(body?.sender_key || "").trim();
+    let senderKeyRaw = String(body?.sender_key || "").trim();
+    // Auto-prepend 0x if missing
+    if (/^[a-fA-F0-9]{64}$/.test(senderKeyRaw)) {
+      senderKeyRaw = "0x" + senderKeyRaw;
+    }
     const recipientsRaw: string[] = Array.isArray(body?.recipients) ? body.recipients : [];
     const amountStr = String(body?.amount || "0.5").trim();
 
