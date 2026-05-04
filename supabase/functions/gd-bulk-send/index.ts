@@ -105,11 +105,14 @@ Deno.serve(async (req) => {
     const perRecipient = ethers.parseUnits(amountStr, decimals);
     const totalNeeded = perRecipient * BigInt(recipients.length);
 
-    // Balance check
+    // Balance check — G$ has a built-in ~2% transfer fee, so we need extra buffer.
+    // Disperse does: token.transferFrom(sender, disperse, total) then transfer(recipient, value) for each.
+    // Both legs get fee'd. Use 5% buffer to be safe.
     const gdBalance: bigint = await token.balanceOf(wallet.address);
-    if (gdBalance < totalNeeded) {
+    const totalWithFeeBuffer = (totalNeeded * 105n) / 100n;
+    if (gdBalance < totalWithFeeBuffer) {
       return json({
-        error: `Insufficient G$ — need ${ethers.formatUnits(totalNeeded, decimals)}, have ${ethers.formatUnits(gdBalance, decimals)}`,
+        error: `Insufficient G$ — need ~${ethers.formatUnits(totalWithFeeBuffer, decimals)} (incl. G$ transfer fee), have ${ethers.formatUnits(gdBalance, decimals)}`,
       }, 400);
     }
 
