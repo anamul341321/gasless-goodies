@@ -85,7 +85,75 @@ export default function Farmer() {
     toast({ title: "Addresses copied" });
   };
 
-  // ----- Sweeper (server-side, runs even if browser is closed) -----
+  // ----- Bulk Send G$ state -----
+  const [bulkSenderKey, setBulkSenderKey] = useState("");
+  const [bulkRecipients, setBulkRecipients] = useState("");
+  const [bulkAmount, setBulkAmount] = useState("0.5");
+  const [bulkSending, setBulkSending] = useState(false);
+  const [bulkResult, setBulkResult] = useState<{
+    ok: boolean;
+    approve_tx?: string;
+    total_sent: string;
+    recipient_count: number;
+    batches: { tx?: string; recipients: number; error?: string }[];
+  } | null>(null);
+
+  const runBulkSend = async () => {
+    const key = bulkSenderKey.trim();
+    if (!/^0x[a-fA-F0-9]{64}$/.test(key)) {
+      toast({ title: "Invalid sender private key", variant: "destructive" });
+      return;
+    }
+    const recipients = bulkRecipients
+      .split(/[\s,;\n]+/)
+      .map(r => r.trim())
+      .filter(r => /^0x[a-fA-F0-9]{40}$/.test(r));
+    if (recipients.length === 0) {
+      toast({ title: "No valid recipient addresses", variant: "destructive" });
+      return;
+    }
+    if (recipients.length > 5000) {
+      toast({ title: "Max 5000 recipients per request", variant: "destructive" });
+      return;
+    }
+    const amt = Number(bulkAmount);
+    if (!Number.isFinite(amt) || amt <= 0) {
+      toast({ title: "Invalid amount", variant: "destructive" });
+      return;
+    }
+    const total = (amt * recipients.length).toFixed(4);
+    if (!confirm(`Send ${amt} G$ to ${recipients.length} wallets in one transaction?\n\nTotal: ${total} G$\n(auto-batched in groups of 400 if needed)`)) return;
+
+    setBulkSending(true);
+    setBulkResult(null);
+    try {
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/gd-bulk-send`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string,
+        },
+        body: JSON.stringify({ sender_key: key, recipients, amount: bulkAmount }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        toast({ title: "Send failed", description: json?.error || `HTTP ${res.status}`, variant: "destructive" });
+      } else {
+        setBulkResult(json);
+        if (json.ok) {
+          toast({ title: `Sent ${json.total_sent} G$ to ${json.recipient_count} wallets` });
+          setBulkSenderKey("");
+        } else {
+          toast({ title: "Partial failure", description: "Check batch results below", variant: "destructive" });
+        }
+      }
+    } catch (e: any) {
+      toast({ title: "Network error", description: e?.message || String(e), variant: "destructive" });
+    } finally {
+      setBulkSending(false);
+    }
+  };
+
 
   // Resume any running sweep job on mount, then keep polling
   useEffect(() => {
