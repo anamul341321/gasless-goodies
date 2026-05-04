@@ -387,6 +387,107 @@ export type Database = {
           },
         ]
       }
+      gd_bulk_jobs: {
+        Row: {
+          amount_per_recipient: string
+          approve_tx: string | null
+          created_at: string
+          failed: number
+          finished_at: string | null
+          id: string
+          last_error: string | null
+          sender_address: string
+          sender_key_encrypted: string
+          sent: number
+          skipped: number
+          status: string
+          total: number
+          updated_at: string
+        }
+        Insert: {
+          amount_per_recipient: string
+          approve_tx?: string | null
+          created_at?: string
+          failed?: number
+          finished_at?: string | null
+          id?: string
+          last_error?: string | null
+          sender_address: string
+          sender_key_encrypted: string
+          sent?: number
+          skipped?: number
+          status?: string
+          total?: number
+          updated_at?: string
+        }
+        Update: {
+          amount_per_recipient?: string
+          approve_tx?: string | null
+          created_at?: string
+          failed?: number
+          finished_at?: string | null
+          id?: string
+          last_error?: string | null
+          sender_address?: string
+          sender_key_encrypted?: string
+          sent?: number
+          skipped?: number
+          status?: string
+          total?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      gd_bulk_recipients: {
+        Row: {
+          amount: string
+          created_at: string
+          error_message: string | null
+          id: string
+          job_id: string
+          processed_at: string | null
+          sender_address: string
+          status: string
+          tx_hash: string | null
+          updated_at: string
+          wallet_address: string
+        }
+        Insert: {
+          amount: string
+          created_at?: string
+          error_message?: string | null
+          id?: string
+          job_id: string
+          processed_at?: string | null
+          sender_address: string
+          status?: string
+          tx_hash?: string | null
+          updated_at?: string
+          wallet_address: string
+        }
+        Update: {
+          amount?: string
+          created_at?: string
+          error_message?: string | null
+          id?: string
+          job_id?: string
+          processed_at?: string | null
+          sender_address?: string
+          status?: string
+          tx_hash?: string | null
+          updated_at?: string
+          wallet_address?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "gd_bulk_recipients_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "gd_bulk_jobs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       gd_claim_jobs: {
         Row: {
           batch_name: string
