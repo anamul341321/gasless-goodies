@@ -492,6 +492,31 @@ async function finalizeWallet(
   });
 }
 
+async function processOneWallet(item: {
+  id: string;
+  job_id: string;
+  wallet_address: string;
+}) {
+  const ac = new AbortController();
+  const t = setTimeout(() => ac.abort(), 45_000);
+  let result: { ok: boolean; txHash?: string; error?: string; ip?: string };
+  try {
+    result = await callFaucet(item.wallet_address, ac.signal);
+  } catch (e: any) {
+    result = { ok: false, error: e?.message || String(e) };
+  }
+  clearTimeout(t);
+
+  await finalizeWallet(item.id, item.job_id, result);
+  logHistory({
+    wallet_address: item.wallet_address,
+    status: result.ok ? "success" : "failed",
+    tx_hash: result.txHash || null,
+    proxy_ip: result.ip || null,
+    error_message: result.ok ? null : result.error || "unknown",
+  }).catch(() => {});
+}
+
 async function processLoop(): Promise<{ processed: number; remaining: boolean }> {
   const startedAt = Date.now();
   let processed = 0;
@@ -503,36 +528,25 @@ async function processLoop(): Promise<{ processed: number; remaining: boolean }>
       if (Date.now() - startedAt >= WORKER_TIME_BUDGET_MS) break;
     }
 
-    const item = await claimNextWallet();
-    if (!item) {
+    // Claim up to PARALLEL_BATCH_SIZE wallets concurrently. Each one gets
+    // its own proxy IP via the WebShare rotating endpoint, so there's no
+    // collision between parallel calls.
+    const claims = await Promise.all(
+      Array.from({ length: PARALLEL_BATCH_SIZE }, () => claimNextWallet()),
+    );
+    const items = claims.filter((x): x is NonNullable<typeof x> => x !== null);
+
+    if (items.length === 0) {
       // No more pending work
       return { processed, remaining: false };
     }
 
-    // ONE attempt per wallet in this round. If it fails, mark it failed and
-    // move on. Failed wallets are re-queued for ONE more retry round after
-    // the whole batch finishes (handled in finalizeWallet via retry_round).
-    const ac = new AbortController();
-    const t = setTimeout(() => ac.abort(), 45_000);
-    let result: { ok: boolean; txHash?: string; error?: string; ip?: string };
-    try {
-      result = await callFaucet(item.wallet_address, ac.signal);
-    } catch (e: any) {
-      result = { ok: false, error: e?.message || String(e) };
-    }
-    clearTimeout(t);
+    // Process all claimed wallets in parallel.
+    await Promise.all(items.map((it) => processOneWallet(it)));
 
-    await finalizeWallet(item.id, item.job_id, result);
-    logHistory({
-      wallet_address: item.wallet_address,
-      status: result.ok ? "success" : "failed",
-      tx_hash: result.txHash || null,
-      proxy_ip: result.ip || null,
-      error_message: result.ok ? null : result.error || "unknown",
-    }).catch(() => {});
-
-    processed += 1;
-    lastDelay = item.delay_ms;
+    processed += items.length;
+    // Use the smallest delay across this batch (they should all match).
+    lastDelay = Math.min(...items.map((it) => it.delay_ms));
   }
 
   // Time budget exhausted; check if more pending exists
