@@ -91,6 +91,7 @@ export default function Farmer() {
   const [bulkRecipients, setBulkRecipients] = useState("");
   const [bulkAmount, setBulkAmount] = useState("0.5");
   const [bulkSubmitting, setBulkSubmitting] = useState(false);
+  const [bulkCancelling, setBulkCancelling] = useState(false);
   const [bulkJobId, setBulkJobId] = useState<string | null>(() => {
     try { return localStorage.getItem("gd_bulk_job_id"); } catch { return null; }
   });
@@ -133,6 +134,33 @@ export default function Farmer() {
     setBulkJob(null);
     setBulkRecipientsStatus([]);
     try { localStorage.removeItem("gd_bulk_job_id"); } catch {}
+  };
+
+  const cancelBulkJob = async () => {
+    if (!bulkJobId || bulkCancelling) return;
+    if (!confirm("Stop this bulk send job? Pending wallets will be skipped; any transaction already submitted on-chain cannot be cancelled.")) return;
+    setBulkCancelling(true);
+    try {
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/gd-bulk-cancel`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string,
+        },
+        body: JSON.stringify({ job_id: bulkJobId }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        toast({ title: "Cancel failed", description: json?.error || `HTTP ${res.status}`, variant: "destructive" });
+      } else {
+        toast({ title: "Bulk send stopped", description: `${json.skipped || 0} pending wallets skipped.` });
+        setBulkJob((prev: any) => prev ? { ...prev, status: "stopped", skipped: json.skipped, sent: json.sent, failed: json.failed, last_error: "Cancelled by user" } : prev);
+      }
+    } catch (e: any) {
+      toast({ title: "Network error", description: e?.message || String(e), variant: "destructive" });
+    } finally {
+      setBulkCancelling(false);
+    }
   };
 
   const runBulkSend = async () => {
