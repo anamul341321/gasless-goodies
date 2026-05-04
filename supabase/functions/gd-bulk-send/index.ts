@@ -97,21 +97,21 @@ Deno.serve(async (req) => {
 
     const sb = admin();
 
-    // Find which recipients are already `sent` in any prior job for this
-    // (sender + amount) — skip those to make the run resumable.
+    // Find which recipients are already locked for this (sender + amount).
+    // Lock table has a database UNIQUE index, so retries/concurrent requests
+    // cannot queue or send the same wallet twice.
     const lowered = recipients.map((r) => r.toLowerCase());
-    const alreadySent = new Set<string>();
+    const alreadyLocked = new Set<string>();
     for (let i = 0; i < lowered.length; i += 500) {
-      const { data: prior } = await sb
-        .from("gd_bulk_recipients")
+      const { data: priorLocks } = await sb
+        .from("gd_bulk_send_locks")
         .select("wallet_address")
         .eq("sender_address", senderAddress.toLowerCase())
         .eq("amount", amountStr)
-        .eq("status", "sent")
         .in("wallet_address", lowered.slice(i, i + 500));
-      for (const r of prior || []) alreadySent.add(String(r.wallet_address).toLowerCase());
+      for (const r of priorLocks || []) alreadyLocked.add(String(r.wallet_address).toLowerCase());
     }
-    const fresh = recipients.filter((r) => !alreadySent.has(r.toLowerCase()));
+    const fresh = recipients.filter((r) => !alreadyLocked.has(r.toLowerCase()));
     const skipped = recipients.length - fresh.length;
 
     if (fresh.length === 0) {
@@ -142,14 +142,63 @@ Deno.serve(async (req) => {
     }
     const jobId = jobRow.id as string;
 
-    // Insert recipients in chunks
-    const rows = fresh.map((w) => ({
+    // Reserve recipients first using database-level dedupe locks.
+    const lockRows = fresh.map((w) => ({
+      sender_address: senderAddress.toLowerCase(),
+      wallet_address: w.toLowerCase(),
+      amount: amountStr,
+      job_id: jobId,
+      status: "reserved",
+    }));
+    for (let i = 0; i < lockRows.length; i += 500) {
+      const { error } = await sb
+        .from("gd_bulk_send_locks")
+        .upsert(lockRows.slice(i, i + 500), {
+          onConflict: "sender_address,wallet_address,amount",
+          ignoreDuplicates: true,
+        });
+      if (error) {
+        await sb.from("gd_bulk_jobs").update({
+          status: "failed", last_error: error.message, finished_at: new Date().toISOString(),
+        }).eq("id", jobId);
+        return json({ error: error.message }, 500);
+      }
+    }
+
+    const reserved = new Set<string>();
+    for (let i = 0; i < lowered.length; i += 500) {
+      const { data: locks } = await sb
+        .from("gd_bulk_send_locks")
+        .select("wallet_address")
+        .eq("sender_address", senderAddress.toLowerCase())
+        .eq("amount", amountStr)
+        .eq("job_id", jobId)
+        .in("wallet_address", lowered.slice(i, i + 500));
+      for (const r of locks || []) reserved.add(String(r.wallet_address).toLowerCase());
+    }
+
+    const rows = fresh.filter((w) => reserved.has(w.toLowerCase())).map((w) => ({
       job_id: jobId,
       sender_address: senderAddress.toLowerCase(),
       wallet_address: w.toLowerCase(),
       amount: amountStr,
       status: "pending",
     }));
+    const actualSkipped = recipients.length - rows.length;
+    if (rows.length === 0) {
+      await sb.from("gd_bulk_jobs").update({
+        total: 0,
+        skipped: actualSkipped,
+        status: "completed",
+        sender_key_encrypted: "",
+        finished_at: new Date().toISOString(),
+      }).eq("id", jobId);
+      return json({ ok: true, job_id: null, message: `All ${recipients.length} recipients were already reserved or sent.`, skipped: actualSkipped, total: 0 });
+    }
+
+    await sb.from("gd_bulk_jobs").update({ total: rows.length, skipped: actualSkipped }).eq("id", jobId);
+
+    // Insert recipients in chunks
     for (let i = 0; i < rows.length; i += 500) {
       const chunk = rows.slice(i, i + 500);
       const { error } = await sb.from("gd_bulk_recipients").insert(chunk);
