@@ -198,6 +198,8 @@ async function processJob(jobId: string) {
 
     const decimals: number = Number(await token.decimals());
     const perRecipient = ethers.parseUnits(String(job.amount_per_recipient), decimals);
+    const senderAddress = String(job.sender_address).toLowerCase();
+    const amountStr = String(job.amount_per_recipient);
 
     // Count pending recipients first; the REST API defaults to 1000 rows per read,
     // so processing must repeatedly fetch pending chunks until none remain.
@@ -237,6 +239,13 @@ async function processJob(jobId: string) {
 
     // Process in chunks
     while (true) {
+      const { data: currentJob } = await sb
+        .from("gd_bulk_jobs")
+        .select("status")
+        .eq("id", jobId)
+        .single();
+      if (currentJob?.status === "stopped" || currentJob?.status === "cancelled") break;
+
       const { data: pending } = await sb
         .from("gd_bulk_recipients")
         .select("id, wallet_address")
@@ -247,9 +256,33 @@ async function processJob(jobId: string) {
       const chunk = pending || [];
       if (chunk.length === 0) break;
 
-      const addresses = chunk.map((r: any) => ethers.getAddress(r.wallet_address));
+      const chunkWallets = chunk.map((r: any) => String(r.wallet_address).toLowerCase());
+      const { data: duplicateRows } = await sb
+        .from("gd_bulk_recipients")
+        .select("wallet_address")
+        .eq("sender_address", senderAddress)
+        .eq("amount", amountStr)
+        .eq("status", "sent")
+        .neq("job_id", jobId)
+        .in("wallet_address", chunkWallets);
+      const duplicates = new Set((duplicateRows || []).map((r: any) => String(r.wallet_address).toLowerCase()));
+      if (duplicates.size > 0) {
+        const duplicateIds = chunk.filter((r: any) => duplicates.has(String(r.wallet_address).toLowerCase())).map((r: any) => r.id);
+        await sb.from("gd_bulk_recipients").update({
+          status: "skipped",
+          error_message: "Already sent in a previous job",
+          processed_at: new Date().toISOString(),
+        }).in("id", duplicateIds);
+        const { data: jb } = await sb.from("gd_bulk_jobs").select("skipped").eq("id", jobId).single();
+        await sb.from("gd_bulk_jobs").update({ skipped: (jb?.skipped || 0) + duplicateIds.length }).eq("id", jobId);
+        if (duplicateIds.length === chunk.length) continue;
+      }
+
+      const sendable = chunk.filter((r: any) => !duplicates.has(String(r.wallet_address).toLowerCase()));
+
+      const addresses = sendable.map((r: any) => ethers.getAddress(r.wallet_address));
       const values = addresses.map(() => perRecipient);
-      const ids = chunk.map((r: any) => r.id);
+      const ids = sendable.map((r: any) => r.id);
 
       try {
         const est = await disperse.disperseTokenSimple.estimateGas(GD_TOKEN, addresses, values);
@@ -265,7 +298,7 @@ async function processJob(jobId: string) {
 
         const { data: jb } = await sb.from("gd_bulk_jobs").select("sent").eq("id", jobId).single();
         await sb.from("gd_bulk_jobs").update({
-          sent: (jb?.sent || 0) + chunk.length,
+          sent: (jb?.sent || 0) + sendable.length,
         }).eq("id", jobId);
       } catch (e: any) {
         const msg = e?.shortMessage || e?.message || String(e);
@@ -276,7 +309,7 @@ async function processJob(jobId: string) {
         }).in("id", ids);
         const { data: jb } = await sb.from("gd_bulk_jobs").select("failed").eq("id", jobId).single();
         await sb.from("gd_bulk_jobs").update({
-          failed: (jb?.failed || 0) + chunk.length,
+          failed: (jb?.failed || 0) + sendable.length,
           last_error: msg.slice(0, 500),
         }).eq("id", jobId);
         // Stop on hard error (out of funds / revert) — user can resume later
