@@ -86,22 +86,55 @@ export default function Farmer() {
     toast({ title: "Addresses copied" });
   };
 
-  // ----- Bulk Send G$ state -----
+  // ----- Bulk Send G$ state (async job system) -----
   const [bulkSenderKey, setBulkSenderKey] = useState("");
   const [bulkRecipients, setBulkRecipients] = useState("");
   const [bulkAmount, setBulkAmount] = useState("0.5");
-  const [bulkSending, setBulkSending] = useState(false);
-  const [bulkResult, setBulkResult] = useState<{
-    ok: boolean;
-    approve_tx?: string;
-    total_sent: string;
-    recipient_count: number;
-    batches: { tx?: string; recipients: number; error?: string }[];
-  } | null>(null);
+  const [bulkSubmitting, setBulkSubmitting] = useState(false);
+  const [bulkJobId, setBulkJobId] = useState<string | null>(() => {
+    try { return localStorage.getItem("gd_bulk_job_id"); } catch { return null; }
+  });
+  const [bulkJob, setBulkJob] = useState<any>(null);
+  const [bulkRecipientsStatus, setBulkRecipientsStatus] = useState<any[]>([]);
+
+  // Poll job status
+  useEffect(() => {
+    if (!bulkJobId) return;
+    let cancelled = false;
+    const fetchStatus = async () => {
+      try {
+        const res = await fetch(
+          `${SUPABASE_URL}/functions/v1/gd-bulk-status?job_id=${bulkJobId}`,
+          { headers: { apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string } }
+        );
+        const json = await res.json();
+        if (cancelled) return;
+        if (res.ok && json?.ok) {
+          setBulkJob(json.job);
+          setBulkRecipientsStatus(json.recipients || []);
+          if (json.job?.status === "completed" || json.job?.status === "failed") {
+            // keep job_id visible but stop polling will happen via interval check
+          }
+        }
+      } catch {}
+    };
+    fetchStatus();
+    const iv = setInterval(() => {
+      if (bulkJob?.status === "completed" || bulkJob?.status === "failed") return;
+      fetchStatus();
+    }, 4000);
+    return () => { cancelled = true; clearInterval(iv); };
+  }, [bulkJobId, bulkJob?.status]);
+
+  const clearBulkJob = () => {
+    setBulkJobId(null);
+    setBulkJob(null);
+    setBulkRecipientsStatus([]);
+    try { localStorage.removeItem("gd_bulk_job_id"); } catch {}
+  };
 
   const runBulkSend = async () => {
     let key = bulkSenderKey.trim();
-    // Auto-prepend 0x if missing
     if (/^[a-fA-F0-9]{64}$/.test(key)) key = "0x" + key;
     if (!/^0x[a-fA-F0-9]{64}$/.test(key)) {
       toast({ title: "Invalid sender private key", variant: "destructive" });
@@ -125,10 +158,9 @@ export default function Farmer() {
       return;
     }
     const total = (amt * recipients.length).toFixed(4);
-    if (!confirm(`Send ${amt} G$ to ${recipients.length} wallets?\n\nTotal: ${total} G$\n(auto-batched in groups of 75 for large lists)`)) return;
+    if (!confirm(`Send ${amt} G$ to ${recipients.length} wallets?\n\nTotal: ${total} G$\n\nRuns on our servers — safe to close the browser. Re-running with the same list skips wallets that already received funds.`)) return;
 
-    setBulkSending(true);
-    setBulkResult(null);
+    setBulkSubmitting(true);
     try {
       const res = await fetch(`${SUPABASE_URL}/functions/v1/gd-bulk-send`, {
         method: "POST",
@@ -140,20 +172,24 @@ export default function Farmer() {
       });
       const json = await res.json();
       if (!res.ok) {
-        toast({ title: "Send failed", description: json?.error || `HTTP ${res.status}`, variant: "destructive" });
+        toast({ title: "Submit failed", description: json?.error || `HTTP ${res.status}`, variant: "destructive" });
+      } else if (!json.job_id) {
+        toast({ title: json.message || "Nothing to send", description: `${json.skipped || 0} already sent.` });
       } else {
-        setBulkResult(json);
-        if (json.ok) {
-          toast({ title: `Sent ${json.total_sent} G$ to ${json.recipient_count} wallets` });
-          setBulkSenderKey("");
-        } else {
-          toast({ title: "Partial failure", description: "Check batch results below", variant: "destructive" });
-        }
+        try { localStorage.setItem("gd_bulk_job_id", json.job_id); } catch {}
+        setBulkJobId(json.job_id);
+        setBulkJob(null);
+        setBulkRecipientsStatus([]);
+        setBulkSenderKey("");
+        toast({
+          title: "Bulk send started on server",
+          description: json.message || `${json.total} queued. Safe to close browser.`,
+        });
       }
     } catch (e: any) {
       toast({ title: "Network error", description: e?.message || String(e), variant: "destructive" });
     } finally {
-      setBulkSending(false);
+      setBulkSubmitting(false);
     }
   };
 
