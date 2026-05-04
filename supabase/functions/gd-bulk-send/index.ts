@@ -167,7 +167,7 @@ Deno.serve(async (req) => {
         sender_key_encrypted: "",
         finished_at: new Date().toISOString(),
       }).eq("id", jobId);
-      return json({ ok: true, job_id: null, message: `All ${recipients.length} recipients were already reserved or sent.`, skipped: actualSkipped, total: 0 });
+      return json({ ok: true, job_id: null, message: `All ${recipients.length} recipients were duplicates inside this batch.`, skipped: actualSkipped, total: 0 });
     }
 
     await sb.from("gd_bulk_jobs").update({ total: rows.length, skipped: actualSkipped }).eq("id", jobId);
@@ -194,7 +194,7 @@ Deno.serve(async (req) => {
       total: rows.length,
       skipped: actualSkipped,
       message: actualSkipped > 0
-        ? `Started — ${actualSkipped} already sent or reserved, processing ${rows.length} new.`
+        ? `Started — ${actualSkipped} duplicate in this batch, processing ${rows.length}.`
         : `Started — processing ${rows.length} recipients.`,
     }, 202);
   } catch (e: any) {
