@@ -97,10 +97,11 @@ export default function Farmer() {
   const [bulkJob, setBulkJob] = useState<any>(null);
   const [bulkRecipientsStatus, setBulkRecipientsStatus] = useState<any[]>([]);
 
-  // Poll job status
+  // Poll job status — only depends on bulkJobId; uses local var for stop condition
   useEffect(() => {
     if (!bulkJobId) return;
     let cancelled = false;
+    let stopped = false;
     const fetchStatus = async () => {
       try {
         const res = await fetch(
@@ -112,19 +113,20 @@ export default function Farmer() {
         if (res.ok && json?.ok) {
           setBulkJob(json.job);
           setBulkRecipientsStatus(json.recipients || []);
-          if (json.job?.status === "completed" || json.job?.status === "failed") {
-            // keep job_id visible but stop polling will happen via interval check
+          const s = json.job?.status;
+          if (s === "completed" || s === "failed" || s === "stopped") {
+            stopped = true;
           }
         }
       } catch {}
     };
     fetchStatus();
     const iv = setInterval(() => {
-      if (bulkJob?.status === "completed" || bulkJob?.status === "failed") return;
+      if (stopped) return;
       fetchStatus();
     }, 4000);
     return () => { cancelled = true; clearInterval(iv); };
-  }, [bulkJobId, bulkJob?.status]);
+  }, [bulkJobId]);
 
   const clearBulkJob = () => {
     setBulkJobId(null);
