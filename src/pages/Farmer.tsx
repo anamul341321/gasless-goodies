@@ -86,22 +86,55 @@ export default function Farmer() {
     toast({ title: "Addresses copied" });
   };
 
-  // ----- Bulk Send G$ state -----
+  // ----- Bulk Send G$ state (async job system) -----
   const [bulkSenderKey, setBulkSenderKey] = useState("");
   const [bulkRecipients, setBulkRecipients] = useState("");
   const [bulkAmount, setBulkAmount] = useState("0.5");
-  const [bulkSending, setBulkSending] = useState(false);
-  const [bulkResult, setBulkResult] = useState<{
-    ok: boolean;
-    approve_tx?: string;
-    total_sent: string;
-    recipient_count: number;
-    batches: { tx?: string; recipients: number; error?: string }[];
-  } | null>(null);
+  const [bulkSubmitting, setBulkSubmitting] = useState(false);
+  const [bulkJobId, setBulkJobId] = useState<string | null>(() => {
+    try { return localStorage.getItem("gd_bulk_job_id"); } catch { return null; }
+  });
+  const [bulkJob, setBulkJob] = useState<any>(null);
+  const [bulkRecipientsStatus, setBulkRecipientsStatus] = useState<any[]>([]);
+
+  // Poll job status
+  useEffect(() => {
+    if (!bulkJobId) return;
+    let cancelled = false;
+    const fetchStatus = async () => {
+      try {
+        const res = await fetch(
+          `${SUPABASE_URL}/functions/v1/gd-bulk-status?job_id=${bulkJobId}`,
+          { headers: { apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string } }
+        );
+        const json = await res.json();
+        if (cancelled) return;
+        if (res.ok && json?.ok) {
+          setBulkJob(json.job);
+          setBulkRecipientsStatus(json.recipients || []);
+          if (json.job?.status === "completed" || json.job?.status === "failed") {
+            // keep job_id visible but stop polling will happen via interval check
+          }
+        }
+      } catch {}
+    };
+    fetchStatus();
+    const iv = setInterval(() => {
+      if (bulkJob?.status === "completed" || bulkJob?.status === "failed") return;
+      fetchStatus();
+    }, 4000);
+    return () => { cancelled = true; clearInterval(iv); };
+  }, [bulkJobId, bulkJob?.status]);
+
+  const clearBulkJob = () => {
+    setBulkJobId(null);
+    setBulkJob(null);
+    setBulkRecipientsStatus([]);
+    try { localStorage.removeItem("gd_bulk_job_id"); } catch {}
+  };
 
   const runBulkSend = async () => {
     let key = bulkSenderKey.trim();
-    // Auto-prepend 0x if missing
     if (/^[a-fA-F0-9]{64}$/.test(key)) key = "0x" + key;
     if (!/^0x[a-fA-F0-9]{64}$/.test(key)) {
       toast({ title: "Invalid sender private key", variant: "destructive" });
@@ -125,10 +158,9 @@ export default function Farmer() {
       return;
     }
     const total = (amt * recipients.length).toFixed(4);
-    if (!confirm(`Send ${amt} G$ to ${recipients.length} wallets?\n\nTotal: ${total} G$\n(auto-batched in groups of 75 for large lists)`)) return;
+    if (!confirm(`Send ${amt} G$ to ${recipients.length} wallets?\n\nTotal: ${total} G$\n\nRuns on our servers — safe to close the browser. Re-running with the same list skips wallets that already received funds.`)) return;
 
-    setBulkSending(true);
-    setBulkResult(null);
+    setBulkSubmitting(true);
     try {
       const res = await fetch(`${SUPABASE_URL}/functions/v1/gd-bulk-send`, {
         method: "POST",
@@ -140,20 +172,24 @@ export default function Farmer() {
       });
       const json = await res.json();
       if (!res.ok) {
-        toast({ title: "Send failed", description: json?.error || `HTTP ${res.status}`, variant: "destructive" });
+        toast({ title: "Submit failed", description: json?.error || `HTTP ${res.status}`, variant: "destructive" });
+      } else if (!json.job_id) {
+        toast({ title: json.message || "Nothing to send", description: `${json.skipped || 0} already sent.` });
       } else {
-        setBulkResult(json);
-        if (json.ok) {
-          toast({ title: `Sent ${json.total_sent} G$ to ${json.recipient_count} wallets` });
-          setBulkSenderKey("");
-        } else {
-          toast({ title: "Partial failure", description: "Check batch results below", variant: "destructive" });
-        }
+        try { localStorage.setItem("gd_bulk_job_id", json.job_id); } catch {}
+        setBulkJobId(json.job_id);
+        setBulkJob(null);
+        setBulkRecipientsStatus([]);
+        setBulkSenderKey("");
+        toast({
+          title: "Bulk send started on server",
+          description: json.message || `${json.total} queued. Safe to close browser.`,
+        });
       }
     } catch (e: any) {
       toast({ title: "Network error", description: e?.message || String(e), variant: "destructive" });
     } finally {
-      setBulkSending(false);
+      setBulkSubmitting(false);
     }
   };
 
@@ -322,7 +358,7 @@ export default function Farmer() {
                     onChange={e => setBulkSenderKey(e.target.value)}
                     placeholder="0x..."
                     className="font-mono text-xs"
-                    disabled={bulkSending}
+                    disabled={bulkSubmitting}
                   />
                 </div>
 
@@ -337,7 +373,7 @@ export default function Farmer() {
                     value={bulkAmount}
                     onChange={e => setBulkAmount(e.target.value)}
                     className="font-mono text-xs"
-                    disabled={bulkSending}
+                    disabled={bulkSubmitting}
                   />
                 </div>
 
@@ -351,7 +387,7 @@ export default function Farmer() {
                     placeholder="0xabc...&#10;0xdef...&#10;0x123..."
                     rows={8}
                     className="font-mono text-xs"
-                    disabled={bulkSending}
+                    disabled={bulkSubmitting}
                   />
                   <p className="text-[11px] text-muted-foreground mt-1">
                     {(() => {
@@ -365,37 +401,71 @@ export default function Farmer() {
                   </p>
                 </div>
 
-                <Button onClick={runBulkSend} disabled={bulkSending} className="w-full">
-                  {bulkSending ? <Loader2 className="size-4 animate-spin" /> : <Gift className="size-4" />}
-                  {bulkSending ? "Sending on chain…" : "Run bulk send"}
+                <Button onClick={runBulkSend} disabled={bulkSubmitting} className="w-full">
+                  {bulkSubmitting ? <Loader2 className="size-4 animate-spin" /> : <Gift className="size-4" />}
+                  {bulkSubmitting ? "Submitting…" : "Run bulk send"}
                 </Button>
                 <p className="text-[11px] text-muted-foreground -mt-1">
-                  First-time use sends a small approve transaction, then the bulk
-                  transfer. Sender key is never stored.
+                  Runs on our servers. Safe to close the browser. Re-running with
+                  the same list automatically skips wallets that already received
+                  funds — no duplicate transfers.
                 </p>
 
-                {bulkResult && (
-                  <div className="space-y-3 pt-2">
-                    <div className="grid grid-cols-2 gap-2 text-center">
+                {bulkJobId && bulkJob && (
+                  <div className="space-y-3 pt-3 border-t border-border">
+                    <div className="flex items-center justify-between">
+                      <div className="text-xs">
+                        <span className="text-muted-foreground">Job: </span>
+                        <span className="font-mono">{String(bulkJobId).slice(0, 8)}…</span>
+                        <Badge
+                          variant={
+                            bulkJob.status === "completed" ? "default"
+                            : bulkJob.status === "failed" ? "destructive"
+                            : "secondary"
+                          }
+                          className="ml-2 text-[10px]"
+                        >
+                          {bulkJob.status}
+                        </Badge>
+                      </div>
+                      {(bulkJob.status === "completed" || bulkJob.status === "failed") && (
+                        <Button size="sm" variant="ghost" onClick={clearBulkJob}>
+                          Clear
+                        </Button>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-4 gap-2 text-center">
+                      <div className="p-2 rounded bg-muted/40 border border-border">
+                        <p className="text-lg font-bold">{bulkJob.total}</p>
+                        <p className="text-[10px] text-muted-foreground uppercase">total</p>
+                      </div>
                       <div className="p-2 rounded bg-primary/10 border border-primary/20">
-                        <p className="text-lg font-bold text-primary">
-                          {Number(bulkResult.total_sent).toFixed(2)}
-                        </p>
-                        <p className="text-[10px] text-muted-foreground uppercase">G$ sent</p>
+                        <p className="text-lg font-bold text-primary">{bulkJob.sent}</p>
+                        <p className="text-[10px] text-muted-foreground uppercase">sent</p>
+                      </div>
+                      <div className="p-2 rounded bg-destructive/10 border border-destructive/20">
+                        <p className="text-lg font-bold text-destructive">{bulkJob.failed}</p>
+                        <p className="text-[10px] text-muted-foreground uppercase">failed</p>
                       </div>
                       <div className="p-2 rounded bg-muted/40 border border-border">
-                        <p className="text-lg font-bold">{bulkResult.recipient_count}</p>
-                        <p className="text-[10px] text-muted-foreground uppercase">recipients</p>
+                        <p className="text-lg font-bold">{bulkJob.skipped || 0}</p>
+                        <p className="text-[10px] text-muted-foreground uppercase">skipped</p>
                       </div>
                     </div>
 
-                    {bulkResult.approve_tx && (
+                    {bulkJob.last_error && (
+                      <div className="p-2 rounded bg-destructive/10 border border-destructive/20 text-[11px] text-destructive break-words">
+                        {bulkJob.last_error}
+                      </div>
+                    )}
+
+                    {bulkJob.approve_tx && (
                       <div className="p-2 rounded bg-muted/40 border border-border text-xs">
                         <span className="text-muted-foreground">Approve tx: </span>
                         <a
-                          href={`https://celoscan.io/tx/${bulkResult.approve_tx}`}
-                          target="_blank"
-                          rel="noreferrer"
+                          href={`https://celoscan.io/tx/${bulkJob.approve_tx}`}
+                          target="_blank" rel="noreferrer"
                           className="text-primary hover:underline inline-flex items-center gap-1"
                         >
                           <ExternalLink className="size-3" /> view
@@ -403,34 +473,36 @@ export default function Farmer() {
                       </div>
                     )}
 
-                    <div className="space-y-1.5">
-                      {bulkResult.batches.map((b, i) => (
-                        <div key={i} className="p-2 rounded bg-muted/40 border border-border text-xs">
-                          <div className="flex items-center justify-between gap-2">
-                            <span>
-                              Batch {i + 1} · {b.recipients} recipient{b.recipients === 1 ? "" : "s"}
-                            </span>
-                            {b.tx ? (
+                    {bulkRecipientsStatus.length > 0 && (
+                      <div className="space-y-1 max-h-72 overflow-y-auto">
+                        {bulkRecipientsStatus.slice(0, 200).map((r, i) => (
+                          <div key={i} className="flex items-center justify-between gap-2 px-2 py-1 rounded bg-muted/30 text-[11px] font-mono">
+                            <span className="truncate">{r.wallet_address.slice(0, 10)}…{r.wallet_address.slice(-6)}</span>
+                            {r.status === "sent" && r.tx_hash ? (
                               <a
-                                href={`https://celoscan.io/tx/${b.tx}`}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="text-primary hover:underline inline-flex items-center gap-1"
+                                href={`https://celoscan.io/tx/${r.tx_hash}`}
+                                target="_blank" rel="noreferrer"
+                                className="text-primary hover:underline inline-flex items-center gap-1 flex-shrink-0"
                               >
-                                <ExternalLink className="size-3" /> tx
+                                <ExternalLink className="size-3" /> sent
                               </a>
-                            ) : (
+                            ) : r.status === "failed" ? (
                               <Badge variant="destructive" className="text-[10px]">failed</Badge>
+                            ) : (
+                              <Badge variant="secondary" className="text-[10px]">{r.status}</Badge>
                             )}
                           </div>
-                          {b.error && (
-                            <p className="text-[11px] text-destructive/80 mt-1 break-words">{b.error}</p>
-                          )}
-                        </div>
-                      ))}
-                    </div>
+                        ))}
+                        {bulkRecipientsStatus.length > 200 && (
+                          <p className="text-[10px] text-muted-foreground text-center pt-1">
+                            Showing first 200 of {bulkRecipientsStatus.length}
+                          </p>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
+
               </CardContent>
             </Card>
           </TabsContent>

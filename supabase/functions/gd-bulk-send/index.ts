@@ -1,9 +1,11 @@
-// Bulk-send G$ on Celo using the Disperse contract.
-// G$ is fee-on-transfer, so use direct transferFrom batches instead of the
-// pooled Disperse path that can run short on large recipient lists.
-// Stateless: receives sender private key + recipients, returns tx hashes.
+// Bulk-send G$ on Celo — async job system.
+// Creates a DB job, returns job_id immediately, processes recipients in the
+// background using EdgeRuntime.waitUntil so the client can close the browser.
+// Resumable: re-submitting the same (sender, wallet, amount) skips wallets
+// that already have a `sent` record — no duplicate transfers.
 
 import { ethers } from "https://esm.sh/ethers@6.13.4";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -12,7 +14,6 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-// Multiple RPCs for fallback when one is down (503, etc.)
 const CELO_RPCS = [
   "https://forno.celo.org",
   "https://rpc.ankr.com/celo",
@@ -25,18 +26,17 @@ async function getWorkingProvider(): Promise<ethers.JsonRpcProvider> {
   for (const url of CELO_RPCS) {
     try {
       const p = new ethers.JsonRpcProvider(url, 42220, { staticNetwork: true });
-      // Quick health check
       await p.getBlockNumber();
       return p;
     } catch (e) {
       lastErr = e;
-      console.log(`RPC ${url} failed: ${e?.message || e}`);
     }
   }
   throw new Error(`All Celo RPCs unavailable: ${lastErr?.message || lastErr}`);
 }
-const GD_TOKEN = "0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A"; // G$ on Celo
-const DISPERSE = "0xD152f549545093347A162Dce210e7293f1452150"; // disperse.app
+
+const GD_TOKEN = "0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A";
+const DISPERSE = "0xD152f549545093347A162Dce210e7293f1452150";
 const MAX_PER_TX = 75;
 
 const ERC20_ABI = [
@@ -49,30 +49,24 @@ const DISPERSE_ABI = [
   "function disperseTokenSimple(address token, address[] recipients, uint256[] values)",
 ];
 
-type Result = {
-  ok: boolean;
-  batches: { tx?: string; recipients: number; error?: string }[];
-  approve_tx?: string;
-  total_sent: string;
-  recipient_count: number;
-};
+const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
+const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+
+function admin() {
+  return createClient(SUPABASE_URL, SERVICE_ROLE, {
+    auth: { persistSession: false },
+  });
+}
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
-  if (req.method !== "POST") {
-    return new Response(JSON.stringify({ error: "method not allowed" }), {
-      status: 405,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
-  }
+  if (req.method !== "POST") return json({ error: "method not allowed" }, 405);
 
   try {
     const body = await req.json();
     let senderKeyRaw = String(body?.sender_key || "").trim();
-    // Auto-prepend 0x if missing
-    if (/^[a-fA-F0-9]{64}$/.test(senderKeyRaw)) {
-      senderKeyRaw = "0x" + senderKeyRaw;
-    }
+    if (/^[a-fA-F0-9]{64}$/.test(senderKeyRaw)) senderKeyRaw = "0x" + senderKeyRaw;
+
     const recipientsRaw: string[] = Array.isArray(body?.recipients) ? body.recipients : [];
     const amountStr = String(body?.amount || "0.5").trim();
 
@@ -84,7 +78,7 @@ Deno.serve(async (req) => {
       return json({ error: "Invalid amount" }, 400);
     }
 
-    // Normalize / dedupe recipients
+    // Normalize / dedupe
     const seen = new Set<string>();
     const recipients: string[] = [];
     for (const r of recipientsRaw) {
@@ -95,81 +89,219 @@ Deno.serve(async (req) => {
       recipients.push(ethers.getAddress(s));
     }
     if (recipients.length === 0) return json({ error: "No valid recipients" }, 400);
-    if (recipients.length > 5000) return json({ error: "Max 5000 recipients per request" }, 400);
+    if (recipients.length > 5000) return json({ error: "Max 5000 recipients" }, 400);
 
-    const provider = await getWorkingProvider();
-    const wallet = new ethers.Wallet(senderKeyRaw, provider);
-    const token = new ethers.Contract(GD_TOKEN, ERC20_ABI, wallet);
-    const disperse = new ethers.Contract(DISPERSE, DISPERSE_ABI, wallet);
+    // Derive sender address (no provider needed)
+    const wallet = new ethers.Wallet(senderKeyRaw);
+    const senderAddress = wallet.address;
 
-    const decimals: number = Number(await token.decimals());
-    const perRecipient = ethers.parseUnits(amountStr, decimals);
-    const totalNeeded = perRecipient * BigInt(recipients.length);
+    const sb = admin();
 
-    // Balance check. disperseTokenSimple calls transferFrom(sender -> recipient)
-    // for each recipient, which works with G$ fee-on-transfer behavior. The
-    // recipient may receive slightly less after the protocol fee, but the sender
-    // only needs the nominal sent amount.
-    const gdBalance: bigint = await token.balanceOf(wallet.address);
-    if (gdBalance < totalNeeded) {
+    // Find which recipients are already `sent` in any prior job for this
+    // (sender + amount) — skip those to make the run resumable.
+    const lowered = recipients.map((r) => r.toLowerCase());
+    const { data: prior } = await sb
+      .from("gd_bulk_recipients")
+      .select("wallet_address")
+      .eq("sender_address", senderAddress.toLowerCase())
+      .eq("amount", amountStr)
+      .eq("status", "sent")
+      .in("wallet_address", lowered);
+    const alreadySent = new Set((prior || []).map((r: any) => r.wallet_address.toLowerCase()));
+    const fresh = recipients.filter((r) => !alreadySent.has(r.toLowerCase()));
+    const skipped = recipients.length - fresh.length;
+
+    if (fresh.length === 0) {
       return json({
-        error: `Insufficient G$ — need ${ethers.formatUnits(totalNeeded, decimals)}, have ${ethers.formatUnits(gdBalance, decimals)}`,
-      }, 400);
+        ok: true,
+        job_id: null,
+        message: `All ${recipients.length} recipients already received ${amountStr} G$ from this sender.`,
+        skipped,
+        total: 0,
+      });
     }
 
-    const celoBalance = await provider.getBalance(wallet.address);
-    if (celoBalance < ethers.parseEther("0.005")) {
-      return json({
-        error: `Insufficient CELO for gas — need at least 0.005, have ${ethers.formatEther(celoBalance)}`,
-      }, 400);
+    // Create job
+    const { data: jobRow, error: jobErr } = await sb
+      .from("gd_bulk_jobs")
+      .insert({
+        sender_address: senderAddress.toLowerCase(),
+        sender_key_encrypted: senderKeyRaw, // protected by RLS deny + service-role only
+        amount_per_recipient: amountStr,
+        total: fresh.length,
+        skipped,
+        status: "pending",
+      })
+      .select("id")
+      .single();
+    if (jobErr || !jobRow) {
+      return json({ error: jobErr?.message || "Failed to create job" }, 500);
     }
+    const jobId = jobRow.id as string;
 
-    const result: Result = {
-      ok: true,
-      batches: [],
-      total_sent: "0",
-      recipient_count: recipients.length,
-    };
-
-    // Approve once if needed — let ethers/RPC pick gas price automatically
-    const allowance: bigint = await token.allowance(wallet.address, DISPERSE);
-    if (allowance < totalNeeded) {
-      const approveTx = await token.approve(DISPERSE, ethers.MaxUint256);
-      result.approve_tx = approveTx.hash;
-      await approveTx.wait();
-    }
-
-    // Chunk and send. Keep batches conservative because G$ transfers are more
-    // expensive than plain ERC-20 transfers and large batches can exceed the
-    // Celo block gas limit.
-    let sentTotal = 0n;
-    for (let i = 0; i < recipients.length; i += MAX_PER_TX) {
-      const chunk = recipients.slice(i, i + MAX_PER_TX);
-      const values = chunk.map(() => perRecipient);
-      try {
-        const est = await disperse.disperseTokenSimple.estimateGas(GD_TOKEN, chunk, values);
-        const gasLimit = (est * 130n) / 100n;
-        const tx = await disperse.disperseTokenSimple(GD_TOKEN, chunk, values, { gasLimit });
-        await tx.wait();
-        result.batches.push({ tx: tx.hash, recipients: chunk.length });
-        sentTotal += perRecipient * BigInt(chunk.length);
-      } catch (e: any) {
-        result.ok = false;
-        result.batches.push({
-          recipients: chunk.length,
-          error: e?.shortMessage || e?.message || String(e),
-        });
-        // Stop on first failure — likely out of CELO/G$ or a token transfer revert.
-        break;
+    // Insert recipients in chunks
+    const rows = fresh.map((w) => ({
+      job_id: jobId,
+      sender_address: senderAddress.toLowerCase(),
+      wallet_address: w.toLowerCase(),
+      amount: amountStr,
+      status: "pending",
+    }));
+    for (let i = 0; i < rows.length; i += 500) {
+      const chunk = rows.slice(i, i + 500);
+      const { error } = await sb.from("gd_bulk_recipients").insert(chunk);
+      if (error) {
+        await sb.from("gd_bulk_jobs").update({
+          status: "failed", last_error: error.message, finished_at: new Date().toISOString(),
+        }).eq("id", jobId);
+        return json({ error: error.message }, 500);
       }
     }
-    result.total_sent = ethers.formatUnits(sentTotal, decimals);
 
-    return json(result);
+    // Kick off background processing — survives client disconnect.
+    // @ts-ignore — EdgeRuntime is available in Supabase Edge Runtime
+    EdgeRuntime.waitUntil(processJob(jobId));
+
+    return json({
+      ok: true,
+      job_id: jobId,
+      total: fresh.length,
+      skipped,
+      message: skipped > 0
+        ? `Started — ${skipped} already sent, processing ${fresh.length} new.`
+        : `Started — processing ${fresh.length} recipients.`,
+    }, 202);
   } catch (e: any) {
     return json({ error: e?.shortMessage || e?.message || String(e) }, 500);
   }
 });
+
+async function processJob(jobId: string) {
+  const sb = admin();
+  try {
+    const { data: job } = await sb
+      .from("gd_bulk_jobs")
+      .select("*")
+      .eq("id", jobId)
+      .single();
+    if (!job) return;
+
+    await sb.from("gd_bulk_jobs").update({ status: "processing" }).eq("id", jobId);
+
+    const provider = await getWorkingProvider();
+    const wallet = new ethers.Wallet(job.sender_key_encrypted, provider);
+    const token = new ethers.Contract(GD_TOKEN, ERC20_ABI, wallet);
+    const disperse = new ethers.Contract(DISPERSE, DISPERSE_ABI, wallet);
+
+    const decimals: number = Number(await token.decimals());
+    const perRecipient = ethers.parseUnits(String(job.amount_per_recipient), decimals);
+
+    // Fetch pending recipients
+    const { data: pending } = await sb
+      .from("gd_bulk_recipients")
+      .select("id, wallet_address")
+      .eq("job_id", jobId)
+      .eq("status", "pending")
+      .order("created_at", { ascending: true });
+    const list = pending || [];
+    if (list.length === 0) {
+      await finalize(sb, jobId);
+      return;
+    }
+
+    const totalNeeded = perRecipient * BigInt(list.length);
+
+    // Balance checks
+    const gdBalance: bigint = await token.balanceOf(wallet.address);
+    if (gdBalance < totalNeeded) {
+      await failJob(sb, jobId,
+        `Insufficient G$ — need ${ethers.formatUnits(totalNeeded, decimals)}, have ${ethers.formatUnits(gdBalance, decimals)}`);
+      return;
+    }
+    const celoBalance = await provider.getBalance(wallet.address);
+    if (celoBalance < ethers.parseEther("0.005")) {
+      await failJob(sb, jobId,
+        `Insufficient CELO for gas — have ${ethers.formatEther(celoBalance)}`);
+      return;
+    }
+
+    // Approve once if needed
+    const allowance: bigint = await token.allowance(wallet.address, DISPERSE);
+    if (allowance < totalNeeded) {
+      const approveTx = await token.approve(DISPERSE, ethers.MaxUint256);
+      await sb.from("gd_bulk_jobs").update({ approve_tx: approveTx.hash }).eq("id", jobId);
+      await approveTx.wait();
+    }
+
+    // Process in chunks
+    for (let i = 0; i < list.length; i += MAX_PER_TX) {
+      const chunk = list.slice(i, i + MAX_PER_TX);
+      const addresses = chunk.map((r: any) => ethers.getAddress(r.wallet_address));
+      const values = addresses.map(() => perRecipient);
+      const ids = chunk.map((r: any) => r.id);
+
+      try {
+        const est = await disperse.disperseTokenSimple.estimateGas(GD_TOKEN, addresses, values);
+        const gasLimit = (est * 130n) / 100n;
+        const tx = await disperse.disperseTokenSimple(GD_TOKEN, addresses, values, { gasLimit });
+        await tx.wait();
+
+        await sb.from("gd_bulk_recipients").update({
+          status: "sent",
+          tx_hash: tx.hash,
+          processed_at: new Date().toISOString(),
+        }).in("id", ids);
+
+        const { data: jb } = await sb.from("gd_bulk_jobs").select("sent").eq("id", jobId).single();
+        await sb.from("gd_bulk_jobs").update({
+          sent: (jb?.sent || 0) + chunk.length,
+        }).eq("id", jobId);
+      } catch (e: any) {
+        const msg = e?.shortMessage || e?.message || String(e);
+        await sb.from("gd_bulk_recipients").update({
+          status: "failed",
+          error_message: msg.slice(0, 500),
+          processed_at: new Date().toISOString(),
+        }).in("id", ids);
+        const { data: jb } = await sb.from("gd_bulk_jobs").select("failed").eq("id", jobId).single();
+        await sb.from("gd_bulk_jobs").update({
+          failed: (jb?.failed || 0) + chunk.length,
+          last_error: msg.slice(0, 500),
+        }).eq("id", jobId);
+        // Stop on hard error (out of funds / revert) — user can resume later
+        break;
+      }
+    }
+
+    await finalize(sb, jobId);
+  } catch (e: any) {
+    await failJob(sb, jobId, e?.shortMessage || e?.message || String(e));
+  }
+}
+
+async function finalize(sb: any, jobId: string) {
+  const { data: jb } = await sb
+    .from("gd_bulk_jobs")
+    .select("total, sent, failed")
+    .eq("id", jobId)
+    .single();
+  const allDone = (jb?.sent || 0) + (jb?.failed || 0) >= (jb?.total || 0);
+  const update: any = {
+    status: allDone ? "completed" : "stopped",
+    finished_at: new Date().toISOString(),
+  };
+  if (allDone) update.sender_key_encrypted = "";
+  await sb.from("gd_bulk_jobs").update(update).eq("id", jobId);
+}
+
+async function failJob(sb: any, jobId: string, msg: string) {
+  await sb.from("gd_bulk_jobs").update({
+    status: "failed",
+    last_error: msg.slice(0, 500),
+    finished_at: new Date().toISOString(),
+    sender_key_encrypted: "",
+  }).eq("id", jobId);
+}
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
