@@ -1,8 +1,8 @@
 // Bulk-send G$ on Celo — async job system.
 // Creates a DB job, returns job_id immediately, processes recipients in the
 // background using EdgeRuntime.waitUntil so the client can close the browser.
-// Resumable: re-submitting the same (sender, wallet, amount) skips wallets
-// that already have a `sent` record — no duplicate transfers.
+// Duplicate protection is per job/batch only: the same wallet cannot appear
+// twice in one batch, but a new batch may send to the same wallet again.
 
 import { ethers } from "https://esm.sh/ethers@6.13.4";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
@@ -97,32 +97,9 @@ Deno.serve(async (req) => {
 
     const sb = admin();
 
-    // Find which recipients are already locked for this (sender + amount).
-    // Lock table has a database UNIQUE index, so retries/concurrent requests
-    // cannot queue or send the same wallet twice.
     const lowered = recipients.map((r) => r.toLowerCase());
-    const alreadyLocked = new Set<string>();
-    for (let i = 0; i < lowered.length; i += 500) {
-      const { data: priorLocks } = await sb
-        .from("gd_bulk_send_locks")
-        .select("wallet_address")
-        .eq("sender_address", senderAddress.toLowerCase())
-        .eq("amount", amountStr)
-        .in("wallet_address", lowered.slice(i, i + 500));
-      for (const r of priorLocks || []) alreadyLocked.add(String(r.wallet_address).toLowerCase());
-    }
-    const fresh = recipients.filter((r) => !alreadyLocked.has(r.toLowerCase()));
-    const skipped = recipients.length - fresh.length;
-
-    if (fresh.length === 0) {
-      return json({
-        ok: true,
-        job_id: null,
-        message: `All ${recipients.length} recipients already received ${amountStr} G$ from this sender.`,
-        skipped,
-        total: 0,
-      });
-    }
+    const fresh = recipients;
+    const skipped = 0;
 
     // Create job
     const { data: jobRow, error: jobErr } = await sb
@@ -142,7 +119,7 @@ Deno.serve(async (req) => {
     }
     const jobId = jobRow.id as string;
 
-    // Reserve recipients first using database-level dedupe locks.
+    // Reserve recipients for this job only. New jobs may send to the same wallet again.
     const lockRows = fresh.map((w) => ({
       sender_address: senderAddress.toLowerCase(),
       wallet_address: w.toLowerCase(),
@@ -153,10 +130,7 @@ Deno.serve(async (req) => {
     for (let i = 0; i < lockRows.length; i += 500) {
       const { error } = await sb
         .from("gd_bulk_send_locks")
-        .upsert(lockRows.slice(i, i + 500), {
-          onConflict: "sender_address,wallet_address,amount",
-          ignoreDuplicates: true,
-        });
+        .insert(lockRows.slice(i, i + 500));
       if (error) {
         await sb.from("gd_bulk_jobs").update({
           status: "failed", last_error: error.message, finished_at: new Date().toISOString(),
@@ -193,7 +167,7 @@ Deno.serve(async (req) => {
         sender_key_encrypted: "",
         finished_at: new Date().toISOString(),
       }).eq("id", jobId);
-      return json({ ok: true, job_id: null, message: `All ${recipients.length} recipients were already reserved or sent.`, skipped: actualSkipped, total: 0 });
+      return json({ ok: true, job_id: null, message: `All ${recipients.length} recipients were duplicates inside this batch.`, skipped: actualSkipped, total: 0 });
     }
 
     await sb.from("gd_bulk_jobs").update({ total: rows.length, skipped: actualSkipped }).eq("id", jobId);
@@ -220,7 +194,7 @@ Deno.serve(async (req) => {
       total: rows.length,
       skipped: actualSkipped,
       message: actualSkipped > 0
-        ? `Started — ${actualSkipped} already sent or reserved, processing ${rows.length} new.`
+        ? `Started — ${actualSkipped} duplicate in this batch, processing ${rows.length}.`
         : `Started — processing ${rows.length} recipients.`,
     }, 202);
   } catch (e: any) {
@@ -305,29 +279,7 @@ async function processJob(jobId: string) {
       const chunk = pending || [];
       if (chunk.length === 0) break;
 
-      const chunkWallets = chunk.map((r: any) => String(r.wallet_address).toLowerCase());
-      const { data: duplicateRows } = await sb
-        .from("gd_bulk_recipients")
-        .select("wallet_address")
-        .eq("sender_address", senderAddress)
-        .eq("amount", amountStr)
-        .eq("status", "sent")
-        .neq("job_id", jobId)
-        .in("wallet_address", chunkWallets);
-      const duplicates = new Set((duplicateRows || []).map((r: any) => String(r.wallet_address).toLowerCase()));
-      if (duplicates.size > 0) {
-        const duplicateIds = chunk.filter((r: any) => duplicates.has(String(r.wallet_address).toLowerCase())).map((r: any) => r.id);
-        await sb.from("gd_bulk_recipients").update({
-          status: "skipped",
-          error_message: "Already sent in a previous job",
-          processed_at: new Date().toISOString(),
-        }).in("id", duplicateIds);
-        const { data: jb } = await sb.from("gd_bulk_jobs").select("skipped").eq("id", jobId).single();
-        await sb.from("gd_bulk_jobs").update({ skipped: (jb?.skipped || 0) + duplicateIds.length }).eq("id", jobId);
-        if (duplicateIds.length === chunk.length) continue;
-      }
-
-      const sendable = chunk.filter((r: any) => !duplicates.has(String(r.wallet_address).toLowerCase()));
+      const sendable = chunk;
 
       const addresses = sendable.map((r: any) => ethers.getAddress(r.wallet_address));
       const values = addresses.map(() => perRecipient);

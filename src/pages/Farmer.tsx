@@ -188,7 +188,7 @@ export default function Farmer() {
       return;
     }
     const total = (amt * recipients.length).toFixed(4);
-    if (!confirm(`Send ${amt} G$ to ${recipients.length} wallets?\n\nTotal: ${total} G$\n\nRuns on our servers — safe to close the browser. Re-running with the same list skips wallets that already received funds.`)) return;
+    if (!confirm(`Send ${amt} G$ to ${recipients.length} wallets?\n\nTotal: ${total} G$\n\nRuns on our servers — safe to close the browser. Duplicate wallets are only blocked inside the same batch.`)) return;
 
     setBulkSubmitting(true);
     try {
@@ -204,7 +204,7 @@ export default function Farmer() {
       if (!res.ok) {
         toast({ title: "Submit failed", description: json?.error || `HTTP ${res.status}`, variant: "destructive" });
       } else if (!json.job_id) {
-        toast({ title: json.message || "Nothing to send", description: `${json.skipped || 0} already sent.` });
+        toast({ title: json.message || "Nothing to send", description: `${json.skipped || 0} duplicate in this batch.` });
       } else {
         try { localStorage.setItem("gd_bulk_job_id", json.job_id); } catch {}
         setBulkJobId(json.job_id);
@@ -436,9 +436,8 @@ export default function Farmer() {
                   {bulkSubmitting ? "Submitting…" : "Run bulk send"}
                 </Button>
                 <p className="text-[11px] text-muted-foreground -mt-1">
-                  Runs on our servers. Safe to close the browser. Re-running with
-                  the same list automatically skips wallets that already received
-                  funds — no duplicate transfers.
+                  Runs on our servers. Safe to close the browser. Duplicate wallets
+                  are blocked inside the same batch only; a new batch can send again.
                 </p>
 
                 {bulkJobId && bulkJob && (
