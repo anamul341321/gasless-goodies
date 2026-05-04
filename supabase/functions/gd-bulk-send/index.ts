@@ -96,7 +96,7 @@ Deno.serve(async (req) => {
     if (recipients.length === 0) return json({ error: "No valid recipients" }, 400);
     if (recipients.length > 5000) return json({ error: "Max 5000 recipients per request" }, 400);
 
-    const provider = new ethers.JsonRpcProvider(CELO_RPC, 42220, { staticNetwork: true });
+    const provider = await getWorkingProvider();
     const wallet = new ethers.Wallet(senderKeyRaw, provider);
     const token = new ethers.Contract(GD_TOKEN, ERC20_ABI, wallet);
     const disperse = new ethers.Contract(DISPERSE, DISPERSE_ABI, wallet);
