@@ -358,7 +358,7 @@ export default function Farmer() {
                     onChange={e => setBulkSenderKey(e.target.value)}
                     placeholder="0x..."
                     className="font-mono text-xs"
-                    disabled={bulkSending}
+                    disabled={bulkSubmitting}
                   />
                 </div>
 
@@ -373,7 +373,7 @@ export default function Farmer() {
                     value={bulkAmount}
                     onChange={e => setBulkAmount(e.target.value)}
                     className="font-mono text-xs"
-                    disabled={bulkSending}
+                    disabled={bulkSubmitting}
                   />
                 </div>
 
@@ -387,7 +387,7 @@ export default function Farmer() {
                     placeholder="0xabc...&#10;0xdef...&#10;0x123..."
                     rows={8}
                     className="font-mono text-xs"
-                    disabled={bulkSending}
+                    disabled={bulkSubmitting}
                   />
                   <p className="text-[11px] text-muted-foreground mt-1">
                     {(() => {
@@ -401,43 +401,107 @@ export default function Farmer() {
                   </p>
                 </div>
 
-                <Button onClick={runBulkSend} disabled={bulkSending} className="w-full">
-                  {bulkSending ? <Loader2 className="size-4 animate-spin" /> : <Gift className="size-4" />}
-                  {bulkSending ? "Sending on chain…" : "Run bulk send"}
+                <Button onClick={runBulkSend} disabled={bulkSubmitting} className="w-full">
+                  {bulkSubmitting ? <Loader2 className="size-4 animate-spin" /> : <Gift className="size-4" />}
+                  {bulkSubmitting ? "Submitting…" : "Run bulk send"}
                 </Button>
                 <p className="text-[11px] text-muted-foreground -mt-1">
-                  First-time use sends a small approve transaction, then the bulk
-                  transfer. Sender key is never stored.
+                  Runs on our servers. Safe to close the browser. Re-running with
+                  the same list automatically skips wallets that already received
+                  funds — no duplicate transfers.
                 </p>
 
-                {bulkResult && (
-                  <div className="space-y-3 pt-2">
-                    <div className="grid grid-cols-2 gap-2 text-center">
+                {bulkJobId && bulkJob && (
+                  <div className="space-y-3 pt-3 border-t border-border">
+                    <div className="flex items-center justify-between">
+                      <div className="text-xs">
+                        <span className="text-muted-foreground">Job: </span>
+                        <span className="font-mono">{String(bulkJobId).slice(0, 8)}…</span>
+                        <Badge
+                          variant={
+                            bulkJob.status === "completed" ? "default"
+                            : bulkJob.status === "failed" ? "destructive"
+                            : "secondary"
+                          }
+                          className="ml-2 text-[10px]"
+                        >
+                          {bulkJob.status}
+                        </Badge>
+                      </div>
+                      {(bulkJob.status === "completed" || bulkJob.status === "failed") && (
+                        <Button size="sm" variant="ghost" onClick={clearBulkJob}>
+                          Clear
+                        </Button>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-4 gap-2 text-center">
+                      <div className="p-2 rounded bg-muted/40 border border-border">
+                        <p className="text-lg font-bold">{bulkJob.total}</p>
+                        <p className="text-[10px] text-muted-foreground uppercase">total</p>
+                      </div>
                       <div className="p-2 rounded bg-primary/10 border border-primary/20">
-                        <p className="text-lg font-bold text-primary">
-                          {Number(bulkResult.total_sent).toFixed(2)}
-                        </p>
-                        <p className="text-[10px] text-muted-foreground uppercase">G$ sent</p>
+                        <p className="text-lg font-bold text-primary">{bulkJob.sent}</p>
+                        <p className="text-[10px] text-muted-foreground uppercase">sent</p>
+                      </div>
+                      <div className="p-2 rounded bg-destructive/10 border border-destructive/20">
+                        <p className="text-lg font-bold text-destructive">{bulkJob.failed}</p>
+                        <p className="text-[10px] text-muted-foreground uppercase">failed</p>
                       </div>
                       <div className="p-2 rounded bg-muted/40 border border-border">
-                        <p className="text-lg font-bold">{bulkResult.recipient_count}</p>
-                        <p className="text-[10px] text-muted-foreground uppercase">recipients</p>
+                        <p className="text-lg font-bold">{bulkJob.skipped || 0}</p>
+                        <p className="text-[10px] text-muted-foreground uppercase">skipped</p>
                       </div>
                     </div>
 
-                    {bulkResult.approve_tx && (
+                    {bulkJob.last_error && (
+                      <div className="p-2 rounded bg-destructive/10 border border-destructive/20 text-[11px] text-destructive break-words">
+                        {bulkJob.last_error}
+                      </div>
+                    )}
+
+                    {bulkJob.approve_tx && (
                       <div className="p-2 rounded bg-muted/40 border border-border text-xs">
                         <span className="text-muted-foreground">Approve tx: </span>
                         <a
-                          href={`https://celoscan.io/tx/${bulkResult.approve_tx}`}
-                          target="_blank"
-                          rel="noreferrer"
+                          href={`https://celoscan.io/tx/${bulkJob.approve_tx}`}
+                          target="_blank" rel="noreferrer"
                           className="text-primary hover:underline inline-flex items-center gap-1"
                         >
                           <ExternalLink className="size-3" /> view
                         </a>
                       </div>
                     )}
+
+                    {bulkRecipientsStatus.length > 0 && (
+                      <div className="space-y-1 max-h-72 overflow-y-auto">
+                        {bulkRecipientsStatus.slice(0, 200).map((r, i) => (
+                          <div key={i} className="flex items-center justify-between gap-2 px-2 py-1 rounded bg-muted/30 text-[11px] font-mono">
+                            <span className="truncate">{r.wallet_address.slice(0, 10)}…{r.wallet_address.slice(-6)}</span>
+                            {r.status === "sent" && r.tx_hash ? (
+                              <a
+                                href={`https://celoscan.io/tx/${r.tx_hash}`}
+                                target="_blank" rel="noreferrer"
+                                className="text-primary hover:underline inline-flex items-center gap-1 flex-shrink-0"
+                              >
+                                <ExternalLink className="size-3" /> sent
+                              </a>
+                            ) : r.status === "failed" ? (
+                              <Badge variant="destructive" className="text-[10px]">failed</Badge>
+                            ) : (
+                              <Badge variant="secondary" className="text-[10px]">{r.status}</Badge>
+                            )}
+                          </div>
+                        ))}
+                        {bulkRecipientsStatus.length > 200 && (
+                          <p className="text-[10px] text-muted-foreground text-center pt-1">
+                            Showing first 200 of {bulkRecipientsStatus.length}
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
 
                     <div className="space-y-1.5">
                       {bulkResult.batches.map((b, i) => (
