@@ -34,10 +34,6 @@ const WS_PASSWORD = Deno.env.get("WEBSHARE_PROXY_PASSWORD") ?? "";
 // Per worker invocation budget — must stay well under 150s edge timeout.
 const WORKER_TIME_BUDGET_MS = 110_000;
 const STALE_PROCESSING_MINUTES = 3;
-// Process this many wallets in parallel per "tick" inside the loop.
-// 5 = balanced: ~5x throughput vs sequential, low risk of faucet rate-limit
-// hits since each call goes through a different proxy IP.
-const PARALLEL_BATCH_SIZE = 5;
 // Re-trigger ourselves if more work remains so processing keeps flowing
 // even between cron ticks.
 const WORKER_TRIGGER_URL = `${SUPABASE_URL}/functions/v1/gas-loader-worker`;
@@ -523,30 +519,22 @@ async function processLoop(): Promise<{ processed: number; remaining: boolean }>
   let lastDelay = 0;
 
   while (Date.now() - startedAt < WORKER_TIME_BUDGET_MS) {
+    // Honor user-set delay BETWEEN wallets (e.g., 3000ms = one request every 3s).
     if (lastDelay > 0) {
       await new Promise((r) => setTimeout(r, lastDelay));
       if (Date.now() - startedAt >= WORKER_TIME_BUDGET_MS) break;
     }
 
-    // Claim up to PARALLEL_BATCH_SIZE wallets concurrently. Each one gets
-    // its own proxy IP via the WebShare rotating endpoint, so there's no
-    // collision between parallel calls.
-    const claims = await Promise.all(
-      Array.from({ length: PARALLEL_BATCH_SIZE }, () => claimNextWallet()),
-    );
-    const items = claims.filter((x): x is NonNullable<typeof x> => x !== null);
-
-    if (items.length === 0) {
+    const item = await claimNextWallet();
+    if (!item) {
       // No more pending work
       return { processed, remaining: false };
     }
 
-    // Process all claimed wallets in parallel.
-    await Promise.all(items.map((it) => processOneWallet(it)));
+    await processOneWallet(item);
 
-    processed += items.length;
-    // Use the smallest delay across this batch (they should all match).
-    lastDelay = Math.min(...items.map((it) => it.delay_ms));
+    processed += 1;
+    lastDelay = item.delay_ms; // user-controlled delay until next request
   }
 
   // Time budget exhausted; check if more pending exists
