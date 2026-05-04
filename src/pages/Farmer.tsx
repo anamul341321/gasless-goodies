@@ -125,7 +125,7 @@ export default function Farmer() {
       return;
     }
     const total = (amt * recipients.length).toFixed(4);
-    if (!confirm(`Send ${amt} G$ to ${recipients.length} wallets in one transaction?\n\nTotal: ${total} G$\n(auto-batched in groups of 400 if needed)`)) return;
+    if (!confirm(`Send ${amt} G$ to ${recipients.length} wallets?\n\nTotal: ${total} G$\n(auto-batched in groups of 75 for large lists)`)) return;
 
     setBulkSending(true);
     setBulkResult(null);
@@ -308,9 +308,8 @@ export default function Farmer() {
               </CardHeader>
               <CardContent className="space-y-4">
                 <p className="text-xs text-muted-foreground">
-                  Send G$ from one wallet to many recipients in a single transaction
-                  using the audited Disperse contract. One gas fee for up to 400
-                  recipients. Larger lists are auto-split into batches.
+                  Send G$ from one wallet to many recipients using the audited
+                  Disperse contract. Large lists are auto-split into safe batches.
                 </p>
 
                 <div>
