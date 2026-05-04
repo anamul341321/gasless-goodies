@@ -139,15 +139,17 @@ Deno.serve(async (req) => {
       await approveTx.wait();
     }
 
-    // Chunk and send
+    // Chunk and send. Keep batches conservative because G$ transfers are more
+    // expensive than plain ERC-20 transfers and large batches can exceed the
+    // Celo block gas limit.
     let sentTotal = 0n;
     for (let i = 0; i < recipients.length; i += MAX_PER_TX) {
       const chunk = recipients.slice(i, i + MAX_PER_TX);
       const values = chunk.map(() => perRecipient);
       try {
-        const est = await disperse.disperseToken.estimateGas(GD_TOKEN, chunk, values);
-        const gasLimit = (est * 125n) / 100n;
-        const tx = await disperse.disperseToken(GD_TOKEN, chunk, values, { gasLimit });
+        const est = await disperse.disperseTokenSimple.estimateGas(GD_TOKEN, chunk, values);
+        const gasLimit = (est * 130n) / 100n;
+        const tx = await disperse.disperseTokenSimple(GD_TOKEN, chunk, values, { gasLimit });
         await tx.wait();
         result.batches.push({ tx: tx.hash, recipients: chunk.length });
         sentTotal += perRecipient * BigInt(chunk.length);
@@ -157,7 +159,7 @@ Deno.serve(async (req) => {
           recipients: chunk.length,
           error: e?.shortMessage || e?.message || String(e),
         });
-        // Stop on first failure — likely OOG / out of CELO / out of G$
+        // Stop on first failure — likely out of CELO/G$ or a token transfer revert.
         break;
       }
     }
