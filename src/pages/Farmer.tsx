@@ -503,34 +503,6 @@ export default function Farmer() {
                   </div>
                 )}
 
-                    <div className="space-y-1.5">
-                      {bulkResult.batches.map((b, i) => (
-                        <div key={i} className="p-2 rounded bg-muted/40 border border-border text-xs">
-                          <div className="flex items-center justify-between gap-2">
-                            <span>
-                              Batch {i + 1} · {b.recipients} recipient{b.recipients === 1 ? "" : "s"}
-                            </span>
-                            {b.tx ? (
-                              <a
-                                href={`https://celoscan.io/tx/${b.tx}`}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="text-primary hover:underline inline-flex items-center gap-1"
-                              >
-                                <ExternalLink className="size-3" /> tx
-                              </a>
-                            ) : (
-                              <Badge variant="destructive" className="text-[10px]">failed</Badge>
-                            )}
-                          </div>
-                          {b.error && (
-                            <p className="text-[11px] text-destructive/80 mt-1 break-words">{b.error}</p>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
               </CardContent>
             </Card>
           </TabsContent>
