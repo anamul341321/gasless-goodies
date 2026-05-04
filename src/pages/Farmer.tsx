@@ -12,6 +12,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
+import GasLoader from "./GasLoader";
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
 
