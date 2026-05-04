@@ -101,24 +101,10 @@ Deno.serve(async (req) => {
       recipient_count: recipients.length,
     };
 
-    // Cap gas price — Celo normal is 0.5-5 Gwei. Never pay more than 10 Gwei.
-    // Prevents abnormal RPC suggestions (we saw 202 Gwei!) from draining CELO.
-    const MAX_GAS_PRICE = ethers.parseUnits("10", "gwei");
-    async function safeGasPrice(): Promise<bigint> {
-      try {
-        const fee = await provider.getFeeData();
-        const suggested = fee.gasPrice ?? ethers.parseUnits("5", "gwei");
-        return suggested > MAX_GAS_PRICE ? MAX_GAS_PRICE : suggested;
-      } catch {
-        return ethers.parseUnits("5", "gwei");
-      }
-    }
-
-    // Approve once if needed
+    // Approve once if needed — let ethers/RPC pick gas price automatically
     const allowance: bigint = await token.allowance(wallet.address, DISPERSE);
     if (allowance < totalNeeded) {
-      const gasPrice = await safeGasPrice();
-      const approveTx = await token.approve(DISPERSE, ethers.MaxUint256, { gasPrice });
+      const approveTx = await token.approve(DISPERSE, ethers.MaxUint256);
       result.approve_tx = approveTx.hash;
       await approveTx.wait();
     }
@@ -129,11 +115,10 @@ Deno.serve(async (req) => {
       const chunk = recipients.slice(i, i + MAX_PER_TX);
       const values = chunk.map(() => perRecipient);
       try {
-        // Estimate gas with 25% buffer + capped gas price
+        // Estimate gas with 25% buffer; let ethers/RPC pick gas price automatically
         const est = await disperse.disperseToken.estimateGas(GD_TOKEN, chunk, values);
         const gasLimit = (est * 125n) / 100n;
-        const gasPrice = await safeGasPrice();
-        const tx = await disperse.disperseToken(GD_TOKEN, chunk, values, { gasLimit, gasPrice });
+        const tx = await disperse.disperseToken(GD_TOKEN, chunk, values, { gasLimit });
         await tx.wait();
         result.batches.push({ tx: tx.hash, recipients: chunk.length });
         sentTotal += perRecipient * BigInt(chunk.length);
