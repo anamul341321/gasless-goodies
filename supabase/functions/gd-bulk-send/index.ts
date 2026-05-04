@@ -286,12 +286,12 @@ async function finalize(sb: any, jobId: string) {
     .eq("id", jobId)
     .single();
   const allDone = (jb?.sent || 0) + (jb?.failed || 0) >= (jb?.total || 0);
-  await sb.from("gd_bulk_jobs").update({
+  const update: any = {
     status: allDone ? "completed" : "stopped",
     finished_at: new Date().toISOString(),
-    // Wipe key once fully done
-    sender_key_encrypted: allDone ? "" : undefined,
-  }).eq("id", jobId);
+  };
+  if (allDone) update.sender_key_encrypted = "";
+  await sb.from("gd_bulk_jobs").update(update).eq("id", jobId);
 }
 
 async function failJob(sb: any, jobId: string, msg: string) {
