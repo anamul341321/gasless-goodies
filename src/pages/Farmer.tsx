@@ -204,7 +204,7 @@ export default function Farmer() {
       if (!res.ok) {
         toast({ title: "Submit failed", description: json?.error || `HTTP ${res.status}`, variant: "destructive" });
       } else if (!json.job_id) {
-        toast({ title: json.message || "Nothing to send", description: `${json.skipped || 0} already sent.` });
+        toast({ title: json.message || "Nothing to send", description: `${json.skipped || 0} duplicate in this batch.` });
       } else {
         try { localStorage.setItem("gd_bulk_job_id", json.job_id); } catch {}
         setBulkJobId(json.job_id);
