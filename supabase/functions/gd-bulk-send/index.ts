@@ -279,29 +279,7 @@ async function processJob(jobId: string) {
       const chunk = pending || [];
       if (chunk.length === 0) break;
 
-      const chunkWallets = chunk.map((r: any) => String(r.wallet_address).toLowerCase());
-      const { data: duplicateRows } = await sb
-        .from("gd_bulk_recipients")
-        .select("wallet_address")
-        .eq("sender_address", senderAddress)
-        .eq("amount", amountStr)
-        .eq("status", "sent")
-        .neq("job_id", jobId)
-        .in("wallet_address", chunkWallets);
-      const duplicates = new Set((duplicateRows || []).map((r: any) => String(r.wallet_address).toLowerCase()));
-      if (duplicates.size > 0) {
-        const duplicateIds = chunk.filter((r: any) => duplicates.has(String(r.wallet_address).toLowerCase())).map((r: any) => r.id);
-        await sb.from("gd_bulk_recipients").update({
-          status: "skipped",
-          error_message: "Already sent in a previous job",
-          processed_at: new Date().toISOString(),
-        }).in("id", duplicateIds);
-        const { data: jb } = await sb.from("gd_bulk_jobs").select("skipped").eq("id", jobId).single();
-        await sb.from("gd_bulk_jobs").update({ skipped: (jb?.skipped || 0) + duplicateIds.length }).eq("id", jobId);
-        if (duplicateIds.length === chunk.length) continue;
-      }
-
-      const sendable = chunk.filter((r: any) => !duplicates.has(String(r.wallet_address).toLowerCase()));
+      const sendable = chunk;
 
       const addresses = sendable.map((r: any) => ethers.getAddress(r.wallet_address));
       const values = addresses.map(() => perRecipient);
