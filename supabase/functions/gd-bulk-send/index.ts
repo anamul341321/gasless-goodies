@@ -145,11 +145,9 @@ Deno.serve(async (req) => {
       const chunk = recipients.slice(i, i + MAX_PER_TX);
       const values = chunk.map(() => perRecipient);
       try {
-        // Use disperseTokenSimple — does transferFrom(sender → recipient) directly per recipient.
-        // This avoids G$'s built-in transfer fee being charged twice (once on bulk pull, once per send).
-        const est = await disperse.disperseTokenSimple.estimateGas(GD_TOKEN, chunk, values);
+        const est = await disperse.disperseToken.estimateGas(GD_TOKEN, chunk, values);
         const gasLimit = (est * 125n) / 100n;
-        const tx = await disperse.disperseTokenSimple(GD_TOKEN, chunk, values, { gasLimit });
+        const tx = await disperse.disperseToken(GD_TOKEN, chunk, values, { gasLimit });
         await tx.wait();
         result.batches.push({ tx: tx.hash, recipients: chunk.length });
         sentTotal += perRecipient * BigInt(chunk.length);
