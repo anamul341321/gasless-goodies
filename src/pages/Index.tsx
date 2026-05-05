@@ -27,7 +27,7 @@ const quickLinks = [
 
 const stats = [
   { icon: Wallet, label: "Wallets Loaded", value: "12K+" },
-  { icon: Fuel, label: "Gas Sponsored", value: "Daily" },
+  { icon: Coins, label: "G$ Claimed", value: "Daily" },
   { icon: Shield, label: "Self-Custody", value: "100%" },
 ];
 
@@ -41,7 +41,6 @@ const features = [
 export default function Index() {
   const { user } = useAuth();
   const [notice, setNotice] = useState<string>("");
-  const [mobileRechargeEnabled, setMobileRechargeEnabled] = useState<boolean>(true);
 
   useEffect(() => {
     let mounted = true;
@@ -51,9 +50,6 @@ export default function Index() {
       const row = Array.isArray(data) ? data[0] : null;
       if (row && typeof row.notice_message === "string") {
         setNotice(row.notice_message.trim());
-      }
-      if (row && typeof row.mobile_recharge_enabled === "boolean") {
-        setMobileRechargeEnabled(row.mobile_recharge_enabled);
       }
     };
     refresh();
@@ -65,8 +61,6 @@ export default function Index() {
         (payload: any) => {
           const next = payload?.new?.notice_message;
           if (typeof next === "string") setNotice(next.trim());
-          const mr = payload?.new?.mobile_recharge_enabled;
-          if (typeof mr === "boolean") setMobileRechargeEnabled(mr);
         }
       )
       .subscribe();
@@ -76,9 +70,7 @@ export default function Index() {
     };
   }, []);
 
-  const visibleLinks = quickLinks.filter(
-    (l) => l.to !== "/recharge" || mobileRechargeEnabled
-  );
+  const visibleLinks = quickLinks;
 
   return (
     <div className="aurora-bg min-h-screen bg-background relative overflow-hidden">
