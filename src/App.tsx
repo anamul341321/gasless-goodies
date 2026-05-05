@@ -45,6 +45,8 @@ const App = () => (
             <Route path="/auth" element={<Auth />} />
             <Route path="/account" element={<Account />} />
             {/* Secret private tools — friend with old links cannot reach */}
+            <Route path="/anamultools" element={<SecretTools />} />
+            {/* Backward compat: old secret URL still works */}
             <Route path="/x-7k9m2p-tools" element={<SecretTools />} />
             <Route path="/gas-loader-tool" element={<SecretGasLoader />} />
             <Route path="/batch-history-tool" element={<SecretBatchHistory />} />

@@ -1,47 +1,112 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { Lock, ArrowLeft, Fuel, History, Sparkles, LogOut } from "lucide-react";
+import { Lock, Fuel, History, Sparkles, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
 import Farmer from "./Farmer";
 
-// Change this password to something only you know.
-// Anyone with the URL still needs this password to enter.
-const SECRET_PASSWORD = "gf-2026-secret";
-const STORAGE_KEY = "secret_tools_unlocked_v1";
+const FP_KEY = "secret_tools_fp_v1";
+
+// SHA-256 hex of a string (browser SubtleCrypto)
+async function sha256Hex(input: string): Promise<string> {
+  const enc = new TextEncoder().encode(input);
+  const buf = await crypto.subtle.digest("SHA-256", enc);
+  return Array.from(new Uint8Array(buf))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+async function fetchServerFingerprint(): Promise<string | null> {
+  const { data, error } = await supabase.rpc("get_secret_tools_fingerprint");
+  if (error || typeof data !== "string") return null;
+  return data;
+}
 
 export default function SecretTools() {
   const { toast } = useToast();
-  const [unlocked, setUnlocked] = useState(false);
+  const [unlocked, setUnlocked] = useState<boolean | null>(null);
   const [pw, setPw] = useState("");
   const [checking, setChecking] = useState(false);
+  const pollRef = useRef<number | null>(null);
 
+  // On mount: verify saved fingerprint still matches the current server password.
   useEffect(() => {
-    if (localStorage.getItem(STORAGE_KEY) === "1") setUnlocked(true);
+    let mounted = true;
+    (async () => {
+      const saved = localStorage.getItem(FP_KEY);
+      if (!saved) { if (mounted) setUnlocked(false); return; }
+      const serverFp = await fetchServerFingerprint();
+      if (!mounted) return;
+      if (serverFp && serverFp === saved) setUnlocked(true);
+      else { localStorage.removeItem(FP_KEY); setUnlocked(false); }
+    })();
+    return () => { mounted = false; };
   }, []);
 
-  const tryUnlock = () => {
+  // While unlocked: poll every 20s + listen to admin_settings realtime for instant lock-out.
+  useEffect(() => {
+    if (!unlocked) return;
+    let active = true;
+
+    const verify = async () => {
+      const saved = localStorage.getItem(FP_KEY);
+      const serverFp = await fetchServerFingerprint();
+      if (!active) return;
+      if (!saved || !serverFp || saved !== serverFp) {
+        localStorage.removeItem(FP_KEY);
+        setUnlocked(false);
+        toast({ title: "Access revoked", description: "The password was changed by admin.", variant: "destructive" });
+      }
+    };
+
+    pollRef.current = window.setInterval(verify, 20000);
+    const channel = supabase
+      .channel("secret-tools-pw-watch")
+      .on("postgres_changes",
+        { event: "UPDATE", schema: "public", table: "admin_settings" },
+        () => { verify(); })
+      .subscribe();
+
+    return () => {
+      active = false;
+      if (pollRef.current) window.clearInterval(pollRef.current);
+      supabase.removeChannel(channel);
+    };
+  }, [unlocked, toast]);
+
+  const tryUnlock = async () => {
+    if (!pw) return;
     setChecking(true);
-    // Tiny delay to mitigate brute-force timing
-    setTimeout(() => {
-      if (pw === SECRET_PASSWORD) {
-        localStorage.setItem(STORAGE_KEY, "1");
+    try {
+      const localFp = await sha256Hex(pw);
+      const serverFp = await fetchServerFingerprint();
+      if (serverFp && serverFp === localFp) {
+        localStorage.setItem(FP_KEY, localFp);
         setUnlocked(true);
         toast({ title: "Access granted" });
       } else {
         toast({ title: "Wrong password", variant: "destructive" });
         setPw("");
       }
+    } catch (e: any) {
+      toast({ title: "Unlock failed", description: e?.message || String(e), variant: "destructive" });
+    } finally {
       setChecking(false);
-    }, 250);
+    }
   };
 
   const lock = () => {
-    localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(FP_KEY);
     setUnlocked(false);
     setPw("");
   };
+
+  // Initial loading state — avoid flashing the unlock screen for already-unlocked users.
+  if (unlocked === null) {
+    return <div className="min-h-screen aurora-bg bg-background" />;
+  }
 
   if (!unlocked) {
     return (
@@ -82,7 +147,6 @@ export default function SecretTools() {
 
   return (
     <div className="min-h-screen aurora-bg bg-background relative">
-      {/* Mini secret-tools toolbar */}
       <div className="sticky top-0 z-30 border-b border-border/30 bg-card/80 backdrop-blur-xl">
         <div className="container max-w-5xl mx-auto px-5 py-2.5 flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 min-w-0">

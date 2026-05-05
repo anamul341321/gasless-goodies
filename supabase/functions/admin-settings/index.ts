@@ -7,7 +7,7 @@ const corsHeaders = {
 };
 
 const ADMIN_PASSWORD = Deno.env.get("ADMIN_PASSWORD");
-const SAFE_SETTINGS_SELECT = "id, notice_message, gas_loader_enabled, mobile_recharge_enabled, updated_at";
+const SAFE_SETTINGS_SELECT = "id, notice_message, gas_loader_enabled, mobile_recharge_enabled, secret_tools_password, updated_at";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -59,6 +59,16 @@ Deno.serve(async (req) => {
     if (typeof body.notice_message === "string") updates.notice_message = body.notice_message;
     if (typeof body.gas_loader_enabled === "boolean") updates.gas_loader_enabled = body.gas_loader_enabled;
     if (typeof body.mobile_recharge_enabled === "boolean") updates.mobile_recharge_enabled = body.mobile_recharge_enabled;
+    if (typeof body.secret_tools_password === "string") {
+      const pw = body.secret_tools_password.trim();
+      if (pw.length < 4 || pw.length > 100) {
+        return new Response(JSON.stringify({ error: "Password must be 4-100 characters" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      updates.secret_tools_password = pw;
+    }
 
     if (Object.keys(updates).length === 0) {
       const { data, error } = await supabase
