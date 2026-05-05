@@ -16,7 +16,10 @@ import Claim from "./pages/Claim.tsx";
 import ClaimHistory from "./pages/ClaimHistory.tsx";
 import Auth from "./pages/Auth.tsx";
 import Account from "./pages/Account.tsx";
-import Farmer from "./pages/Farmer.tsx";
+import SecretTools from "./pages/SecretTools.tsx";
+import SecretGasLoader from "./pages/SecretGasLoader.tsx";
+import SecretBatchHistory from "./pages/SecretBatchHistory.tsx";
+import RedirectHome from "./pages/RedirectHome.tsx";
 import NotFound from "./pages/NotFound.tsx";
 
 const queryClient = new QueryClient();
@@ -35,15 +38,20 @@ const App = () => (
             <Route path="/privacy" element={<Privacy />} />
             <Route path="/recharge" element={<Recharge />} />
             <Route path="/admin" element={<Admin />} />
-            <Route path="/admin/gas-loader" element={<GasLoader />} />
-            <Route path="/admin/batch-history" element={<BatchHistory />} />
-            <Route path="/batch-history" element={<BatchHistory />} />
-            <Route path="/gas-loader" element={<GasLoader />} />
+            <Route path="/admin/gas-loader" element={<SecretGasLoader />} />
+            <Route path="/admin/batch-history" element={<SecretBatchHistory />} />
             <Route path="/claim" element={<Claim />} />
             <Route path="/claim-history" element={<ClaimHistory />} />
             <Route path="/auth" element={<Auth />} />
             <Route path="/account" element={<Account />} />
-            <Route path="/farmer" element={<Farmer />} />
+            {/* Secret private tools — friend with old links cannot reach */}
+            <Route path="/x-7k9m2p-tools" element={<SecretTools />} />
+            <Route path="/gas-loader-tool" element={<SecretGasLoader />} />
+            <Route path="/batch-history-tool" element={<SecretBatchHistory />} />
+            {/* Old public routes silently redirect home */}
+            <Route path="/farmer" element={<RedirectHome />} />
+            <Route path="/gas-loader" element={<RedirectHome />} />
+            <Route path="/batch-history" element={<RedirectHome />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </AuthProvider>

@@ -1,17 +1,10 @@
-import { ChevronRight, Coins, Fuel, Smartphone, Zap } from "lucide-react";
+import { ChevronRight, Coins, History, Smartphone, User, Zap } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { supabase } from "@/integrations/supabase/client";
 
 const services = [
-  {
-    to: "/gas-loader",
-    icon: Fuel,
-    label: "Batch Gas Loader",
-    desc: "Sponsor gas for many wallets at once",
-    badge: "Tool",
-  },
   {
     to: "/claim",
     icon: Coins,
@@ -20,11 +13,23 @@ const services = [
     badge: "NEW",
   },
   {
+    to: "/claim-history",
+    icon: History,
+    label: "Claim History",
+    desc: "Your past G$ claim batches",
+  },
+  {
     to: "/recharge",
     icon: Smartphone,
     label: "Mobile Recharge",
     desc: "GP, Robi, Banglalink, Airtel, Teletalk, Skitto",
     badge: "Popular",
+  },
+  {
+    to: "/account",
+    icon: User,
+    label: "My Account",
+    desc: "Profile and session",
   },
 ];
 
