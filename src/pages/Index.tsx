@@ -1,8 +1,7 @@
 import { useEffect, useState } from "react";
 import {
-  ArrowRight, Coins, Fuel, Megaphone, Menu, Shield, Smartphone,
-  Sparkles, Zap, CheckCircle2, Clock, Wallet, Lock, TrendingUp, User,
-  LogIn,
+  ArrowRight, Coins, Megaphone, Menu, Shield, Sparkles, Zap,
+  CheckCircle2, Clock, Wallet, Lock, TrendingUp, User, LogIn,
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import appLogo from "@/assets/logo.png";
@@ -16,15 +15,6 @@ const BRAND_SUBTITLE = "by Good-App";
 
 const quickLinks = [
   {
-    to: "/gas-loader",
-    icon: Fuel,
-    label: "Batch Gas Loader",
-    desc: "Sponsor gas for many wallets · rotates IP per wallet",
-    cardClass: "card-violet",
-    iconClass: "icon-violet",
-    badge: "Tool",
-  },
-  {
     to: "/claim",
     icon: Coins,
     label: "Batch G$ Claim",
@@ -32,15 +22,6 @@ const quickLinks = [
     cardClass: "card-indigo",
     iconClass: "icon-indigo",
     badge: "NEW",
-  },
-  {
-    to: "/recharge",
-    icon: Smartphone,
-    label: "Mobile Recharge",
-    desc: "Top up any Bangladesh number · instant",
-    cardClass: "card-rose",
-    iconClass: "icon-rose",
-    badge: "Popular",
   },
 ];
 
