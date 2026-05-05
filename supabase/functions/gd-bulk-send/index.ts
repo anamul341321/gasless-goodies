@@ -166,9 +166,6 @@ async function processJob(jobId: string) {
 
     const decimals: number = Number(await token.decimals());
     const perRecipient = ethers.parseUnits(String(job.amount_per_recipient), decimals);
-    const senderAddress = String(job.sender_address).toLowerCase();
-    const amountStr = String(job.amount_per_recipient);
-
     // Count pending recipients first; the REST API defaults to 1000 rows per read,
     // so processing must repeatedly fetch pending chunks until none remain.
     const { count: pendingCount } = await sb
@@ -242,12 +239,6 @@ async function processJob(jobId: string) {
           processed_at: new Date().toISOString(),
         }).in("id", ids);
 
-        await sb.from("gd_bulk_send_locks").update({
-          status: "sent",
-          tx_hash: tx.hash,
-          updated_at: new Date().toISOString(),
-        }).eq("job_id", jobId).in("wallet_address", sendable.map((r: any) => String(r.wallet_address).toLowerCase()));
-
         const { data: jb } = await sb.from("gd_bulk_jobs").select("sent").eq("id", jobId).single();
         await sb.from("gd_bulk_jobs").update({
           sent: (jb?.sent || 0) + sendable.length,
@@ -259,10 +250,6 @@ async function processJob(jobId: string) {
           error_message: msg.slice(0, 500),
           processed_at: new Date().toISOString(),
         }).in("id", ids);
-        await sb.from("gd_bulk_send_locks").update({
-          status: "failed_locked",
-          updated_at: new Date().toISOString(),
-        }).eq("job_id", jobId).in("wallet_address", sendable.map((r: any) => String(r.wallet_address).toLowerCase()));
         const { data: jb } = await sb.from("gd_bulk_jobs").select("failed").eq("id", jobId).single();
         await sb.from("gd_bulk_jobs").update({
           failed: (jb?.failed || 0) + sendable.length,
