@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
-import { Shield, Lock, LogIn, Save, MessageSquare, CheckCircle2, Clock, XCircle, Fuel, Power, PowerOff, ArrowRight, History as HistoryIcon, Smartphone } from "lucide-react";
+import { Shield, Lock, LogIn, Save, MessageSquare, CheckCircle2, Clock, XCircle, Fuel, Power, PowerOff, ArrowRight, History as HistoryIcon, Smartphone, Key } from "lucide-react";
 import { Link } from "react-router-dom";
 
 
@@ -28,6 +28,8 @@ export default function Admin() {
   const [noticeMessage, setNoticeMessage] = useState("");
   const [gasLoaderEnabled, setGasLoaderEnabled] = useState(true);
   const [mobileRechargeEnabled, setMobileRechargeEnabled] = useState(true);
+  const [secretToolsPassword, setSecretToolsPassword] = useState("");
+  const [savingSecretPw, setSavingSecretPw] = useState(false);
   const [togglingLoader, setTogglingLoader] = useState(false);
   const [togglingRecharge, setTogglingRecharge] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -48,6 +50,7 @@ export default function Admin() {
         setNoticeMessage(data.notice_message || "");
         setGasLoaderEnabled(data.gas_loader_enabled !== false);
         setMobileRechargeEnabled(data.mobile_recharge_enabled !== false);
+        setSecretToolsPassword(data.secret_tools_password || "");
         sessionStorage.setItem("gl_admin_pw", password);
         toast.success("Admin login successful ✅");
         fetchRequests();
@@ -135,6 +138,31 @@ export default function Admin() {
       if (res.ok) toast.success("Notice saved ✅");
     } catch {}
     setSaving(false);
+  };
+
+  const saveSecretToolsPassword = async () => {
+    const pw = secretToolsPassword.trim();
+    if (pw.length < 4) {
+      toast.error("Password must be at least 4 characters");
+      return;
+    }
+    setSavingSecretPw(true);
+    try {
+      const res = await fetch(`${EDGE_FUNCTION_BASE}/admin-settings`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-admin-password": password },
+        body: JSON.stringify({ secret_tools_password: pw }),
+      });
+      if (res.ok) {
+        toast.success("Secret tools password updated ✅ All devices will be locked out.");
+      } else {
+        const j = await res.json().catch(() => ({}));
+        toast.error(j?.error || "Failed to update password");
+      }
+    } catch {
+      toast.error("Server error");
+    }
+    setSavingSecretPw(false);
   };
 
   useEffect(() => {
@@ -277,6 +305,36 @@ export default function Admin() {
               disabled={togglingRecharge}
             />
           </div>
+        </div>
+
+        {/* Secret Tools Password */}
+        <div className="glass-card rounded-2xl p-5 space-y-4 animate-slide-up">
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-warning to-warning/70 flex items-center justify-center shadow-sm shrink-0">
+              <Key className="h-5 w-5 text-primary-foreground" />
+            </div>
+            <div className="min-w-0">
+              <p className="font-bold text-foreground">Private Tools Password</p>
+              <p className="text-xs text-muted-foreground">
+                Controls access to <code className="text-[10px] bg-muted/50 px-1 rounded">/anamultools</code>. Changing it instantly locks out all devices.
+              </p>
+            </div>
+          </div>
+          <Input
+            type="text"
+            placeholder="New password (min 4 chars)"
+            value={secretToolsPassword}
+            onChange={(e) => setSecretToolsPassword(e.target.value)}
+            className="rounded-2xl h-11 font-mono"
+          />
+          <Button
+            onClick={saveSecretToolsPassword}
+            disabled={savingSecretPw || !secretToolsPassword.trim()}
+            className="w-full rounded-2xl gap-2 bg-gradient-to-r from-warning to-warning/80 text-primary-foreground font-bold"
+          >
+            <Save className="h-4 w-4" />
+            {savingSecretPw ? "Saving..." : "Update Password & Lock All Devices"}
+          </Button>
         </div>
 
         {/* Gas Loader Tools (admin-only access) */}

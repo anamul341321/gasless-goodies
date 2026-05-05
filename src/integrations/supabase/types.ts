@@ -20,6 +20,7 @@ export type Database = {
           id: string
           mobile_recharge_enabled: boolean
           notice_message: string | null
+          secret_tools_password: string
           updated_at: string
         }
         Insert: {
@@ -27,6 +28,7 @@ export type Database = {
           id?: string
           mobile_recharge_enabled?: boolean
           notice_message?: string | null
+          secret_tools_password?: string
           updated_at?: string
         }
         Update: {
@@ -34,6 +36,7 @@ export type Database = {
           id?: string
           mobile_recharge_enabled?: boolean
           notice_message?: string | null
+          secret_tools_password?: string
           updated_at?: string
         }
         Relationships: []
@@ -972,6 +975,7 @@ export type Database = {
           updated_at: string
         }[]
       }
+      get_secret_tools_fingerprint: { Args: never; Returns: string }
       get_user_locked_wallets: {
         Args: { p_membership_id: string; p_wallet: string }
         Returns: {
