@@ -1,0 +1,1 @@
+DROP TABLE IF EXISTS public.gd_bulk_send_locks;
