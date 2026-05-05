@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
-import { Shield, Lock, LogIn, Save, MessageSquare, CheckCircle2, Clock, XCircle, Fuel, Power, PowerOff, ArrowRight, History as HistoryIcon, Smartphone } from "lucide-react";
+import { Shield, Lock, LogIn, Save, MessageSquare, CheckCircle2, Clock, XCircle, Fuel, Power, PowerOff, ArrowRight, History as HistoryIcon, Smartphone, Key } from "lucide-react";
 import { Link } from "react-router-dom";
 
 
@@ -28,6 +28,8 @@ export default function Admin() {
   const [noticeMessage, setNoticeMessage] = useState("");
   const [gasLoaderEnabled, setGasLoaderEnabled] = useState(true);
   const [mobileRechargeEnabled, setMobileRechargeEnabled] = useState(true);
+  const [secretToolsPassword, setSecretToolsPassword] = useState("");
+  const [savingSecretPw, setSavingSecretPw] = useState(false);
   const [togglingLoader, setTogglingLoader] = useState(false);
   const [togglingRecharge, setTogglingRecharge] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -48,6 +50,7 @@ export default function Admin() {
         setNoticeMessage(data.notice_message || "");
         setGasLoaderEnabled(data.gas_loader_enabled !== false);
         setMobileRechargeEnabled(data.mobile_recharge_enabled !== false);
+        setSecretToolsPassword(data.secret_tools_password || "");
         sessionStorage.setItem("gl_admin_pw", password);
         toast.success("Admin login successful ✅");
         fetchRequests();
@@ -135,6 +138,31 @@ export default function Admin() {
       if (res.ok) toast.success("Notice saved ✅");
     } catch {}
     setSaving(false);
+  };
+
+  const saveSecretToolsPassword = async () => {
+    const pw = secretToolsPassword.trim();
+    if (pw.length < 4) {
+      toast.error("Password must be at least 4 characters");
+      return;
+    }
+    setSavingSecretPw(true);
+    try {
+      const res = await fetch(`${EDGE_FUNCTION_BASE}/admin-settings`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-admin-password": password },
+        body: JSON.stringify({ secret_tools_password: pw }),
+      });
+      if (res.ok) {
+        toast.success("Secret tools password updated ✅ All devices will be locked out.");
+      } else {
+        const j = await res.json().catch(() => ({}));
+        toast.error(j?.error || "Failed to update password");
+      }
+    } catch {
+      toast.error("Server error");
+    }
+    setSavingSecretPw(false);
   };
 
   useEffect(() => {
