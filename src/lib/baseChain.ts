@@ -32,6 +32,43 @@ export async function getBaseProvider(): Promise<ethers.JsonRpcProvider> {
   throw new Error(`All Base RPCs unavailable: ${(lastErr as Error)?.message || lastErr}`);
 }
 
+// Returns multiple healthy providers — used to spread load and avoid 429 rate limits.
+export async function getBaseProviderPool(): Promise<ethers.JsonRpcProvider[]> {
+  const results = await Promise.all(
+    BASE_RPCS.map(async (url) => {
+      try {
+        const p = new ethers.JsonRpcProvider(url, BASE_CHAIN_ID, { staticNetwork: true });
+        await p.getBlockNumber();
+        return p;
+      } catch {
+        return null;
+      }
+    }),
+  );
+  const ok = results.filter((p): p is ethers.JsonRpcProvider => p !== null);
+  if (ok.length === 0) throw new Error("All Base RPCs unavailable");
+  return ok;
+}
+
+// Run async tasks with bounded concurrency.
+export async function runPool<T, R>(
+  items: T[],
+  limit: number,
+  worker: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let next = 0;
+  const runners = new Array(Math.min(limit, items.length)).fill(0).map(async () => {
+    while (true) {
+      const i = next++;
+      if (i >= items.length) return;
+      results[i] = await worker(items[i], i);
+    }
+  });
+  await Promise.all(runners);
+  return results;
+}
+
 export function normalizeKey(raw: string): string | null {
   let k = raw.trim();
   if (!k) return null;
