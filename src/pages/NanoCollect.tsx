@@ -7,7 +7,6 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/hooks/use-toast";
 import {
-  getBaseProvider,
   getBaseProviderPool,
   parseKeyList,
   normalizeKey,
