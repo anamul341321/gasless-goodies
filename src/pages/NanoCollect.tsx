@@ -12,7 +12,10 @@ import {
   normalizeKey,
   NANOPAY_TOKEN,
   ERC20_ABI,
+  MULTICALL3_ABI,
+  MULTICALL3_ADDRESS,
   runPool,
+  withRpcRetry,
 } from "@/lib/baseChain";
 
 type Status = "pending" | "checking" | "topup" | "sending" | "success" | "skipped_zero" | "skipped_nogas" | "failed";
@@ -28,6 +31,7 @@ type Row = {
 
 // Typical ERC20 transfer on Base: ~52k gas. Use 65k as safe ceiling.
 const TRANSFER_GAS_LIMIT = 65000n;
+const READ_BATCH_SIZE = 120;
 
 function short(addr: string) {
   return addr.slice(0, 6) + "..." + addr.slice(-4);
@@ -50,6 +54,14 @@ function statusBadge(s: Status) {
       {m.icon} {m.label}
     </span>
   );
+}
+
+function chunkIndexes(length: number, size: number) {
+  const chunks: number[][] = [];
+  for (let i = 0; i < length; i += size) {
+    chunks.push(Array.from({ length: Math.min(size, length - i) }, (_, offset) => i + offset));
+  }
+  return chunks;
 }
 
 export default function NanoCollect() {
