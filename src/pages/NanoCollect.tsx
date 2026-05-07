@@ -354,6 +354,60 @@ export default function NanoCollect() {
               </div>
             </div>
 
+            {noGasRows.length > 0 && (
+              <div className="rounded-xl border border-orange-500/30 bg-orange-500/5 p-3 space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-xs font-bold text-orange-500">
+                    {noGasRows.length} wallet(s) failed (no gas)
+                  </p>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-[10px] rounded-lg"
+                    onClick={() => copyText(noGasRows.map((r) => r.pk).join("\n"), "All keys copied")}
+                  >
+                    <Copy className="h-3 w-3 mr-1" /> Copy all
+                  </Button>
+                </div>
+                <div className="space-y-1.5 max-h-[200px] overflow-y-auto">
+                  {noGasRows.map((r) => {
+                    const idx = rows.indexOf(r);
+                    const show = !!revealed[idx];
+                    return (
+                      <div key={idx} className="rounded-lg bg-card/70 border border-border/40 p-2 space-y-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <code className="text-[10px] font-mono text-muted-foreground">{short(r.address)}</code>
+                          <div className="flex items-center gap-1">
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-6 w-6"
+                              onClick={() => setRevealed((p) => ({ ...p, [idx]: !p[idx] }))}
+                            >
+                              {show ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+                            </Button>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-6 w-6"
+                              onClick={() => copyText(r.pk, "Private key copied")}
+                            >
+                              <Copy className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        </div>
+                        {show && (
+                          <code className="block text-[10px] font-mono break-all whitespace-pre-wrap text-foreground/90 bg-background/50 rounded p-1.5">
+                            {r.pk}
+                          </code>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             <div className="space-y-2 max-h-[420px] overflow-y-auto">
               {rows.map((r, i) => (
                 <div key={i} className="rounded-xl bg-card/60 border border-border/40 p-3 space-y-1">
