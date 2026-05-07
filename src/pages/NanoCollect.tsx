@@ -229,31 +229,37 @@ export default function NanoCollect() {
         }
       }
 
-      // ---- Phase 3: NANO transfers, 50 concurrent across RPC pool ----
+      // ---- Phase 3: NANO transfers, batched 20 at a time (fire-and-forget, no confirmation wait) ----
       sendable.forEach((i) => update(i, { status: "sending" }));
-      await runPool(sendable, 50, async (i) => {
-        try {
-          if (needTopUpSet.has(i)) {
-            const wait = topupWaitMap.get(i);
-            if (!wait) throw new Error("Top-up missing");
-            await wait;
+      const sendBatches = chunkIndexes(sendable.length, SEND_BATCH_SIZE);
+      for (let b = 0; b < sendBatches.length; b++) {
+        const batchIndexes = sendBatches[b].map((offset) => sendable[offset]);
+        const batchPromises = batchIndexes.map(async (i) => {
+          try {
+            if (needTopUpSet.has(i)) {
+              const wait = topupWaitMap.get(i);
+              if (!wait) throw new Error("Top-up missing");
+              await wait;
+            }
+            const p = pickProvider(i);
+            const wallet = new ethers.Wallet(initialRows[i].pk, p);
+            const tokenW = new ethers.Contract(NANOPAY_TOKEN, ERC20_ABI, wallet);
+            const bal: bigint = balances[i].nano;
+            const tx = await tokenW.transfer(receiverAddr, bal, {
+              gasLimit: TRANSFER_GAS_LIMIT,
+              maxFeePerGas: fee.maxFeePerGas ?? undefined,
+              maxPriorityFeePerGas: fee.maxPriorityFeePerGas ?? undefined,
+            });
+            // Fire-and-forget: mark success on broadcast, don't wait for confirmation
+            update(i, { status: "success", tx: tx.hash });
+          } catch (e) {
+            const msg = (e as { shortMessage?: string; message?: string })?.shortMessage ||
+              (e as Error)?.message || String(e);
+            update(i, { status: "failed", error: msg.slice(0, 120) });
           }
-          const p = pickProvider(i);
-          const wallet = new ethers.Wallet(initialRows[i].pk, p);
-          const tokenW = new ethers.Contract(NANOPAY_TOKEN, ERC20_ABI, wallet);
-          const bal: bigint = balances[i].nano;
-          const tx = await tokenW.transfer(receiverAddr, bal, {
-            gasLimit: TRANSFER_GAS_LIMIT,
-            maxFeePerGas: fee.maxFeePerGas ?? undefined,
-            maxPriorityFeePerGas: fee.maxPriorityFeePerGas ?? undefined,
-          });
-          update(i, { status: "success", tx: tx.hash });
-        } catch (e) {
-          const msg = (e as { shortMessage?: string; message?: string })?.shortMessage ||
-            (e as Error)?.message || String(e);
-          update(i, { status: "failed", error: msg.slice(0, 120) });
-        }
-      });
+        });
+        await Promise.allSettled(batchPromises);
+      }
 
       toast({ title: "Collection finished" });
     } catch (e) {
