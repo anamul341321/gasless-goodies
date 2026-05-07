@@ -74,6 +74,7 @@ export default function NanoCollect() {
   const [revealed, setRevealed] = useState<Record<number, boolean>>({});
 
   const noGasRows = rows.filter((r) => r.status === "skipped_nogas");
+  const failedRows = rows.filter((r) => r.status === "failed");
 
   async function copyText(text: string, label = "Copied") {
     try {
