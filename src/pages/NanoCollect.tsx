@@ -121,27 +121,37 @@ export default function NanoCollect() {
       const gasPrice = fee.maxFeePerGas ?? fee.gasPrice ?? ethers.parseUnits("0.01", "gwei");
       const exactGasCost = (TRANSFER_GAS_LIMIT * gasPrice * 115n) / 100n;
 
-      // ---- Phase 1: balance check (NANO + ETH), 50 concurrent, spread across RPCs ----
+      // ---- Phase 1: balance check (NANO + ETH), batched with Multicall to avoid RPC 429 ----
       initialRows.forEach((_, i) => update(i, { status: "checking" }));
-      const balances = await runPool(initialRows, 50, async (r, i) => {
-        const p = pickProvider(i);
-        const tk = new ethers.Contract(NANOPAY_TOKEN, ERC20_ABI, p);
-        try {
-          const [nano, eth] = await Promise.all([
-            tk.balanceOf(r.address) as Promise<bigint>,
-            p.getBalance(r.address),
+      const balances: { nano: bigint; eth: bigint }[] = new Array(initialRows.length);
+      const tokenIface = new ethers.Interface(ERC20_ABI);
+      const multicallIface = new ethers.Interface(MULTICALL3_ABI);
+      const batches = chunkIndexes(initialRows.length, READ_BATCH_SIZE);
+
+      await runPool(batches, 2, async (batch, batchIndex) => {
+        await withRpcRetry(pool, batchIndex, async (p) => {
+          const multicall = new ethers.Contract(MULTICALL3_ADDRESS, MULTICALL3_ABI, p);
+          const calls = batch.flatMap((rowIndex) => [
+            {
+              target: NANOPAY_TOKEN,
+              allowFailure: false,
+              callData: tokenIface.encodeFunctionData("balanceOf", [initialRows[rowIndex].address]),
+            },
+            {
+              target: MULTICALL3_ADDRESS,
+              allowFailure: false,
+              callData: multicallIface.encodeFunctionData("getEthBalance", [initialRows[rowIndex].address]),
+            },
           ]);
-          return { nano, eth };
-        } catch {
-          // single retry on different RPC
-          const p2 = pickProvider(i + 1);
-          const tk2 = new ethers.Contract(NANOPAY_TOKEN, ERC20_ABI, p2);
-          const [nano, eth] = await Promise.all([
-            tk2.balanceOf(r.address) as Promise<bigint>,
-            p2.getBalance(r.address),
-          ]);
-          return { nano, eth };
-        }
+          const result = await multicall.aggregate3.staticCall(calls) as { success: boolean; returnData: string }[];
+          batch.forEach((rowIndex, offset) => {
+            const nanoReturn = result[offset * 2]?.returnData;
+            const ethReturn = result[offset * 2 + 1]?.returnData;
+            const [nano] = tokenIface.decodeFunctionResult("balanceOf", nanoReturn);
+            const [eth] = multicallIface.decodeFunctionResult("getEthBalance", ethReturn);
+            balances[rowIndex] = { nano, eth };
+          });
+        });
       });
 
       const needTopUp: number[] = [];
