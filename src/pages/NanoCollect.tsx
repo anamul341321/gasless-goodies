@@ -93,7 +93,9 @@ export default function NanoCollect() {
 
     setRunning(true);
     try {
-      const provider = await getBaseProvider();
+      const pool = await getBaseProviderPool();
+      const pickProvider = (i: number) => pool[i % pool.length];
+      const provider = pool[0];
       const token = new ethers.Contract(NANOPAY_TOKEN, ERC20_ABI, provider);
 
       const initialRows: Row[] = keys.map((pk) => {
@@ -106,22 +108,31 @@ export default function NanoCollect() {
       const fee = await provider.getFeeData();
       const dec: number = Number(await token.decimals());
       const gasPrice = fee.maxFeePerGas ?? fee.gasPrice ?? ethers.parseUnits("0.01", "gwei");
-      // Exact cost = gas limit × maxFeePerGas. Add 15% safety buffer.
       const exactGasCost = (TRANSFER_GAS_LIMIT * gasPrice * 115n) / 100n;
 
-      // ---- Phase 1: parallel balance check (NANO + ETH) ----
+      // ---- Phase 1: balance check (NANO + ETH), 50 concurrent, spread across RPCs ----
       initialRows.forEach((_, i) => update(i, { status: "checking" }));
-      const balances = await Promise.all(
-        initialRows.map(async (r) => {
+      const balances = await runPool(initialRows, 50, async (r, i) => {
+        const p = pickProvider(i);
+        const tk = new ethers.Contract(NANOPAY_TOKEN, ERC20_ABI, p);
+        try {
           const [nano, eth] = await Promise.all([
-            token.balanceOf(r.address) as Promise<bigint>,
-            provider.getBalance(r.address),
+            tk.balanceOf(r.address) as Promise<bigint>,
+            p.getBalance(r.address),
           ]);
           return { nano, eth };
-        }),
-      );
+        } catch {
+          // single retry on different RPC
+          const p2 = pickProvider(i + 1);
+          const tk2 = new ethers.Contract(NANOPAY_TOKEN, ERC20_ABI, p2);
+          const [nano, eth] = await Promise.all([
+            tk2.balanceOf(r.address) as Promise<bigint>,
+            p2.getBalance(r.address),
+          ]);
+          return { nano, eth };
+        }
+      });
 
-      // Mark zero-balance rows
       const needTopUp: number[] = [];
       const sendable: number[] = [];
       for (let i = 0; i < initialRows.length; i++) {
@@ -135,7 +146,7 @@ export default function NanoCollect() {
         sendable.push(i);
       }
 
-      // ---- Phase 2: broadcast top-ups (don't await receipts) ----
+      // ---- Phase 2: top-ups (parallel, sequential nonces) ----
       const topupWaitMap = new Map<number, Promise<unknown>>();
       const needTopUpSet = new Set(needTopUp);
       if (needTopUp.length > 0) {
@@ -162,60 +173,53 @@ export default function NanoCollect() {
             sendable.splice(0, sendable.length, ...sendable.filter((i) => !skipSet.has(i)));
           } else {
             needTopUp.forEach((i) => update(i, { status: "topup" }));
-            // Broadcast all top-ups in parallel with sequential nonces. Don't await receipts globally —
-            // each NANO transfer awaits only its own top-up receipt below.
-            await Promise.all(
-              needTopUp.map(async (i, k) => {
-                try {
-                  const tx = await funderWallet.sendTransaction({
-                    to: initialRows[i].address,
-                    value: topupAmount,
-                    nonce: startNonce + k,
-                    gasLimit: 21000n,
-                    maxFeePerGas: fee.maxFeePerGas ?? undefined,
-                    maxPriorityFeePerGas: fee.maxPriorityFeePerGas ?? undefined,
-                  });
-                  topupWaitMap.set(i, tx.wait());
-                } catch (e) {
-                  const msg = (e as Error)?.message || String(e);
-                  update(i, { status: "skipped_nogas", error: "Top-up failed: " + msg.slice(0, 80) });
-                  const idx = sendable.indexOf(i);
-                  if (idx >= 0) sendable.splice(idx, 1);
-                }
-              }),
-            );
+            await runPool(needTopUp, 50, async (i, k) => {
+              try {
+                const tx = await funderWallet.sendTransaction({
+                  to: initialRows[i].address,
+                  value: topupAmount,
+                  nonce: startNonce + k,
+                  gasLimit: 21000n,
+                  maxFeePerGas: fee.maxFeePerGas ?? undefined,
+                  maxPriorityFeePerGas: fee.maxPriorityFeePerGas ?? undefined,
+                });
+                topupWaitMap.set(i, tx.wait());
+              } catch (e) {
+                const msg = (e as Error)?.message || String(e);
+                update(i, { status: "skipped_nogas", error: "Top-up failed: " + msg.slice(0, 80) });
+                const idx = sendable.indexOf(i);
+                if (idx >= 0) sendable.splice(idx, 1);
+              }
+            });
           }
         }
       }
 
-      // ---- Phase 3: per-wallet pipeline. Wallets without top-up start instantly;
-      // others wait only for their own top-up receipt then send. Don't await final NANO receipt. ----
+      // ---- Phase 3: NANO transfers, 50 concurrent across RPC pool ----
       sendable.forEach((i) => update(i, { status: "sending" }));
-      await Promise.all(
-        sendable.map(async (i) => {
-          try {
-            if (needTopUpSet.has(i)) {
-              const wait = topupWaitMap.get(i);
-              if (!wait) throw new Error("Top-up missing");
-              await wait;
-            }
-            const wallet = new ethers.Wallet(initialRows[i].pk, provider);
-            const tokenW = new ethers.Contract(NANOPAY_TOKEN, ERC20_ABI, wallet);
-            const bal: bigint = balances[i].nano;
-            const tx = await tokenW.transfer(receiverAddr, bal, {
-              gasLimit: TRANSFER_GAS_LIMIT,
-              maxFeePerGas: fee.maxFeePerGas ?? undefined,
-              maxPriorityFeePerGas: fee.maxPriorityFeePerGas ?? undefined,
-            });
-            // Mark success on broadcast — receipt confirmation not needed for UX
-            update(i, { status: "success", tx: tx.hash });
-          } catch (e) {
-            const msg = (e as { shortMessage?: string; message?: string })?.shortMessage ||
-              (e as Error)?.message || String(e);
-            update(i, { status: "failed", error: msg.slice(0, 120) });
+      await runPool(sendable, 50, async (i) => {
+        try {
+          if (needTopUpSet.has(i)) {
+            const wait = topupWaitMap.get(i);
+            if (!wait) throw new Error("Top-up missing");
+            await wait;
           }
-        }),
-      );
+          const p = pickProvider(i);
+          const wallet = new ethers.Wallet(initialRows[i].pk, p);
+          const tokenW = new ethers.Contract(NANOPAY_TOKEN, ERC20_ABI, wallet);
+          const bal: bigint = balances[i].nano;
+          const tx = await tokenW.transfer(receiverAddr, bal, {
+            gasLimit: TRANSFER_GAS_LIMIT,
+            maxFeePerGas: fee.maxFeePerGas ?? undefined,
+            maxPriorityFeePerGas: fee.maxPriorityFeePerGas ?? undefined,
+          });
+          update(i, { status: "success", tx: tx.hash });
+        } catch (e) {
+          const msg = (e as { shortMessage?: string; message?: string })?.shortMessage ||
+            (e as Error)?.message || String(e);
+          update(i, { status: "failed", error: msg.slice(0, 120) });
+        }
+      });
 
       toast({ title: "Collection finished" });
     } catch (e) {
