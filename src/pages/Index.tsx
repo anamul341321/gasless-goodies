@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import {
   ArrowRight, Coins, Megaphone, Menu, Shield, Sparkles, Zap,
-  CheckCircle2, Clock, Wallet, Lock, TrendingUp, User, LogIn,
+  CheckCircle2, Clock, Wallet, Lock, TrendingUp, User, LogIn, Send, Download,
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import appLogo from "@/assets/logo.png";
@@ -22,6 +22,24 @@ const quickLinks = [
     cardClass: "card-indigo",
     iconClass: "icon-indigo",
     badge: "NEW",
+  },
+  {
+    to: "/nano-collect",
+    icon: Download,
+    label: "NanoPay Batch Collect",
+    desc: "Collect NanoPay (Base) from many wallets · auto gas top-up",
+    cardClass: "card-indigo",
+    iconClass: "icon-indigo",
+    badge: "BASE",
+  },
+  {
+    to: "/base-multisend",
+    icon: Send,
+    label: "Base ETH Multi-Sender",
+    desc: "Send Base ETH (gas) to many wallets from one key",
+    cardClass: "card-violet",
+    iconClass: "icon-violet",
+    badge: "BASE",
   },
 ];
 
