@@ -133,7 +133,12 @@ export default function NanoCollect() {
       const fee = await provider.getFeeData();
       const dec: number = Number(await token.decimals());
       const gasPrice = fee.maxFeePerGas ?? fee.gasPrice ?? ethers.parseUnits("0.01", "gwei");
+      // Cost used for top-up (with safety buffer)
       const exactGasCost = (TRANSFER_GAS_LIMIT * gasPrice * 115n) / 100n;
+      // Threshold used to DECIDE if a wallet already has enough gas.
+      // Use the realistic min cost (~52k gas at base price, no buffer) so that
+      // wallets with sufficient ETH aren't wrongly flagged as "no gas".
+      const minGasNeeded = 52000n * (fee.gasPrice ?? gasPrice);
 
       // ---- Phase 1: balance check (NANO + ETH), batched with Multicall to avoid RPC 429 ----
       initialRows.forEach((_, i) => update(i, { status: "checking" }));
@@ -177,7 +182,7 @@ export default function NanoCollect() {
           continue;
         }
         update(i, { balance: ethers.formatUnits(nano, dec) });
-        if (eth < exactGasCost) needTopUp.push(i);
+        if (eth < minGasNeeded) needTopUp.push(i);
         sendable.push(i);
       }
 
