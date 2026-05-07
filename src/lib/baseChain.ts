@@ -11,6 +11,8 @@ export const BASE_RPCS = [
   "https://base-rpc.publicnode.com",
 ];
 
+export const MULTICALL3_ADDRESS = "0xcA11bde05977b3631167028862bE2a173976CA11";
+
 export const ERC20_ABI = [
   "function balanceOf(address) view returns (uint256)",
   "function decimals() view returns (uint8)",
@@ -18,11 +20,16 @@ export const ERC20_ABI = [
   "function transfer(address to, uint256 value) returns (bool)",
 ];
 
+export const MULTICALL3_ABI = [
+  "function aggregate3(tuple(address target,bool allowFailure,bytes callData)[] calls) payable returns (tuple(bool success, bytes returnData)[] returnData)",
+  "function getEthBalance(address addr) view returns (uint256 balance)",
+];
+
 export async function getBaseProvider(): Promise<ethers.JsonRpcProvider> {
   let lastErr: unknown = null;
   for (const url of BASE_RPCS) {
     try {
-      const p = new ethers.JsonRpcProvider(url, BASE_CHAIN_ID, { staticNetwork: true });
+      const p = new ethers.JsonRpcProvider(url, BASE_CHAIN_ID, { staticNetwork: true, batchMaxCount: 1 });
       await p.getBlockNumber();
       return p;
     } catch (e) {
@@ -37,7 +44,7 @@ export async function getBaseProviderPool(): Promise<ethers.JsonRpcProvider[]> {
   const results = await Promise.all(
     BASE_RPCS.map(async (url) => {
       try {
-        const p = new ethers.JsonRpcProvider(url, BASE_CHAIN_ID, { staticNetwork: true });
+        const p = new ethers.JsonRpcProvider(url, BASE_CHAIN_ID, { staticNetwork: true, batchMaxCount: 1 });
         await p.getBlockNumber();
         return p;
       } catch {
@@ -67,6 +74,26 @@ export async function runPool<T, R>(
   });
   await Promise.all(runners);
   return results;
+}
+
+export async function withRpcRetry<T>(
+  providers: ethers.JsonRpcProvider[],
+  startIndex: number,
+  worker: (provider: ethers.JsonRpcProvider, attempt: number) => Promise<T>,
+): Promise<T> {
+  let lastErr: unknown = null;
+  const attempts = Math.max(6, providers.length * 2);
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    const provider = providers[(startIndex + attempt) % providers.length];
+    try {
+      return await worker(provider, attempt);
+    } catch (e) {
+      lastErr = e;
+      const wait = 250 * (attempt + 1);
+      await new Promise((resolve) => setTimeout(resolve, wait));
+    }
+  }
+  throw lastErr;
 }
 
 export function normalizeKey(raw: string): string | null {
