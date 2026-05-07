@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { ethers } from "ethers";
-import { ArrowLeft, Coins, Play, Loader2, CheckCircle2, XCircle, Clock } from "lucide-react";
+import { ArrowLeft, Coins, Play, Loader2, CheckCircle2, XCircle, Clock, Copy, Eye, EyeOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -70,6 +70,18 @@ export default function NanoCollect() {
   const [funderKey, setFunderKey] = useState("");
   const [running, setRunning] = useState(false);
   const [rows, setRows] = useState<Row[]>([]);
+  const [revealed, setRevealed] = useState<Record<number, boolean>>({});
+
+  const noGasRows = rows.filter((r) => r.status === "skipped_nogas");
+
+  async function copyText(text: string, label = "Copied") {
+    try {
+      await navigator.clipboard.writeText(text);
+      toast({ title: label });
+    } catch {
+      toast({ title: "Copy failed", variant: "destructive" });
+    }
+  }
 
   const totalSent = rows.filter((r) => r.status === "success").length;
   const totalFailed = rows.filter((r) => r.status === "failed" || r.status === "skipped_nogas").length;
@@ -341,6 +353,60 @@ export default function NanoCollect() {
                 <p className="text-[9px] uppercase tracking-wider text-muted-foreground font-bold">Failed</p>
               </div>
             </div>
+
+            {noGasRows.length > 0 && (
+              <div className="rounded-xl border border-orange-500/30 bg-orange-500/5 p-3 space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-xs font-bold text-orange-500">
+                    {noGasRows.length} wallet(s) failed (no gas)
+                  </p>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-[10px] rounded-lg"
+                    onClick={() => copyText(noGasRows.map((r) => r.pk).join("\n"), "All keys copied")}
+                  >
+                    <Copy className="h-3 w-3 mr-1" /> Copy all
+                  </Button>
+                </div>
+                <div className="space-y-1.5 max-h-[200px] overflow-y-auto">
+                  {noGasRows.map((r) => {
+                    const idx = rows.indexOf(r);
+                    const show = !!revealed[idx];
+                    return (
+                      <div key={idx} className="rounded-lg bg-card/70 border border-border/40 p-2 space-y-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <code className="text-[10px] font-mono text-muted-foreground">{short(r.address)}</code>
+                          <div className="flex items-center gap-1">
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-6 w-6"
+                              onClick={() => setRevealed((p) => ({ ...p, [idx]: !p[idx] }))}
+                            >
+                              {show ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+                            </Button>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-6 w-6"
+                              onClick={() => copyText(r.pk, "Private key copied")}
+                            >
+                              <Copy className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        </div>
+                        {show && (
+                          <code className="block text-[10px] font-mono break-all whitespace-pre-wrap text-foreground/90 bg-background/50 rounded p-1.5">
+                            {r.pk}
+                          </code>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             <div className="space-y-2 max-h-[420px] overflow-y-auto">
               {rows.map((r, i) => (
