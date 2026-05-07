@@ -25,9 +25,8 @@ type Row = {
   error?: string;
 };
 
-// Base ETH gas reserve per ERC20 transfer (Base is cheap)
-const GAS_RESERVE = ethers.parseEther("0.00003");
-const TOPUP_AMOUNT = ethers.parseEther("0.00006");
+// Typical ERC20 transfer on Base: ~52k gas. Use 65k as safe ceiling.
+const TRANSFER_GAS_LIMIT = 65000n;
 
 function short(addr: string) {
   return addr.slice(0, 6) + "..." + addr.slice(-4);
@@ -58,7 +57,6 @@ export default function NanoCollect() {
   const [funderKey, setFunderKey] = useState("");
   const [running, setRunning] = useState(false);
   const [rows, setRows] = useState<Row[]>([]);
-  const [decimals, setDecimals] = useState<number>(18);
 
   const totalSent = rows.filter((r) => r.status === "success").length;
   const totalFailed = rows.filter((r) => r.status === "failed" || r.status === "skipped_nogas").length;
@@ -85,8 +83,8 @@ export default function NanoCollect() {
       toast({ title: "Invalid receiver address", variant: "destructive" });
       return;
     }
-    const funder = normalizeKey(funderKey);
-    if (!funder) {
+    const funder = funderKey.trim() ? normalizeKey(funderKey) : null;
+    if (funderKey.trim() && !funder) {
       toast({ title: "Invalid funder private key", variant: "destructive" });
       return;
     }
@@ -94,10 +92,7 @@ export default function NanoCollect() {
     setRunning(true);
     try {
       const provider = await getBaseProvider();
-      const funderWallet = new ethers.Wallet(funder, provider);
       const token = new ethers.Contract(NANOPAY_TOKEN, ERC20_ABI, provider);
-      const dec: number = Number(await token.decimals());
-      setDecimals(dec);
 
       const initialRows: Row[] = keys.map((pk) => {
         const w = new ethers.Wallet(pk);
@@ -105,61 +100,121 @@ export default function NanoCollect() {
       });
       setRows(initialRows);
 
-      // Get funder nonce manually to avoid races
-      let funderNonce = await provider.getTransactionCount(funderWallet.address, "pending");
-      const funderBalance = await provider.getBalance(funderWallet.address);
-      let remainingFunder = funderBalance;
+      // ---- Compute exact gas cost from current network fee ----
+      const fee = await provider.getFeeData();
+      const dec: number = Number(await token.decimals());
+      const gasPrice = fee.maxFeePerGas ?? fee.gasPrice ?? ethers.parseUnits("0.01", "gwei");
+      // Exact cost = gas limit × maxFeePerGas. Add 15% safety buffer.
+      const exactGasCost = (TRANSFER_GAS_LIMIT * gasPrice * 115n) / 100n;
 
+      // ---- Phase 1: parallel balance check (NANO + ETH) ----
+      initialRows.forEach((_, i) => update(i, { status: "checking" }));
+      const balances = await Promise.all(
+        initialRows.map(async (r) => {
+          const [nano, eth] = await Promise.all([
+            token.balanceOf(r.address) as Promise<bigint>,
+            provider.getBalance(r.address),
+          ]);
+          return { nano, eth };
+        }),
+      );
+
+      // Mark zero-balance rows
+      const needTopUp: number[] = [];
+      const sendable: number[] = [];
       for (let i = 0; i < initialRows.length; i++) {
-        const row = initialRows[i];
-        const wallet = new ethers.Wallet(row.pk, provider);
-        try {
-          update(i, { status: "checking" });
-          const bal: bigint = await token.balanceOf(wallet.address);
-          if (bal === 0n) {
-            update(i, { status: "skipped_zero", balance: "0" });
-            continue;
-          }
-          update(i, { balance: ethers.formatUnits(bal, dec) });
+        const { nano, eth } = balances[i];
+        if (nano === 0n) {
+          update(i, { status: "skipped_zero", balance: "0" });
+          continue;
+        }
+        update(i, { balance: ethers.formatUnits(nano, dec) });
+        if (eth < exactGasCost) needTopUp.push(i);
+        sendable.push(i);
+      }
 
-          let ethBal = await provider.getBalance(wallet.address);
-          if (ethBal < GAS_RESERVE) {
-            // top-up from funder
-            if (remainingFunder < TOPUP_AMOUNT + GAS_RESERVE) {
+      // ---- Phase 2: parallel top-up (only if funder provided) ----
+      if (needTopUp.length > 0) {
+        if (!funder) {
+          for (const i of needTopUp) {
+            update(i, { status: "skipped_nogas", error: "No gas — pre-fund wallet or provide funder key" });
+          }
+          // Remove from sendable
+          const skipSet = new Set(needTopUp);
+          sendable.splice(0, sendable.length, ...sendable.filter((i) => !skipSet.has(i)));
+        } else {
+          const funderWallet = new ethers.Wallet(funder, provider);
+          const funderBal = await provider.getBalance(funderWallet.address);
+          // Top-up amount: exact gas needed for one transfer (no waste)
+          const topupAmount = exactGasCost;
+          const totalNeed = topupAmount * BigInt(needTopUp.length);
+          // Funder also pays gas for each top-up tx (~21k × gasPrice)
+          const funderGas = 21000n * gasPrice * BigInt(needTopUp.length) * 120n / 100n;
+          if (funderBal < totalNeed + funderGas) {
+            for (const i of needTopUp) {
               update(i, { status: "skipped_nogas", error: "Funder out of ETH" });
-              continue;
             }
-            update(i, { status: "topup" });
-            try {
-              const fee = await provider.getFeeData();
-              const tx = await funderWallet.sendTransaction({
-                to: wallet.address,
-                value: TOPUP_AMOUNT,
-                nonce: funderNonce++,
-                maxFeePerGas: fee.maxFeePerGas ?? undefined,
-                maxPriorityFeePerGas: fee.maxPriorityFeePerGas ?? undefined,
-              });
-              await tx.wait();
-              remainingFunder -= TOPUP_AMOUNT + GAS_RESERVE;
-              ethBal = await provider.getBalance(wallet.address);
-            } catch (e) {
-              const msg = (e as Error)?.message || String(e);
-              update(i, { status: "skipped_nogas", error: "Top-up failed: " + msg.slice(0, 80) });
-              continue;
-            }
+            const skipSet = new Set(needTopUp);
+            sendable.splice(0, sendable.length, ...sendable.filter((i) => !skipSet.has(i)));
+          } else {
+            needTopUp.forEach((i) => update(i, { status: "topup" }));
+            const startNonce = await provider.getTransactionCount(funderWallet.address, "pending");
+            // Broadcast all top-ups in parallel with sequential nonces, then await receipts
+            const topupTxs = await Promise.all(
+              needTopUp.map((i, k) =>
+                funderWallet.sendTransaction({
+                  to: initialRows[i].address,
+                  value: topupAmount,
+                  nonce: startNonce + k,
+                  gasLimit: 21000n,
+                  maxFeePerGas: fee.maxFeePerGas ?? undefined,
+                  maxPriorityFeePerGas: fee.maxPriorityFeePerGas ?? undefined,
+                }).then((tx) => ({ ok: true as const, i, tx })).catch((e) => ({ ok: false as const, i, err: e })),
+              ),
+            );
+            await Promise.all(
+              topupTxs.map(async (r) => {
+                if (!r.ok) {
+                  update(r.i, { status: "skipped_nogas", error: "Top-up failed: " + ((r.err as Error)?.message || "").slice(0, 80) });
+                  const idx = sendable.indexOf(r.i);
+                  if (idx >= 0) sendable.splice(idx, 1);
+                  return;
+                }
+                try {
+                  await r.tx.wait();
+                } catch (e) {
+                  update(r.i, { status: "skipped_nogas", error: "Top-up not mined" });
+                  const idx = sendable.indexOf(r.i);
+                  if (idx >= 0) sendable.splice(idx, 1);
+                }
+              }),
+            );
           }
-
-          update(i, { status: "sending" });
-          const tokenW = new ethers.Contract(NANOPAY_TOKEN, ERC20_ABI, wallet);
-          const tx = await tokenW.transfer(receiverAddr, bal);
-          await tx.wait();
-          update(i, { status: "success", tx: tx.hash });
-        } catch (e) {
-          const msg = (e as { shortMessage?: string; message?: string })?.shortMessage ||
-            (e as Error)?.message || String(e);
-          update(i, { status: "failed", error: msg.slice(0, 120) });
         }
       }
+
+      // ---- Phase 3: parallel transfer of NANO from each source wallet ----
+      sendable.forEach((i) => update(i, { status: "sending" }));
+      await Promise.all(
+        sendable.map(async (i) => {
+          try {
+            const wallet = new ethers.Wallet(initialRows[i].pk, provider);
+            const tokenW = new ethers.Contract(NANOPAY_TOKEN, ERC20_ABI, wallet);
+            const bal: bigint = balances[i].nano;
+            const tx = await tokenW.transfer(receiverAddr, bal, {
+              gasLimit: TRANSFER_GAS_LIMIT,
+              maxFeePerGas: fee.maxFeePerGas ?? undefined,
+              maxPriorityFeePerGas: fee.maxPriorityFeePerGas ?? undefined,
+            });
+            await tx.wait();
+            update(i, { status: "success", tx: tx.hash });
+          } catch (e) {
+            const msg = (e as { shortMessage?: string; message?: string })?.shortMessage ||
+              (e as Error)?.message || String(e);
+            update(i, { status: "failed", error: msg.slice(0, 120) });
+          }
+        }),
+      );
 
       toast({ title: "Collection finished" });
     } catch (e) {
@@ -185,7 +240,7 @@ export default function NanoCollect() {
               NanoPay Batch Collect
             </h1>
             <p className="text-[11px] text-muted-foreground font-semibold truncate">
-              Base network · auto gas top-up
+              Base · exact gas · parallel
             </p>
           </div>
         </div>
@@ -195,16 +250,19 @@ export default function NanoCollect() {
         <div className="color-card card-violet p-4 space-y-4">
           <div className="space-y-2">
             <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-              Funder Private Key (Base ETH for gas top-ups)
+              Funder Private Key (optional — only if source wallets need gas)
             </label>
             <Input
               type="password"
-              placeholder="0x..."
+              placeholder="Leave empty if wallets already have gas"
               value={funderKey}
               onChange={(e) => setFunderKey(e.target.value)}
               disabled={running}
               className="font-mono text-xs"
             />
+            <p className="text-[10px] text-muted-foreground">
+              If left empty, wallets without gas will be skipped. If provided, only the EXACT gas amount is sent (no waste).
+            </p>
           </div>
 
           <div className="space-y-2">
@@ -232,7 +290,7 @@ export default function NanoCollect() {
               className="font-mono text-xs min-h-[160px]"
             />
             <p className="text-[10px] text-muted-foreground">
-              {parseKeyList(keysText).length} valid keys detected · keys never leave your browser
+              {parseKeyList(keysText).length} valid keys · all transfers run in parallel · keys never leave your browser
             </p>
           </div>
 
@@ -288,7 +346,7 @@ export default function NanoCollect() {
           <p className="font-bold text-foreground text-xs mb-1.5 flex items-center gap-1.5">
             <Coins className="h-3.5 w-3.5 text-primary" /> How it works
           </p>
-          Each source wallet's full NanoPay balance is transferred to the receiver. If a source wallet has no Base ETH for gas, a small amount is auto-sent from your funder key. Everything runs in your browser — keys never leave this device.
+          Exact gas (~$0.001 per transfer) calculated live from network fee. All transfers run in parallel — 50 wallets finish in seconds, not minutes. Funder key optional.
           <span className="block mt-1 font-mono text-[10px]">Token: {NANOPAY_TOKEN}</span>
         </div>
       </main>
