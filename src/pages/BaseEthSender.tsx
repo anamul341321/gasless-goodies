@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/hooks/use-toast";
-import { getBaseProvider, parseAddressList, normalizeKey } from "@/lib/baseChain";
+import { getBaseProvider, parseAddressList, normalizeKey, runPool } from "@/lib/baseChain";
 
 type Status = "pending" | "sending" | "success" | "failed";
 
@@ -104,27 +104,27 @@ export default function BaseEthSender() {
       const initialRows: Row[] = recipients.map((a) => ({ address: a, status: "pending" as Status }));
       setRows(initialRows);
 
-      let nonce = await provider.getTransactionCount(wallet.address, "pending");
+      const startNonce = await provider.getTransactionCount(wallet.address, "pending");
+      const fee = await provider.getFeeData();
 
-      for (let i = 0; i < recipients.length; i++) {
-        update(i, { status: "sending" });
+      recipients.forEach((_, i) => update(i, { status: "sending" }));
+      await runPool(recipients, 50, async (to, i) => {
         try {
-          const fee = await provider.getFeeData();
           const tx = await wallet.sendTransaction({
-            to: recipients[i],
+            to,
             value: amountWei,
-            nonce: nonce++,
+            nonce: startNonce + i,
             maxFeePerGas: fee.maxFeePerGas ?? undefined,
             maxPriorityFeePerGas: fee.maxPriorityFeePerGas ?? undefined,
           });
-          await tx.wait();
+          // Mark success on broadcast — no global wait needed
           update(i, { status: "success", tx: tx.hash });
         } catch (e) {
           const msg = (e as { shortMessage?: string; message?: string })?.shortMessage ||
             (e as Error)?.message || String(e);
           update(i, { status: "failed", error: msg.slice(0, 120) });
         }
-      }
+      });
 
       toast({ title: "Multi-send finished" });
     } catch (e) {
