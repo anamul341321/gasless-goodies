@@ -8,10 +8,12 @@ import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/hooks/use-toast";
 import {
   getBaseProvider,
+  getBaseProviderPool,
   parseKeyList,
   normalizeKey,
   NANOPAY_TOKEN,
   ERC20_ABI,
+  runPool,
 } from "@/lib/baseChain";
 
 type Status = "pending" | "checking" | "topup" | "sending" | "success" | "skipped_zero" | "skipped_nogas" | "failed";
