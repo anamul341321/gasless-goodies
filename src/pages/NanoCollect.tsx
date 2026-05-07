@@ -174,8 +174,9 @@ export default function NanoCollect() {
             );
             await Promise.all(
               topupTxs.map(async (r) => {
-                if (!r.ok) {
-                  update(r.i, { status: "skipped_nogas", error: "Top-up failed: " + ((r.err as Error)?.message || "").slice(0, 80) });
+                if (r.ok === false) {
+                  const errMsg = (r.err as Error)?.message || String(r.err);
+                  update(r.i, { status: "skipped_nogas", error: "Top-up failed: " + errMsg.slice(0, 80) });
                   const idx = sendable.indexOf(r.i);
                   if (idx >= 0) sendable.splice(idx, 1);
                   return;
