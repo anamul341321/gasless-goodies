@@ -70,6 +70,18 @@ export default function NanoCollect() {
   const [funderKey, setFunderKey] = useState("");
   const [running, setRunning] = useState(false);
   const [rows, setRows] = useState<Row[]>([]);
+  const [revealed, setRevealed] = useState<Record<number, boolean>>({});
+
+  const noGasRows = rows.filter((r) => r.status === "skipped_nogas");
+
+  async function copyText(text: string, label = "Copied") {
+    try {
+      await navigator.clipboard.writeText(text);
+      toast({ title: label });
+    } catch {
+      toast({ title: "Copy failed", variant: "destructive" });
+    }
+  }
 
   const totalSent = rows.filter((r) => r.status === "success").length;
   const totalFailed = rows.filter((r) => r.status === "failed" || r.status === "skipped_nogas").length;
