@@ -445,7 +445,7 @@ export default function NanoCollect() {
           <p className="font-bold text-foreground text-xs mb-1.5 flex items-center gap-1.5">
             <Coins className="h-3.5 w-3.5 text-primary" /> How it works
           </p>
-          Exact gas (~$0.001 per transfer) calculated live from network fee. All transfers run in parallel — 50 wallets finish in seconds, not minutes. Funder key optional.
+          Exact gas (~$0.001 per transfer) calculated live from network fee. Transfers run in batches of 20 — fire-and-forget, no confirmation wait. Funder key optional.
           <span className="block mt-1 font-mono text-[10px]">Token: {NANOPAY_TOKEN}</span>
         </div>
       </main>
