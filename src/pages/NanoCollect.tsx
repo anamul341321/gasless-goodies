@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { ethers } from "ethers";
-import { ArrowLeft, Coins, Play, Loader2, CheckCircle2, XCircle, Clock } from "lucide-react";
+import { ArrowLeft, Coins, Play, Loader2, CheckCircle2, XCircle, Clock, Copy, Eye, EyeOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
