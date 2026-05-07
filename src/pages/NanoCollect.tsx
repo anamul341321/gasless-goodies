@@ -32,6 +32,7 @@ type Row = {
 // Typical ERC20 transfer on Base: ~52k gas. Use 65k as safe ceiling.
 const TRANSFER_GAS_LIMIT = 65000n;
 const READ_BATCH_SIZE = 120;
+const SEND_BATCH_SIZE = 20;
 
 function short(addr: string) {
   return addr.slice(0, 6) + "..." + addr.slice(-4);
