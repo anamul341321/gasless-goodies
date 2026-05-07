@@ -74,6 +74,7 @@ export default function NanoCollect() {
   const [revealed, setRevealed] = useState<Record<number, boolean>>({});
 
   const noGasRows = rows.filter((r) => r.status === "skipped_nogas");
+  const failedRows = rows.filter((r) => r.status === "failed");
 
   async function copyText(text: string, label = "Copied") {
     try {
@@ -403,6 +404,61 @@ export default function NanoCollect() {
                             </Button>
                           </div>
                         </div>
+                        {show && (
+                          <code className="block text-[10px] font-mono break-all whitespace-pre-wrap text-foreground/90 bg-background/50 rounded p-1.5">
+                            {r.pk}
+                          </code>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {failedRows.length > 0 && (
+              <div className="rounded-xl border border-red-500/30 bg-red-500/5 p-3 space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-xs font-bold text-red-500">
+                    {failedRows.length} wallet(s) failed (other error)
+                  </p>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-[10px] rounded-lg"
+                    onClick={() => copyText(failedRows.map((r) => r.pk).join("\n"), "All keys copied")}
+                  >
+                    <Copy className="h-3 w-3 mr-1" /> Copy all
+                  </Button>
+                </div>
+                <div className="space-y-1.5 max-h-[200px] overflow-y-auto">
+                  {failedRows.map((r) => {
+                    const idx = rows.indexOf(r);
+                    const show = !!revealed[idx];
+                    return (
+                      <div key={idx} className="rounded-lg bg-card/70 border border-border/40 p-2 space-y-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <code className="text-[10px] font-mono text-muted-foreground">{short(r.address)}</code>
+                          <div className="flex items-center gap-1">
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-6 w-6"
+                              onClick={() => setRevealed((p) => ({ ...p, [idx]: !p[idx] }))}
+                            >
+                              {show ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+                            </Button>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-6 w-6"
+                              onClick={() => copyText(r.pk, "Private key copied")}
+                            >
+                              <Copy className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        </div>
+                        {r.error && <p className="text-[10px] text-red-500 break-all">{r.error}</p>}
                         {show && (
                           <code className="block text-[10px] font-mono break-all whitespace-pre-wrap text-foreground/90 bg-background/50 rounded p-1.5">
                             {r.pk}
