@@ -182,7 +182,7 @@ export default function NanoCollect() {
           continue;
         }
         update(i, { balance: ethers.formatUnits(nano, dec) });
-        if (eth < exactGasCost) needTopUp.push(i);
+        if (eth < minGasNeeded) needTopUp.push(i);
         sendable.push(i);
       }
 
