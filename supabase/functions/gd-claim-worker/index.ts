@@ -42,9 +42,10 @@ const IDENTITY_ABI = ["function isWhitelisted(address account) view returns (boo
 
 const WORKER_TRIGGER_URL = `${SUPABASE_URL}/functions/v1/gd-claim-worker`;
 
-const BATCH_SIZE = 100;             // wallets per parallel wave
-const RECEIPT_TIMEOUT_MS = 90_000;  // wait at most 90s for each receipt
+const BATCH_SIZE = 20;              // wallets per parallel wave
+const RECEIPT_TIMEOUT_MS = 60_000;  // wait at most 60s for each receipt
 const WORKER_TIME_BUDGET_MS = 110_000;
+const STALE_CLAIMING_MINUTES = 3;
 
 function sbHeaders(extra: Record<string, string> = {}) {
   return {
@@ -107,6 +108,19 @@ function formatGasNeed(wei: bigint): string {
 }
 
 async function pickPendingBatch(): Promise<QueueRow[]> {
+  const staleCutoff = new Date(Date.now() - STALE_CLAIMING_MINUTES * 60_000).toISOString();
+  await fetch(
+    `${SUPABASE_URL}/rest/v1/gd_claim_queue?status=eq.claiming&updated_at=lt.${encodeURIComponent(staleCutoff)}`,
+    {
+      method: "PATCH",
+      headers: sbHeaders({ Prefer: "return=minimal" }),
+      body: JSON.stringify({
+        status: "pending",
+        updated_at: new Date().toISOString(),
+      }),
+    }
+  ).catch((e) => console.warn("stale claiming reset failed", e));
+
   const findRes = await fetch(
     `${SUPABASE_URL}/rest/v1/gd_claim_queue?status=eq.pending&select=id,job_id,wallet_address,private_key,attempts&order=created_at.asc&limit=${BATCH_SIZE}`,
     { headers: sbHeaders() }
