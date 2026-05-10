@@ -321,11 +321,11 @@ async function processLoop(): Promise<{ processed: number; remaining: boolean }>
   let processed = 0;
 
   while (Date.now() - startedAt < WORKER_TIME_BUDGET_MS) {
+    if (Date.now() - startedAt > WORKER_TIME_BUDGET_MS - RECEIPT_TIMEOUT_MS - 10_000) break;
     const batch = await pickPendingBatch();
     if (batch.length === 0) break;
     await processWave(batch);
     processed += batch.length;
-    if (batch.length < BATCH_SIZE) break;
   }
 
   const remCheck = await fetch(
