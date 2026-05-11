@@ -198,16 +198,15 @@ async function claimOne(row: QueueRow): Promise<{
 
     let tx;
     try {
-      // Legacy gasPrice avoids EIP-1559 max-fee over-reserving on Celo.
-      // Gas limit remains node-estimated; nothing is hardcoded.
+      // Let the Celo RPC populate the transaction fee fields. Forcing a
+      // legacy gasPrice can make UBIScheme.claim() fail with an opaque
+      // `require(false)` even when the wallet has enough CELO.
       const feeData = await provider.getFeeData();
-      const overrides: Record<string, bigint> = {};
-      if (feeData.gasPrice) overrides.gasPrice = feeData.gasPrice;
-
-      if (overrides.gasPrice) {
-        const estimatedGas = await (ubi as any).claim.estimateGas(overrides);
+      const estimatedGas = BigInt(await (ubi as any).claim.estimateGas());
+      const gasUnitPrice = feeData.maxFeePerGas ?? feeData.gasPrice;
+      if (gasUnitPrice) {
         const balance = await provider.getBalance(addr);
-        const required = BigInt(estimatedGas) * overrides.gasPrice;
+        const required = estimatedGas * gasUnitPrice;
         if (balance < required) {
           return {
             status: "failed_gas",
@@ -216,7 +215,7 @@ async function claimOne(row: QueueRow): Promise<{
         }
       }
 
-      tx = await (ubi as any).claim(overrides);
+      tx = await (ubi as any).claim({ gasLimit: (estimatedGas * 120n) / 100n });
     } catch (e: any) {
       const cls = classifyError(e);
       const msg = (e?.shortMessage || e?.reason || e?.message || "claim revert").slice(0, 240);
