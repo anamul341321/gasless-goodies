@@ -20,3 +20,16 @@ verify_jwt = false
 
 [functions.siwe-verify]
 verify_jwt = false
+
+[functions.daily-claim-wallets]
+verify_jwt = false
+
+[functions.daily-claim-status]
+verify_jwt = false
+
+[functions.daily-claim-scheduler]
+verify_jwt = false
+
+[functions.daily-claim-worker]
+verify_jwt = false
+
