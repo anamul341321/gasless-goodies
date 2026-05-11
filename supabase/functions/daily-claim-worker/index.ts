@@ -240,59 +240,118 @@ async function runPhase1(runId: string, deadline: number) {
   return true;
 }
 
-async function runGasRequesting(runId: string, deadline: number) {
-  while (Date.now() < deadline - GAS_GAP_MS - 5_000) {
-    const { data: rows } = await admin
-      .from("daily_claim_run_items")
-      .select("id, wallet_address")
-      .eq("run_id", runId)
-      .eq("phase1_status", "failed_gas")
-      .or("gas_request_status.is.null,gas_request_status.eq.pending")
-      .limit(1);
-    if (!rows || rows.length === 0) break;
-    const item = rows[0] as any;
+async function runGasRequesting(runId: string, _deadline: number) {
+  // Bulk-create ONE gas_load job for all failed_gas wallets needing gas.
+  // The existing gas-loader-worker (pg_cron, proxy IP rotation, 3s delay)
+  // will process them in the background. We then wait until all queued
+  // wallets reach a terminal status, marking each item's gas_request_status.
 
-    await admin.from("daily_claim_run_items").update({
-      gas_request_status: "requested",
-      gas_requested_at: new Date().toISOString(),
-    }).eq("id", item.id);
+  // Find items still needing a gas request
+  const { data: needGas } = await admin
+    .from("daily_claim_run_items")
+    .select("id, wallet_address")
+    .eq("run_id", runId)
+    .eq("phase1_status", "failed_gas")
+    .eq("final_status", "pending")
+    .is("gas_request_status", null);
 
-    try {
-      const res = await fetch(FREE_GAS_URL, {
+  if (needGas && needGas.length > 0) {
+    // Create one job
+    const jobRes = await admin.from("gas_load_jobs").insert({
+      total: needGas.length,
+      delay_ms: 3000,
+      status: "pending",
+      batch_name: `daily-claim-${runId.slice(0, 8)}`,
+    }).select("id").single();
+
+    if (jobRes.data?.id) {
+      const jobId = jobRes.data.id;
+      const queueRows = needGas.map((r: any) => ({
+        job_id: jobId,
+        wallet_address: r.wallet_address,
+        status: "pending",
+      }));
+      const BATCH = 500;
+      for (let i = 0; i < queueRows.length; i += BATCH) {
+        await admin.from("gas_load_queue").insert(queueRows.slice(i, i + BATCH));
+      }
+      // Mark items as 'requested' with the job id stored in gas_tx temporarily
+      await admin
+        .from("daily_claim_run_items")
+        .update({
+          gas_request_status: "requested",
+          gas_requested_at: new Date().toISOString(),
+          gas_tx: jobId, // store job id so we can poll
+        })
+        .in("id", needGas.map((r: any) => r.id));
+
+      // Kick the gas worker
+      fetch(`${SUPABASE_URL}/functions/v1/gas-loader-worker`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", apikey: ANON_KEY, Authorization: `Bearer ${ANON_KEY}` },
-        body: JSON.stringify({ wallet_address: item.wallet_address, source: "daily-claim" }),
-      });
-      const body: any = await res.json().catch(() => ({}));
-      const ok = res.ok && (body?.ok || body?.status === "success" || body?.tx_hash);
-      await admin.from("daily_claim_run_items").update({
-        gas_request_status: ok ? "done" : "error",
-        gas_tx: body?.tx_hash || null,
-        phase1_error: ok ? null : (body?.error || `gas request failed (${res.status})`).toString().slice(0, 240),
-      }).eq("id", item.id);
-    } catch (e: any) {
-      await admin.from("daily_claim_run_items").update({
-        gas_request_status: "error",
-        phase1_error: (e?.message || String(e)).slice(0, 240),
-      }).eq("id", item.id);
+        headers: { Authorization: `Bearer ${SERVICE_KEY}`, apikey: SERVICE_KEY, "Content-Type": "application/json" },
+        body: JSON.stringify({ trigger: "daily-claim", job_id: jobId }),
+      }).catch(() => {});
     }
-
-    await new Promise((r) => setTimeout(r, GAS_GAP_MS));
   }
 
-  // All requested?
-  const { count: leftToRequest } = await admin
+  // Poll: count items still 'requested'. If gas-loader queue rows for
+  // those wallets are all in terminal status, mark our items 'done'/'error'.
+  const { data: requested } = await admin
+    .from("daily_claim_run_items")
+    .select("id, wallet_address, gas_tx")
+    .eq("run_id", runId)
+    .eq("gas_request_status", "requested");
+
+  if (requested && requested.length > 0) {
+    // Group by job id
+    const byJob = new Map<string, { id: string; wallet_address: string }[]>();
+    for (const r of requested as any[]) {
+      const j = r.gas_tx;
+      if (!j) continue;
+      if (!byJob.has(j)) byJob.set(j, []);
+      byJob.get(j)!.push({ id: r.id, wallet_address: r.wallet_address });
+    }
+    for (const [jobId, items] of byJob.entries()) {
+      const addrs = items.map((i) => i.wallet_address.toLowerCase());
+      const { data: queueRows } = await admin
+        .from("gas_load_queue")
+        .select("wallet_address, status, tx_hash, error_message")
+        .eq("job_id", jobId);
+      const map = new Map<string, any>();
+      for (const q of queueRows || []) map.set(String(q.wallet_address).toLowerCase(), q);
+      for (const it of items) {
+        const q = map.get(it.wallet_address.toLowerCase());
+        if (!q) continue;
+        if (q.status === "success") {
+          await admin.from("daily_claim_run_items").update({
+            gas_request_status: "done",
+            gas_tx: q.tx_hash || null,
+          }).eq("id", it.id);
+        } else if (q.status === "failed" || q.status === "skipped") {
+          await admin.from("daily_claim_run_items").update({
+            gas_request_status: "error",
+            gas_tx: null,
+            phase1_error: (q.error_message || "gas load failed").slice(0, 240),
+          }).eq("id", it.id);
+        }
+      }
+    }
+  }
+
+  // Anything still requested? Re-poll later.
+  const { count: leftRequested } = await admin
     .from("daily_claim_run_items")
     .select("id", { count: "exact", head: true })
     .eq("run_id", runId)
-    .eq("phase1_status", "failed_gas")
-    .or("gas_request_status.is.null,gas_request_status.eq.pending");
-  if ((leftToRequest || 0) > 0) {
-    selfKick(runId, "gas_requesting");
+    .eq("gas_request_status", "requested");
+
+  if ((leftRequested || 0) > 0) {
+    // Re-kick after a short wait so we poll again
+    setTimeout(() => selfKick(runId, "gas_requesting"), 15_000);
     return false;
   }
 
-  // Move to waiting_30m
+  // All gas requests complete (done or error). Move to waiting_30m.
   await admin.from("daily_claim_runs").update({
     phase: "waiting_30m",
     gas_requests_done_at: new Date().toISOString(),
