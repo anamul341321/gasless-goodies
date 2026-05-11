@@ -142,6 +142,167 @@ export type Database = {
           },
         ]
       }
+      daily_claim_run_items: {
+        Row: {
+          attempts: number
+          created_at: string
+          encrypted_key: string | null
+          final_status: string
+          gas_request_status: string | null
+          gas_requested_at: string | null
+          gas_tx: string | null
+          id: string
+          owner_user_id: string
+          phase1_error: string | null
+          phase1_status: string
+          phase1_tx: string | null
+          phase2_error: string | null
+          phase2_status: string | null
+          phase2_tx: string | null
+          run_id: string
+          updated_at: string
+          wallet_address: string
+        }
+        Insert: {
+          attempts?: number
+          created_at?: string
+          encrypted_key?: string | null
+          final_status?: string
+          gas_request_status?: string | null
+          gas_requested_at?: string | null
+          gas_tx?: string | null
+          id?: string
+          owner_user_id: string
+          phase1_error?: string | null
+          phase1_status?: string
+          phase1_tx?: string | null
+          phase2_error?: string | null
+          phase2_status?: string | null
+          phase2_tx?: string | null
+          run_id: string
+          updated_at?: string
+          wallet_address: string
+        }
+        Update: {
+          attempts?: number
+          created_at?: string
+          encrypted_key?: string | null
+          final_status?: string
+          gas_request_status?: string | null
+          gas_requested_at?: string | null
+          gas_tx?: string | null
+          id?: string
+          owner_user_id?: string
+          phase1_error?: string | null
+          phase1_status?: string
+          phase1_tx?: string | null
+          phase2_error?: string | null
+          phase2_status?: string | null
+          phase2_tx?: string | null
+          run_id?: string
+          updated_at?: string
+          wallet_address?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "daily_claim_run_items_run_id_fkey"
+            columns: ["run_id"]
+            isOneToOne: false
+            referencedRelation: "daily_claim_runs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      daily_claim_runs: {
+        Row: {
+          failed_gas: number
+          failed_other: number
+          final_failed: number
+          finished_at: string | null
+          gas_requests_done_at: string | null
+          id: string
+          last_error: string | null
+          owner_user_id: string
+          phase: string
+          phase1_done_at: string | null
+          retry_started_at: string | null
+          run_date: string
+          started_at: string
+          success: number
+          total: number
+          updated_at: string
+        }
+        Insert: {
+          failed_gas?: number
+          failed_other?: number
+          final_failed?: number
+          finished_at?: string | null
+          gas_requests_done_at?: string | null
+          id?: string
+          last_error?: string | null
+          owner_user_id: string
+          phase?: string
+          phase1_done_at?: string | null
+          retry_started_at?: string | null
+          run_date: string
+          started_at?: string
+          success?: number
+          total?: number
+          updated_at?: string
+        }
+        Update: {
+          failed_gas?: number
+          failed_other?: number
+          final_failed?: number
+          finished_at?: string | null
+          gas_requests_done_at?: string | null
+          id?: string
+          last_error?: string | null
+          owner_user_id?: string
+          phase?: string
+          phase1_done_at?: string | null
+          retry_started_at?: string | null
+          run_date?: string
+          started_at?: string
+          success?: number
+          total?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      daily_claim_wallets: {
+        Row: {
+          created_at: string
+          encrypted_key: string
+          id: string
+          is_active: boolean
+          label: string | null
+          owner_user_id: string
+          updated_at: string
+          wallet_address: string
+        }
+        Insert: {
+          created_at?: string
+          encrypted_key: string
+          id?: string
+          is_active?: boolean
+          label?: string | null
+          owner_user_id: string
+          updated_at?: string
+          wallet_address: string
+        }
+        Update: {
+          created_at?: string
+          encrypted_key?: string
+          id?: string
+          is_active?: boolean
+          label?: string | null
+          owner_user_id?: string
+          updated_at?: string
+          wallet_address?: string
+        }
+        Relationships: []
+      }
       farmer_jobs: {
         Row: {
           created_at: string
