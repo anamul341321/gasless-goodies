@@ -271,6 +271,7 @@ async function claimNextWallet(): Promise<{
   job_id: string;
   wallet_address: string;
   delay_ms: number;
+  network: Network;
 } | null> {
   // If an invocation timed out or crashed after marking rows as processing,
   // those wallets would otherwise stay stuck forever. Re-open stale rows so
