@@ -31,16 +31,20 @@ export default function SecretTools() {
   const [checking, setChecking] = useState(false);
   const pollRef = useRef<number | null>(null);
 
-  // On mount: verify saved fingerprint still matches the current server password.
+  // On mount: trust saved fingerprint. Only revoke if server returns a DIFFERENT fingerprint.
   useEffect(() => {
     let mounted = true;
     (async () => {
       const saved = localStorage.getItem(FP_KEY);
       if (!saved) { if (mounted) setUnlocked(false); return; }
+      // Optimistically unlock so network hiccups don't lock the user out.
+      if (mounted) setUnlocked(true);
       const serverFp = await fetchServerFingerprint();
       if (!mounted) return;
-      if (serverFp && serverFp === saved) setUnlocked(true);
-      else { localStorage.removeItem(FP_KEY); setUnlocked(false); }
+      if (serverFp && serverFp !== saved) {
+        localStorage.removeItem(FP_KEY);
+        setUnlocked(false);
+      }
     })();
     return () => { mounted = false; };
   }, []);
@@ -54,7 +58,9 @@ export default function SecretTools() {
       const saved = localStorage.getItem(FP_KEY);
       const serverFp = await fetchServerFingerprint();
       if (!active) return;
-      if (!saved || !serverFp || saved !== serverFp) {
+      // Only lock when we successfully fetched a server fingerprint AND it differs.
+      // Network errors / null responses must NOT lock the user out.
+      if (saved && serverFp && saved !== serverFp) {
         localStorage.removeItem(FP_KEY);
         setUnlocked(false);
         toast({ title: "Access revoked", description: "The password was changed by admin.", variant: "destructive" });
