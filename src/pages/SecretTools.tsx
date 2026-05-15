@@ -54,7 +54,9 @@ export default function SecretTools() {
       const saved = localStorage.getItem(FP_KEY);
       const serverFp = await fetchServerFingerprint();
       if (!active) return;
-      if (!saved || !serverFp || saved !== serverFp) {
+      // Only lock when we successfully fetched a server fingerprint AND it differs.
+      // Network errors / null responses must NOT lock the user out.
+      if (saved && serverFp && saved !== serverFp) {
         localStorage.removeItem(FP_KEY);
         setUnlocked(false);
         toast({ title: "Access revoked", description: "The password was changed by admin.", variant: "destructive" });
