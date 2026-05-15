@@ -80,6 +80,7 @@ Deno.serve(async (req) => {
   );
   const batchName: string =
     typeof body?.batch_name === "string" ? body.batch_name.trim() : "";
+  const network: "celo" | "xdc" = body?.network === "xdc" ? "xdc" : "celo";
 
   if (!batchName || batchName.length < 1 || batchName.length > 80) {
     return new Response(
@@ -124,6 +125,7 @@ Deno.serve(async (req) => {
       delay_ms: delayMs,
       status: "pending",
       batch_name: batchName,
+      network,
     }),
   });
 
