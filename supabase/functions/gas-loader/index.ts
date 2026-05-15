@@ -29,8 +29,8 @@ Deno.serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
-  const adminPassword = Deno.env.get("ADMIN_PASSWORD");
-  const provided = req.headers.get("x-admin-password");
+  const adminPassword = Deno.env.get("ADMIN_PASSWORD")?.trim();
+  const provided = req.headers.get("x-admin-password")?.trim();
   if (!adminPassword || provided !== adminPassword) {
     return new Response(JSON.stringify({ error: "unauthorized" }), {
       status: 401,
