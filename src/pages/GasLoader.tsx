@@ -286,6 +286,7 @@ const GasLoader = () => {
           wallets: parsed,
           delay_ms: delaySec * 1000,
           batch_name: name,
+          network,
         }),
       });
       if (res.status === 401) {
