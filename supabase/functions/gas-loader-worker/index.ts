@@ -11,6 +11,12 @@ const corsHeaders = {
 
 const GD_FAUCET_URL = "https://goodserver.gooddollar.org/verify/topWallet";
 const CELO_RPC_URL = "https://forno.celo.org";
+const XDC_RPC_URL = "https://rpc.xinfin.network";
+
+type Network = "celo" | "xdc";
+const CHAIN_IDS: Record<Network, number> = { celo: 42220, xdc: 50 };
+const RPC_URLS: Record<Network, string> = { celo: CELO_RPC_URL, xdc: XDC_RPC_URL };
+const NATIVE_LABEL: Record<Network, string> = { celo: "CELO", xdc: "XDC" };
 const WEBSHARE_HOST = "p.webshare.io";
 const WEBSHARE_PORT = "80";
 const BALANCE_VERIFY_ATTEMPTS = 8;
