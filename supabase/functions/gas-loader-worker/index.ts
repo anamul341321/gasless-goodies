@@ -11,6 +11,12 @@ const corsHeaders = {
 
 const GD_FAUCET_URL = "https://goodserver.gooddollar.org/verify/topWallet";
 const CELO_RPC_URL = "https://forno.celo.org";
+const XDC_RPC_URL = "https://rpc.xinfin.network";
+
+type Network = "celo" | "xdc";
+const CHAIN_IDS: Record<Network, number> = { celo: 42220, xdc: 50 };
+const RPC_URLS: Record<Network, string> = { celo: CELO_RPC_URL, xdc: XDC_RPC_URL };
+const NATIVE_LABEL: Record<Network, string> = { celo: "CELO", xdc: "XDC" };
 const WEBSHARE_HOST = "p.webshare.io";
 const WEBSHARE_PORT = "80";
 const BALANCE_VERIFY_ATTEMPTS = 8;
@@ -54,9 +60,9 @@ function buildProxyUrl(): string | null {
   )}@${WEBSHARE_HOST}:${WEBSHARE_PORT}`;
 }
 
-async function getCeloBalanceWei(address: string): Promise<bigint | null> {
+async function getNativeBalanceWei(address: string, network: Network): Promise<bigint | null> {
   try {
-    const res = await fetch(CELO_RPC_URL, {
+    const res = await fetch(RPC_URLS[network], {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -77,12 +83,13 @@ async function getCeloBalanceWei(address: string): Promise<bigint | null> {
 
 async function waitForBalanceIncrease(
   address: string,
-  before: bigint | null
+  before: bigint | null,
+  network: Network,
 ): Promise<{ increased: boolean; before: string | null; after: string | null }> {
   let after: bigint | null = null;
   for (let i = 0; i < BALANCE_VERIFY_ATTEMPTS; i++) {
     await new Promise((r) => setTimeout(r, BALANCE_VERIFY_DELAY_MS));
-    after = await getCeloBalanceWei(address);
+    after = await getNativeBalanceWei(address, network);
     if (before !== null && after !== null && after > before) {
       return { increased: true, before: before.toString(), after: after.toString() };
     }
@@ -122,6 +129,7 @@ function isTerminalFaucetError(error?: string | null): boolean {
 
 async function callFaucet(
   account: string,
+  network: Network,
   signal: AbortSignal
 ): Promise<{ ok: boolean; txHash?: string; error?: string; ip?: string }> {
   const proxyUrl = buildProxyUrl();
@@ -155,9 +163,11 @@ async function callFaucet(
       // ignore
     }
 
-    const beforeBalance = await getCeloBalanceWei(account);
+    const beforeBalance = await getNativeBalanceWei(account, network);
+    const chainId = CHAIN_IDS[network];
+    const nativeLabel = NATIVE_LABEL[network];
 
-    // Pre-check: if the wallet already has enough CELO for a G$ claim,
+    // Pre-check: if the wallet already has enough native gas for a G$ claim,
     // skip calling the faucet entirely. GoodDollar returns {ok:1} but does
     // not actually send anything, which previously looked like a failure.
     if (beforeBalance !== null && beforeBalance >= FAUCET_SKIP_THRESHOLD_WEI) {
@@ -176,7 +186,7 @@ async function callFaucet(
           Origin: "https://wallet.gooddollar.org",
           Referer: "https://wallet.gooddollar.org/",
         },
-        body: JSON.stringify({ account }),
+        body: JSON.stringify({ account, chainId }),
       })
     );
 
@@ -233,13 +243,13 @@ async function callFaucet(
       };
     }
 
-    const confirmation = await waitForBalanceIncrease(account, beforeBalance);
+    const confirmation = await waitForBalanceIncrease(account, beforeBalance, network);
     if (!confirmation.increased) {
       return {
         ok: false,
         ip,
         txHash: txHash || undefined,
-        error: `faucet returned success but CELO balance did not increase (before=${confirmation.before ?? "unknown"}, after=${confirmation.after ?? "unknown"})`,
+        error: `faucet returned success but ${nativeLabel} balance did not increase (before=${confirmation.before ?? "unknown"}, after=${confirmation.after ?? "unknown"})`,
       };
     }
 
@@ -261,6 +271,7 @@ async function claimNextWallet(): Promise<{
   job_id: string;
   wallet_address: string;
   delay_ms: number;
+  network: Network;
 } | null> {
   // If an invocation timed out or crashed after marking rows as processing,
   // those wallets would otherwise stay stuck forever. Re-open stale rows so
@@ -316,16 +327,18 @@ async function claimNextWallet(): Promise<{
     return null;
   }
 
-  // Read the parent job's delay setting
+  // Read the parent job's delay + network setting
   const jobRes = await fetch(
-    `${SUPABASE_URL}/rest/v1/gas_load_jobs?id=eq.${row.job_id}&select=delay_ms,status`,
+    `${SUPABASE_URL}/rest/v1/gas_load_jobs?id=eq.${row.job_id}&select=delay_ms,status,network`,
     { headers: sbHeaders() }
   );
   let delay_ms = 3000;
+  let network: Network = "celo";
   if (jobRes.ok) {
     const jobs = await jobRes.json();
     if (Array.isArray(jobs) && jobs[0]) {
       delay_ms = Number(jobs[0].delay_ms) || 3000;
+      if (jobs[0].network === "xdc") network = "xdc";
       // Mark job as running on first activity
       if (jobs[0].status === "pending") {
         await fetch(
@@ -348,6 +361,7 @@ async function claimNextWallet(): Promise<{
     job_id: row.job_id,
     wallet_address: row.wallet_address,
     delay_ms,
+    network,
   };
 }
 
@@ -492,12 +506,13 @@ async function processOneWallet(item: {
   id: string;
   job_id: string;
   wallet_address: string;
+  network: Network;
 }) {
   const ac = new AbortController();
   const t = setTimeout(() => ac.abort(), 45_000);
   let result: { ok: boolean; txHash?: string; error?: string; ip?: string };
   try {
-    result = await callFaucet(item.wallet_address, ac.signal);
+    result = await callFaucet(item.wallet_address, item.network, ac.signal);
   } catch (e: any) {
     result = { ok: false, error: e?.message || String(e) };
   }

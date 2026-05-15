@@ -178,6 +178,8 @@ Deno.serve(async (req) => {
     );
   }
 
+  const network: "celo" | "xdc" = body?.network === "xdc" ? "xdc" : "celo";
+
   // Create a job
   const jobRes = await sb("/rest/v1/gas_load_jobs", {
     method: "POST",
@@ -186,7 +188,8 @@ Deno.serve(async (req) => {
       total: allowed.length,
       delay_ms: 3000,
       status: "pending",
-      batch_name: `free-${ip.slice(0, 12)}-${new Date().toISOString().slice(0, 10)}`,
+      batch_name: `free-${network}-${ip.slice(0, 12)}-${new Date().toISOString().slice(0, 10)}`,
+      network,
     }),
   });
   if (!jobRes.ok) {

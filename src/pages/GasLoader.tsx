@@ -100,7 +100,15 @@ const GasLoader = () => {
   const [invalid, setInvalid] = useState<string[]>([]);
   const [delaySec, setDelaySec] = useState(3);
   const [batchName, setBatchName] = useState("");
+  const [network, setNetwork] = useState<"celo" | "xdc">(
+    () => (localStorage.getItem("gl_network") as "celo" | "xdc") || "celo"
+  );
   const [loaderEnabled, setLoaderEnabled] = useState<boolean>(true);
+
+  useEffect(() => {
+    localStorage.setItem("gl_network", network);
+  }, [network]);
+
 
   // Active server-side job state
   const [jobId, setJobId] = useState<string | null>(
@@ -278,6 +286,7 @@ const GasLoader = () => {
           wallets: parsed,
           delay_ms: delaySec * 1000,
           batch_name: name,
+          network,
         }),
       });
       if (res.status === 401) {
@@ -620,18 +629,42 @@ const GasLoader = () => {
                 </span>
                 <CardTitle className="text-sm font-semibold">Settings</CardTitle>
               </CardHeader>
-              <CardContent>
-                <div className="flex justify-between text-xs mb-2">
-                  <Label>Delay between requests</Label>
-                  <span className="text-muted-foreground font-semibold">{delaySec}s</span>
+              <CardContent className="space-y-4">
+                <div>
+                  <Label className="text-xs mb-2 block">Network</Label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {(["celo", "xdc"] as const).map((n) => (
+                      <button
+                        key={n}
+                        type="button"
+                        onClick={() => setNetwork(n)}
+                        className={`h-10 rounded-lg border text-xs font-bold uppercase tracking-wider transition ${
+                          network === n
+                            ? "bg-primary text-primary-foreground border-primary"
+                            : "bg-white/70 border-white/60 text-muted-foreground hover:border-primary/40"
+                        }`}
+                      >
+                        {n === "celo" ? "Celo" : "XDC"}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-[10px] text-muted-foreground mt-1">
+                    GoodDollar faucet will send {network === "xdc" ? "XDC" : "CELO"} gas to each wallet on the {network === "xdc" ? "XDC Network" : "Celo Mainnet"}.
+                  </p>
                 </div>
-                <Slider
-                  value={[delaySec]}
-                  onValueChange={(v) => setDelaySec(v[0])}
-                  min={1}
-                  max={10}
-                  step={1}
-                />
+                <div>
+                  <div className="flex justify-between text-xs mb-2">
+                    <Label>Delay between requests</Label>
+                    <span className="text-muted-foreground font-semibold">{delaySec}s</span>
+                  </div>
+                  <Slider
+                    value={[delaySec]}
+                    onValueChange={(v) => setDelaySec(v[0])}
+                    min={1}
+                    max={10}
+                    step={1}
+                  />
+                </div>
               </CardContent>
             </Card>
 
