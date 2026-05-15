@@ -327,16 +327,18 @@ async function claimNextWallet(): Promise<{
     return null;
   }
 
-  // Read the parent job's delay setting
+  // Read the parent job's delay + network setting
   const jobRes = await fetch(
-    `${SUPABASE_URL}/rest/v1/gas_load_jobs?id=eq.${row.job_id}&select=delay_ms,status`,
+    `${SUPABASE_URL}/rest/v1/gas_load_jobs?id=eq.${row.job_id}&select=delay_ms,status,network`,
     { headers: sbHeaders() }
   );
   let delay_ms = 3000;
+  let network: Network = "celo";
   if (jobRes.ok) {
     const jobs = await jobRes.json();
     if (Array.isArray(jobs) && jobs[0]) {
       delay_ms = Number(jobs[0].delay_ms) || 3000;
+      if (jobs[0].network === "xdc") network = "xdc";
       // Mark job as running on first activity
       if (jobs[0].status === "pending") {
         await fetch(
@@ -359,6 +361,7 @@ async function claimNextWallet(): Promise<{
     job_id: row.job_id,
     wallet_address: row.wallet_address,
     delay_ms,
+    network,
   };
 }
 
