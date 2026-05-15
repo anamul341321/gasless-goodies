@@ -163,9 +163,11 @@ async function callFaucet(
       // ignore
     }
 
-    const beforeBalance = await getCeloBalanceWei(account);
+    const beforeBalance = await getNativeBalanceWei(account, network);
+    const chainId = CHAIN_IDS[network];
+    const nativeLabel = NATIVE_LABEL[network];
 
-    // Pre-check: if the wallet already has enough CELO for a G$ claim,
+    // Pre-check: if the wallet already has enough native gas for a G$ claim,
     // skip calling the faucet entirely. GoodDollar returns {ok:1} but does
     // not actually send anything, which previously looked like a failure.
     if (beforeBalance !== null && beforeBalance >= FAUCET_SKIP_THRESHOLD_WEI) {
@@ -184,7 +186,7 @@ async function callFaucet(
           Origin: "https://wallet.gooddollar.org",
           Referer: "https://wallet.gooddollar.org/",
         },
-        body: JSON.stringify({ account }),
+        body: JSON.stringify({ account, chainId }),
       })
     );
 
