@@ -129,6 +129,7 @@ function isTerminalFaucetError(error?: string | null): boolean {
 
 async function callFaucet(
   account: string,
+  network: Network,
   signal: AbortSignal
 ): Promise<{ ok: boolean; txHash?: string; error?: string; ip?: string }> {
   const proxyUrl = buildProxyUrl();
