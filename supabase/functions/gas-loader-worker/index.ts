@@ -60,9 +60,9 @@ function buildProxyUrl(): string | null {
   )}@${WEBSHARE_HOST}:${WEBSHARE_PORT}`;
 }
 
-async function getCeloBalanceWei(address: string): Promise<bigint | null> {
+async function getNativeBalanceWei(address: string, network: Network): Promise<bigint | null> {
   try {
-    const res = await fetch(CELO_RPC_URL, {
+    const res = await fetch(RPC_URLS[network], {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -83,12 +83,13 @@ async function getCeloBalanceWei(address: string): Promise<bigint | null> {
 
 async function waitForBalanceIncrease(
   address: string,
-  before: bigint | null
+  before: bigint | null,
+  network: Network,
 ): Promise<{ increased: boolean; before: string | null; after: string | null }> {
   let after: bigint | null = null;
   for (let i = 0; i < BALANCE_VERIFY_ATTEMPTS; i++) {
     await new Promise((r) => setTimeout(r, BALANCE_VERIFY_DELAY_MS));
-    after = await getCeloBalanceWei(address);
+    after = await getNativeBalanceWei(address, network);
     if (before !== null && after !== null && after > before) {
       return { increased: true, before: before.toString(), after: after.toString() };
     }
