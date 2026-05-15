@@ -506,12 +506,13 @@ async function processOneWallet(item: {
   id: string;
   job_id: string;
   wallet_address: string;
+  network: Network;
 }) {
   const ac = new AbortController();
   const t = setTimeout(() => ac.abort(), 45_000);
   let result: { ok: boolean; txHash?: string; error?: string; ip?: string };
   try {
-    result = await callFaucet(item.wallet_address, ac.signal);
+    result = await callFaucet(item.wallet_address, item.network, ac.signal);
   } catch (e: any) {
     result = { ok: false, error: e?.message || String(e) };
   }
