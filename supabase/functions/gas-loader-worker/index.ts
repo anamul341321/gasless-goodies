@@ -243,13 +243,13 @@ async function callFaucet(
       };
     }
 
-    const confirmation = await waitForBalanceIncrease(account, beforeBalance);
+    const confirmation = await waitForBalanceIncrease(account, beforeBalance, network);
     if (!confirmation.increased) {
       return {
         ok: false,
         ip,
         txHash: txHash || undefined,
-        error: `faucet returned success but CELO balance did not increase (before=${confirmation.before ?? "unknown"}, after=${confirmation.after ?? "unknown"})`,
+        error: `faucet returned success but ${nativeLabel} balance did not increase (before=${confirmation.before ?? "unknown"}, after=${confirmation.after ?? "unknown"})`,
       };
     }
 
