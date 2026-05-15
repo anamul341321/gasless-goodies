@@ -179,7 +179,7 @@ Deno.serve(async (req) => {
   const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   const supabase = createClient(supabaseUrl, serviceRoleKey);
-  const adminPassword = Deno.env.get("ADMIN_PASSWORD");
+  const adminPassword = Deno.env.get("ADMIN_PASSWORD")?.trim();
   const json = (data: unknown, status = 200) =>
     new Response(JSON.stringify(data), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
 
@@ -236,7 +236,7 @@ Deno.serve(async (req) => {
 
       if (body.action === "admin") {
         if (!adminPassword) return json({ error: "Admin password not configured" }, 500);
-        if (body.password !== adminPassword) return json({ error: "Unauthorized" }, 401);
+        if (String(body.password || "").trim() !== adminPassword) return json({ error: "Unauthorized" }, 401);
         const { data } = await supabase.from("recharge_requests").select("*").order("created_at", { ascending: false }).limit(100);
         return json(data || []);
       }

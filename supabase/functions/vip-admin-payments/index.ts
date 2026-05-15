@@ -7,7 +7,7 @@ const corsHeaders = {
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const ADMIN_PW = Deno.env.get("ADMIN_PASSWORD")!;
+const ADMIN_PW = Deno.env.get("ADMIN_PASSWORD")?.trim()!;
 
 function sb(path: string, init: RequestInit = {}) {
   return fetch(`${SUPABASE_URL}${path}`, {
@@ -24,7 +24,7 @@ function sb(path: string, init: RequestInit = {}) {
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
-  if (req.headers.get("x-admin-password") !== ADMIN_PW) {
+  if (req.headers.get("x-admin-password")?.trim() !== ADMIN_PW) {
     return new Response(JSON.stringify({ error: "unauthorized" }), {
       status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

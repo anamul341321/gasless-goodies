@@ -6,7 +6,6 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
 };
 
-const ADMIN_PASSWORD = Deno.env.get("ADMIN_PASSWORD");
 const SAFE_SETTINGS_SELECT = "id, notice_message, gas_loader_enabled, mobile_recharge_enabled, secret_tools_password, updated_at";
 
 Deno.serve(async (req) => {
@@ -14,7 +13,8 @@ Deno.serve(async (req) => {
     return new Response("ok", { headers: corsHeaders });
   }
 
-  if (!ADMIN_PASSWORD) {
+  const adminPassword = Deno.env.get("ADMIN_PASSWORD")?.trim();
+  if (!adminPassword) {
     return new Response(JSON.stringify({ error: "Admin password not configured" }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -45,8 +45,8 @@ Deno.serve(async (req) => {
   }
 
   if (req.method === "POST") {
-    const password = req.headers.get("x-admin-password");
-    if (password !== ADMIN_PASSWORD) {
+    const password = req.headers.get("x-admin-password")?.trim();
+    if (password !== adminPassword) {
       return new Response(JSON.stringify({ error: "Invalid admin password" }), {
         status: 401,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
