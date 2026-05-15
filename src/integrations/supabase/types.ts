@@ -463,6 +463,7 @@ export type Database = {
           finished_at: string | null
           id: string
           max_retries: number
+          network: string
           retry_round: number
           status: string
           submitted_by_wallet: string | null
@@ -478,6 +479,7 @@ export type Database = {
           finished_at?: string | null
           id?: string
           max_retries?: number
+          network?: string
           retry_round?: number
           status?: string
           submitted_by_wallet?: string | null
@@ -493,6 +495,7 @@ export type Database = {
           finished_at?: string | null
           id?: string
           max_retries?: number
+          network?: string
           retry_round?: number
           status?: string
           submitted_by_wallet?: string | null
