@@ -101,6 +101,49 @@ async function waitForBalanceIncrease(
   };
 }
 
+// Find the most recent incoming native tx to `address` by scanning the
+// last `lookback` blocks. Used to recover tx hash for chains where the
+// faucet response doesn't include one (e.g. XDC via GoodDollar).
+async function findIncomingTxHash(
+  address: string,
+  network: Network,
+  lookback = 25,
+): Promise<string | null> {
+  try {
+    const rpc = RPC_URLS[network];
+    const head = await fetch(rpc, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "eth_blockNumber", params: [] }),
+    }).then((r) => r.json());
+    if (typeof head?.result !== "string") return null;
+    const latest = parseInt(head.result, 16);
+    const target = address.toLowerCase();
+    for (let i = 0; i < lookback; i++) {
+      const blockHex = "0x" + (latest - i).toString(16);
+      const blk = await fetch(rpc, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          jsonrpc: "2.0", id: 1, method: "eth_getBlockByNumber", params: [blockHex, true],
+        }),
+      }).then((r) => r.json());
+      const txs = blk?.result?.transactions;
+      if (!Array.isArray(txs)) continue;
+      for (const tx of txs) {
+        if (typeof tx?.to === "string" && tx.to.toLowerCase() === target) {
+          if (tx.value && tx.value !== "0x0" && tx.value !== "0x") {
+            return tx.hash || null;
+          }
+        }
+      }
+    }
+  } catch (e) {
+    console.warn("findIncomingTxHash failed", e);
+  }
+  return null;
+}
+
 async function logHistory(row: {
   wallet_address: string;
   status: "success" | "failed";
