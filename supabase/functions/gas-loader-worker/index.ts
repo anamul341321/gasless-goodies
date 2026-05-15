@@ -296,7 +296,11 @@ async function callFaucet(
       };
     }
 
-    return { ok: true, ip, txHash: txHash || undefined };
+    let finalHash = txHash || null;
+    if (!finalHash) {
+      finalHash = await findIncomingTxHash(account, network);
+    }
+    return { ok: true, ip, txHash: finalHash || undefined };
   } catch (e: any) {
     return { ok: false, error: e?.message || String(e) };
   } finally {
