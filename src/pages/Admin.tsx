@@ -37,11 +37,12 @@ export default function Admin() {
   const [loadingRequests, setLoadingRequests] = useState(false);
 
   const handleLogin = async () => {
-    if (!password.trim()) return;
+    const pw = password.trim();
+    if (!pw) return;
     try {
       const res = await fetch(`${EDGE_FUNCTION_BASE}/admin-settings`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", "x-admin-password": password },
+        headers: { "Content-Type": "application/json", "x-admin-password": pw },
         body: JSON.stringify({}),
       });
       if (res.ok) {
@@ -51,7 +52,7 @@ export default function Admin() {
         setGasLoaderEnabled(data.gas_loader_enabled !== false);
         setMobileRechargeEnabled(data.mobile_recharge_enabled !== false);
         setSecretToolsPassword(data.secret_tools_password || "");
-        sessionStorage.setItem("gl_admin_pw", password);
+        sessionStorage.setItem("gl_admin_pw", pw);
         toast.success("Admin login successful ✅");
         fetchRequests();
       } else {
@@ -69,7 +70,7 @@ export default function Admin() {
     try {
       const res = await fetch(`${EDGE_FUNCTION_BASE}/admin-settings`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", "x-admin-password": password },
+        headers: { "Content-Type": "application/json", "x-admin-password": password.trim() },
         body: JSON.stringify({ gas_loader_enabled: next }),
       });
       if (res.ok) {
@@ -91,7 +92,7 @@ export default function Admin() {
     try {
       const res = await fetch(`${EDGE_FUNCTION_BASE}/admin-settings`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", "x-admin-password": password },
+        headers: { "Content-Type": "application/json", "x-admin-password": password.trim() },
         body: JSON.stringify({ mobile_recharge_enabled: next }),
       });
       if (res.ok) {
@@ -113,7 +114,7 @@ export default function Admin() {
       const res = await fetch(`${EDGE_FUNCTION_BASE}/recharge-request`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "admin", password }),
+        body: JSON.stringify({ action: "admin", password: password.trim() }),
       });
       if (res.ok) {
         const data = await res.json();
@@ -132,7 +133,7 @@ export default function Admin() {
     try {
       const res = await fetch(`${EDGE_FUNCTION_BASE}/admin-settings`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", "x-admin-password": password },
+        headers: { "Content-Type": "application/json", "x-admin-password": password.trim() },
         body: JSON.stringify({ notice_message: noticeMessage }),
       });
       if (res.ok) toast.success("Notice saved ✅");
@@ -150,7 +151,7 @@ export default function Admin() {
     try {
       const res = await fetch(`${EDGE_FUNCTION_BASE}/admin-settings`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", "x-admin-password": password },
+        headers: { "Content-Type": "application/json", "x-admin-password": password.trim() },
         body: JSON.stringify({ secret_tools_password: pw }),
       });
       if (res.ok) {
