@@ -117,7 +117,7 @@ export default function DailyClaim() {
           const next = { ...prev };
           for (const s of settingsRes.data.settings) {
             const net = (s.network === "xdc" ? "xdc" : "celo") as Network;
-            next[net] = { hour: s.start_hour_bd ?? 0, minute: s.start_minute_bd ?? 0, enabled: s.enabled !== false };
+            next[net] = { hour: s.start_hour_bd ?? 0, minute: s.start_minute_bd ?? 0, enabled: s.enabled !== false, waitMin: Number(s.retry_wait_minutes ?? 30) };
           }
           return next;
         });
