@@ -353,11 +353,38 @@ export default function DailyClaim() {
                           ক্লেম চলছে — ওয়ালেটগুলো ধীরে ধীরে প্রসেস হচ্ছে।
                         </div>
                       )}
-                      {netState[net].run!.phase === "gas_requesting" && (
-                        <div className="p-3 rounded-md bg-amber-500/10 border border-amber-500/30 text-sm">
-                          গ্যাস ফি রিকোয়েস্ট পাঠানো হচ্ছে — যেসব ওয়ালেটে গ্যাস নেই তাদের জন্য ফ্রি গ্যাস আনা হচ্ছে।
-                        </div>
-                      )}
+                      {(netState[net].run!.phase === "gas_requesting" || netState[net].run!.phase === "waiting_30m") && (() => {
+                        const gasItems = netState[net].items.filter((x) => x.phase1_status === "failed_gas");
+                        const gTotal = gasItems.length;
+                        const gDone = gasItems.filter((x) => x.gas_request_status === "done").length;
+                        const gErr = gasItems.filter((x) => x.gas_request_status === "error").length;
+                        const gPending = gasItems.filter((x) => !x.gas_request_status || x.gas_request_status === "requested").length;
+                        const pct = gTotal > 0 ? Math.round(((gDone + gErr) / gTotal) * 100) : 0;
+                        return (
+                          <div className="p-4 rounded-lg bg-gradient-to-br from-amber-500/15 via-background to-orange-500/10 border border-amber-500/40 space-y-3">
+                            <div className="flex items-center justify-between flex-wrap gap-2">
+                              <div className="text-sm font-semibold text-amber-300">
+                                ⛽ গ্যাস লোড ব্যাচ চলছে
+                              </div>
+                              <Badge variant="outline" className="text-amber-300 border-amber-500/40">{pct}%</Badge>
+                            </div>
+                            <div className="grid grid-cols-4 gap-2 text-center">
+                              <Stat label="মোট" value={gTotal} />
+                              <Stat label="সফল" value={gDone} tone="text-emerald-400" />
+                              <Stat label="ব্যর্থ" value={gErr} tone="text-rose-400" />
+                              <Stat label="বাকি" value={gPending} tone="text-amber-400" />
+                            </div>
+                            <div className="h-2 w-full bg-muted/40 rounded-full overflow-hidden">
+                              <div className="h-full bg-gradient-to-r from-amber-400 to-orange-500 transition-all" style={{ width: `${pct}%` }} />
+                            </div>
+                            <div className="text-xs text-muted-foreground">
+                              {netState[net].run!.phase === "gas_requesting"
+                                ? "গ্যাস লোড সম্পন্ন হওয়ার পর ৩০ মিনিট অপেক্ষা শুরু হবে, এরপর রিট্রাই ক্লেম।"
+                                : "গ্যাস লোড সম্পন্ন। এখন ৩০ মিনিট অপেক্ষা — তারপর রিট্রাই ক্লেম।"}
+                            </div>
+                          </div>
+                        );
+                      })()}
                       {netState[net].run!.phase === "waiting_30m" && net === activeNet && waitRemaining !== null && (
                         <div className="p-4 rounded-lg bg-gradient-to-br from-amber-500/15 via-background to-orange-500/10 border border-amber-500/40 text-center space-y-2">
                           <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">গ্যাস আসার অপেক্ষায়</div>
