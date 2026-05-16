@@ -46,8 +46,8 @@ const IDENTITY_ABI = ["function isWhitelisted(address account) view returns (boo
 
 const WORKER_TRIGGER_URL = `${SUPABASE_URL}/functions/v1/gd-claim-worker`;
 
-const BATCH_SIZE = 20;              // wallets per parallel wave
-const RECEIPT_TIMEOUT_MS = 60_000;  // wait at most 60s for each receipt
+const BATCH_SIZE = 40;              // wallets per parallel wave
+const RECEIPT_TIMEOUT_MS = 45_000;  // wait at most 45s for each receipt
 const WORKER_TIME_BUDGET_MS = 110_000;
 const STALE_CLAIMING_MINUTES = 3;
 
@@ -197,34 +197,41 @@ async function claimOne(row: QueueRow): Promise<{
     const identity = new Contract(cfg.identityAddress, IDENTITY_ABI, provider);
     const addr = (await signer.getAddress()).toLowerCase();
 
-    try {
-      const whitelisted = await identity.isWhitelisted(addr);
-      if (!whitelisted) {
-        return { status: "failed_kyc", error: "not whitelisted — transaction skipped" };
-      }
-    } catch {
-      // continue; on-chain claim will classify
+    // Run independent pre-flight reads in parallel to cut RPC roundtrips
+    const [whitelistedRes, entitlement, feeDataRes, estimatedGasRes, balanceRes] = await Promise.allSettled([
+      identity.isWhitelisted(addr),
+      readEntitlement(ubi, addr),
+      provider.getFeeData(),
+      (ubi as any).claim.estimateGas(),
+      provider.getBalance(addr),
+    ]);
+
+    if (whitelistedRes.status === "fulfilled" && whitelistedRes.value === false) {
+      return { status: "failed_kyc", error: "not whitelisted — transaction skipped" };
     }
 
-    const entitlement = await readEntitlement(ubi, addr);
-    if (typeof entitlement.amount === "bigint") {
-      if (entitlement.amount === 0n) {
+    if (entitlement.status === "fulfilled") {
+      const ent = entitlement.value;
+      if (typeof ent.amount === "bigint" && ent.amount === 0n) {
         return { status: "already_claimed", error: "already claimed today / no entitlement — transaction skipped" };
       }
-    } else if (entitlement.error) {
-      const cls = classifyError(entitlement.error);
-      const msg = (entitlement.error?.shortMessage || entitlement.error?.reason || entitlement.error?.message || "entitlement check failed").slice(0, 240);
-      if (cls === "gas") return { status: "failed_gas", error: msg };
-      if (cls === "kyc") return { status: "failed_kyc", error: msg };
+      if (ent.error) {
+        const cls = classifyError(ent.error);
+        const msg = (ent.error?.shortMessage || ent.error?.reason || ent.error?.message || "entitlement check failed").slice(0, 240);
+        if (cls === "gas") return { status: "failed_gas", error: msg };
+        if (cls === "kyc") return { status: "failed_kyc", error: msg };
+      }
     }
 
     let tx;
     try {
-      const feeData = await provider.getFeeData();
-      const estimatedGas = BigInt(await (ubi as any).claim.estimateGas());
+      if (estimatedGasRes.status === "rejected") throw estimatedGasRes.reason;
+      if (feeDataRes.status === "rejected") throw feeDataRes.reason;
+      const feeData = feeDataRes.value;
+      const estimatedGas = BigInt(estimatedGasRes.value);
       const gasUnitPrice = feeData.gasPrice ?? feeData.maxFeePerGas;
-      if (gasUnitPrice) {
-        const balance = await provider.getBalance(addr);
+      if (gasUnitPrice && balanceRes.status === "fulfilled") {
+        const balance = balanceRes.value;
         const required = estimatedGas * gasUnitPrice;
         if (balance < required) {
           return {
