@@ -229,13 +229,6 @@ export default function DailyClaim() {
     return Math.ceil(left / 60_000);
   }, [run, tickNow]);
 
-  const waitRemainingMin = useMemo(() => {
-    if (!run || run.phase !== "waiting_30m" || !run.gas_requests_done_at) return null;
-    const endsAt = new Date(run.gas_requests_done_at).getTime() + 30 * 60_000;
-    const left = Math.max(0, endsAt - Date.now());
-    return Math.ceil(left / 60_000);
-  }, [run]);
-
   if (loading) return <div className="p-8 text-center text-muted-foreground">Loading…</div>;
   if (!user) return null;
 
