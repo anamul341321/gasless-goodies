@@ -207,7 +207,7 @@ const Claim = () => {
     fetch(`${SUPABASE_URL}/functions/v1/gd-wallet-info`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ addresses: addrs, mode: "balance_only" }),
+      body: JSON.stringify({ addresses: addrs, mode: "balance_only", network: job.network || "celo" }),
     })
       .then((r) => r.json())
       .then((data) => {
