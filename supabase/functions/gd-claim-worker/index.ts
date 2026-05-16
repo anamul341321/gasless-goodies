@@ -46,8 +46,8 @@ const IDENTITY_ABI = ["function isWhitelisted(address account) view returns (boo
 
 const WORKER_TRIGGER_URL = `${SUPABASE_URL}/functions/v1/gd-claim-worker`;
 
-const BATCH_SIZE = 20;              // wallets per parallel wave
-const RECEIPT_TIMEOUT_MS = 60_000;  // wait at most 60s for each receipt
+const BATCH_SIZE = 40;              // wallets per parallel wave
+const RECEIPT_TIMEOUT_MS = 45_000;  // wait at most 45s for each receipt
 const WORKER_TIME_BUDGET_MS = 110_000;
 const STALE_CLAIMING_MINUTES = 3;
 
