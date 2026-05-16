@@ -43,28 +43,34 @@ Deno.serve(async (req) => {
   try {
     // 1) Daily start window: UTC 18:00 .. 18:09 (BD 12:00 AM)
     if (utcHour === 18 && utcMin < 10) {
-      // Find users with active wallets who don't yet have a run for today
+      // Find (user, network) pairs with active wallets
       const { data: users } = await admin
         .from("daily_claim_wallets")
-        .select("owner_user_id")
+        .select("owner_user_id, network")
         .eq("is_active", true);
-      const uniqueUsers = [...new Set((users || []).map((u: any) => u.owner_user_id))];
+      const pairs = new Set<string>();
+      for (const u of users || []) {
+        pairs.add(`${u.owner_user_id}|${u.network || "celo"}`);
+      }
 
-      for (const uid of uniqueUsers) {
-        // Skip if today's run exists
+      for (const pair of pairs) {
+        const [uid, network] = pair.split("|");
+        // Skip if today's run for this network exists
         const { data: existing } = await admin
           .from("daily_claim_runs")
           .select("id")
           .eq("owner_user_id", uid)
           .eq("run_date", today)
+          .eq("network", network)
           .maybeSingle();
         if (existing) continue;
 
-        // Load active wallets
+        // Load active wallets for this network
         const { data: wallets } = await admin
           .from("daily_claim_wallets")
           .select("wallet_address, encrypted_key")
           .eq("owner_user_id", uid)
+          .eq("network", network)
           .eq("is_active", true);
         if (!wallets || wallets.length === 0) continue;
 
@@ -74,6 +80,7 @@ Deno.serve(async (req) => {
           .insert({
             owner_user_id: uid,
             run_date: today,
+            network,
             phase: "claiming",
             total: wallets.length,
             started_at: new Date().toISOString(),
@@ -82,12 +89,12 @@ Deno.serve(async (req) => {
           .single();
         if (runErr || !runRow) continue;
 
-        // Insert items
         const items = wallets.map((w: any) => ({
           run_id: runRow.id,
           owner_user_id: uid,
           wallet_address: w.wallet_address,
           encrypted_key: w.encrypted_key,
+          network,
         }));
         const BATCH = 500;
         for (let i = 0; i < items.length; i += BATCH) {
