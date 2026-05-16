@@ -47,11 +47,13 @@ Deno.serve(async (req) => {
 
   try {
     if (req.method === "GET" || action === "list") {
-      const { data, error } = await admin
+      const network = url.searchParams.get("network");
+      let q = admin
         .from("daily_claim_wallets")
-        .select("id, wallet_address, label, is_active, created_at")
-        .eq("owner_user_id", user.id)
-        .order("created_at", { ascending: true });
+        .select("id, wallet_address, label, is_active, network, created_at")
+        .eq("owner_user_id", user.id);
+      if (network === "celo" || network === "xdc") q = q.eq("network", network);
+      const { data, error } = await q.order("created_at", { ascending: true });
       if (error) throw error;
       return json({ wallets: data || [] });
     }
@@ -60,6 +62,7 @@ Deno.serve(async (req) => {
 
     if (req.method === "POST" && action === "add") {
       const rawKeys: string[] = Array.isArray(body?.private_keys) ? body.private_keys : [];
+      const network: "celo" | "xdc" = body?.network === "xdc" ? "xdc" : "celo";
       if (rawKeys.length === 0) return json({ error: "no keys provided" }, 400);
       if (rawKeys.length > 5000) return json({ error: "max 5000 keys per request" }, 400);
 
@@ -87,13 +90,13 @@ Deno.serve(async (req) => {
         wallet_address: v.address,
         encrypted_key: await encryptKey(v.pk),
         is_active: true,
+        network,
       })));
-      // upsert by (owner_user_id, wallet_address)
       const { error } = await admin
         .from("daily_claim_wallets")
-        .upsert(rows, { onConflict: "owner_user_id,wallet_address", ignoreDuplicates: true });
+        .upsert(rows, { onConflict: "owner_user_id,wallet_address,network", ignoreDuplicates: true });
       if (error) throw error;
-      return json({ added: valid.length, invalid });
+      return json({ added: valid.length, invalid, network });
     }
 
     if (req.method === "PATCH" && action === "toggle") {
@@ -112,8 +115,11 @@ Deno.serve(async (req) => {
     if (req.method === "DELETE" || action === "delete") {
       const id = body?.id || url.searchParams.get("id");
       const all = body?.all === true;
+      const netFilter = body?.network === "celo" || body?.network === "xdc" ? body.network : null;
       if (all) {
-        const { error } = await admin.from("daily_claim_wallets").delete().eq("owner_user_id", user.id);
+        let q = admin.from("daily_claim_wallets").delete().eq("owner_user_id", user.id);
+        if (netFilter) q = q.eq("network", netFilter);
+        const { error } = await q;
         if (error) throw error;
         return json({ ok: true });
       }
