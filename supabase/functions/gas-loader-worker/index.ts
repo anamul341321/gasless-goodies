@@ -470,62 +470,55 @@ async function finalizeWallet(
   const total = done + failed + pending + processing;
   const allDone = pending === 0 && processing === 0 && total > 0;
 
-  // Auto-retry likely temporary failures with a fresh proxy. The GoodDollar
-  // faucet can return success without sending CELO for a specific IP/session,
-  // so "balance did not increase" must retry instead of becoming final fail.
+  // Auto-retry ALL failed wallets with a fresh proxy/IP. The faucet often
+  // returns "insufficient funds" or "balance did not increase" intermittently
+  // on a per-IP basis, so every failure deserves at least one retry attempt.
   if (allDone && failed > 0) {
-    const terminalFailures = await countTerminalFailed(jobId);
-    if (terminalFailures === failed) {
-      console.log(
-        `[retry-skip] job ${jobId} — ${failed} terminal faucet failure(s)`
-      );
-    } else {
-      const jobInfoRes = await fetch(
-        `${SUPABASE_URL}/rest/v1/gas_load_jobs?id=eq.${jobId}&select=retry_round,max_retries`,
-        { headers: sbHeaders() }
-      );
-      if (jobInfoRes.ok) {
-        const jobInfo = await jobInfoRes.json();
-        const info = Array.isArray(jobInfo) && jobInfo[0] ? jobInfo[0] : null;
-        const retryRound = Number(info?.retry_round ?? 0);
-        const maxRetries = Number(info?.max_retries ?? 2);
+    const jobInfoRes = await fetch(
+      `${SUPABASE_URL}/rest/v1/gas_load_jobs?id=eq.${jobId}&select=retry_round,max_retries`,
+      { headers: sbHeaders() }
+    );
+    if (jobInfoRes.ok) {
+      const jobInfo = await jobInfoRes.json();
+      const info = Array.isArray(jobInfo) && jobInfo[0] ? jobInfo[0] : null;
+      const retryRound = Number(info?.retry_round ?? 0);
+      const maxRetries = Number(info?.max_retries ?? 2);
 
-        if (retryRound < maxRetries) {
-          // Reset all failed queue rows back to pending — fresh IP next attempt
-          await fetch(
-            `${SUPABASE_URL}/rest/v1/gas_load_queue?job_id=eq.${jobId}&status=eq.failed`,
-            {
-              method: "PATCH",
-              headers: sbHeaders({ Prefer: "return=minimal" }),
-              body: JSON.stringify({
-                status: "pending",
-                tx_hash: null,
-                error_message: null,
-                proxy_ip: null,
-                processed_at: null,
-                updated_at: new Date().toISOString(),
-              }),
-            }
-          );
-
-          // Bump retry_round, reset failed count, mark job running again
-          await fetch(`${SUPABASE_URL}/rest/v1/gas_load_jobs?id=eq.${jobId}`, {
+      if (retryRound < maxRetries) {
+        // Reset all failed queue rows back to pending — fresh IP next attempt
+        await fetch(
+          `${SUPABASE_URL}/rest/v1/gas_load_queue?job_id=eq.${jobId}&status=eq.failed`,
+          {
             method: "PATCH",
             headers: sbHeaders({ Prefer: "return=minimal" }),
             body: JSON.stringify({
-              done,
-              failed: 0,
-              retry_round: retryRound + 1,
-              status: "running",
-              finished_at: null,
+              status: "pending",
+              tx_hash: null,
+              error_message: null,
+              proxy_ip: null,
+              processed_at: null,
               updated_at: new Date().toISOString(),
             }),
-          });
-          console.log(
-            `[retry] job ${jobId} round ${retryRound + 1}/${maxRetries} — ${failed} failed wallets re-queued`
-          );
-          return;
-        }
+          }
+        );
+
+        // Bump retry_round, reset failed count, mark job running again
+        await fetch(`${SUPABASE_URL}/rest/v1/gas_load_jobs?id=eq.${jobId}`, {
+          method: "PATCH",
+          headers: sbHeaders({ Prefer: "return=minimal" }),
+          body: JSON.stringify({
+            done,
+            failed: 0,
+            retry_round: retryRound + 1,
+            status: "running",
+            finished_at: null,
+            updated_at: new Date().toISOString(),
+          }),
+        });
+        console.log(
+          `[retry] job ${jobId} round ${retryRound + 1}/${maxRetries} — ${failed} failed wallets re-queued`
+        );
+        return;
       }
     }
   }
