@@ -203,7 +203,11 @@ async function claimOne(row: QueueRow): Promise<{
       // `require(false)` even when the wallet has enough CELO.
       const feeData = await provider.getFeeData();
       const estimatedGas = BigInt(await (ubi as any).claim.estimateGas());
-      const gasUnitPrice = feeData.maxFeePerGas ?? feeData.gasPrice;
+      // Use the actual on-chain gasPrice for the affordability check.
+      // maxFeePerGas (= 2*baseFee + priorityFee) overestimates by ~2x and
+      // would wrongly reject wallets that actually have enough CELO (e.g.
+      // 0.11 CELO when claim only needs ~0.07).
+      const gasUnitPrice = feeData.gasPrice ?? feeData.maxFeePerGas;
       if (gasUnitPrice) {
         const balance = await provider.getBalance(addr);
         const required = estimatedGas * gasUnitPrice;
