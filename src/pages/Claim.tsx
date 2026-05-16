@@ -33,6 +33,13 @@ type WalletStatus =
   | "needs_gas"
   | "waiting_gas";
 
+type ClaimNetwork = "celo" | "xdc";
+
+const NETWORK_META: Record<ClaimNetwork, { label: string; explorerTx: string; nativeGas: string }> = {
+  celo: { label: "Celo Mainnet", explorerTx: "https://celoscan.io/tx/", nativeGas: "CELO" },
+  xdc: { label: "XDC Mainnet", explorerTx: "https://xdcscan.com/tx/", nativeGas: "XDC" },
+};
+
 type Job = {
   id: string;
   batch_name: string;
@@ -41,6 +48,7 @@ type Job = {
   failed: number;
   needs_gas: number;
   status: JobStatus;
+  network?: ClaimNetwork;
   created_at: string;
   finished_at: string | null;
 };
