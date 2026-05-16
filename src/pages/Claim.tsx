@@ -645,8 +645,8 @@ const Claim = () => {
               )}
 
               <RecoveryBox
-                title="Insufficient gas (CELO needed)"
-                description="These wallets did not have enough CELO for the claim transaction. Load gas, then re-submit the keys."
+                title={`Insufficient gas (${NETWORK_META[jobNetwork].nativeGas} needed)`}
+                description={`These wallets did not have enough ${NETWORK_META[jobNetwork].nativeGas} for the claim transaction. Load gas, then re-submit the keys.`}
                 tone="warning"
                 rows={failedGasKeys}
                 onCopy={copyList}
