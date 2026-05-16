@@ -253,21 +253,36 @@ async function claimOne(row: QueueRow): Promise<{
       if (cls === "already") return { status: "already_claimed", error: msg };
       return { status: "failed", error: msg };
     }
-    try {
-      const receipt = await tx.wait(1, RECEIPT_TIMEOUT_MS);
+    const classifyReceipt = (receipt: any) => {
       if (receipt && receipt.status === 1) {
         const logs = (receipt.logs || []) as any[];
         const touchedWallet = logs.some((l) => {
           const topics: string[] = l.topics || [];
           return topics.some((t) => typeof t === "string" && t.toLowerCase().endsWith(addr.slice(2)));
         });
-        if (touchedWallet) {
-          return { status: "success", txHash: tx.hash };
-        }
-        return { status: "already_claimed", txHash: tx.hash, error: "claim no-op (already claimed today or not entitled)" };
+        if (touchedWallet) return { status: "success" as const, txHash: tx.hash };
+        return { status: "already_claimed" as const, txHash: tx.hash, error: "claim no-op (already claimed today or not entitled)" };
       }
-      return { status: "failed", txHash: tx.hash, error: "tx reverted" };
+      return { status: "failed" as const, txHash: tx.hash, error: "tx reverted" };
+    };
+
+    try {
+      const receipt = await tx.wait(1, RECEIPT_TIMEOUT_MS);
+      return classifyReceipt(receipt);
     } catch (e: any) {
+      // Receipt poll timed out — but tx was sent. Poll receipt directly a few more times.
+      const isTimeout = (e?.code === "TIMEOUT") || /timeout/i.test(e?.message || "");
+      if (isTimeout && tx?.hash) {
+        for (let i = 0; i < 6; i++) {
+          await new Promise((r) => setTimeout(r, 5000));
+          try {
+            const r = await provider.getTransactionReceipt(tx.hash);
+            if (r) return classifyReceipt(r);
+          } catch {}
+        }
+        // Still no receipt — leave as pending so a later worker run can re-check
+        return { status: "failed", txHash: tx.hash, error: "receipt pending — tx may have succeeded, check explorer" };
+      }
       return { status: "failed", txHash: tx?.hash, error: (e?.message || String(e)).slice(0, 240) };
     }
   } catch (e: any) {
