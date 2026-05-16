@@ -6,7 +6,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Eye, EyeOff, Trash2, Copy, RefreshCw, ChevronDown, ChevronUp } from "lucide-react";
+import { Eye, EyeOff, Trash2, Copy, RefreshCw, ChevronDown, ChevronUp, Clock } from "lucide-react";
+import { Input } from "@/components/ui/input";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
@@ -80,6 +81,11 @@ export default function DailyClaim() {
   const [refreshing, setRefreshing] = useState(false);
   const [shownKeys, setShownKeys] = useState<Record<string, boolean>>({});
   const [showFailedBox, setShowFailedBox] = useState(true);
+  const [settings, setSettings] = useState<Record<Network, { hour: number; minute: number; enabled: boolean }>>({
+    celo: { hour: 0, minute: 0, enabled: true },
+    xdc: { hour: 0, minute: 0, enabled: true },
+  });
+  const [savingTime, setSavingTime] = useState(false);
   const pollRef = useRef<number | null>(null);
 
   useEffect(() => {
@@ -90,9 +96,10 @@ export default function DailyClaim() {
     if (!user) return;
     setRefreshing(true);
     try {
-      const [walletsRes, statusRes] = await Promise.all([
+      const [walletsRes, statusRes, settingsRes] = await Promise.all([
         supabase.functions.invoke("daily-claim-wallets"),
         supabase.functions.invoke("daily-claim-status"),
+        supabase.functions.invoke("daily-claim-wallets?action=get_settings"),
       ]);
       if (walletsRes.data?.wallets) setWallets(walletsRes.data.wallets);
       if (statusRes.data) {
@@ -100,8 +107,34 @@ export default function DailyClaim() {
         if (statusRes.data.networks) setNetState(statusRes.data.networks);
         setServerNow(statusRes.data.server_time || "");
       }
+      if (settingsRes.data?.settings) {
+        setSettings((prev) => {
+          const next = { ...prev };
+          for (const s of settingsRes.data.settings) {
+            const net = (s.network === "xdc" ? "xdc" : "celo") as Network;
+            next[net] = { hour: s.start_hour_bd ?? 0, minute: s.start_minute_bd ?? 0, enabled: s.enabled !== false };
+          }
+          return next;
+        });
+      }
     } finally {
       setRefreshing(false);
+    }
+  }
+
+  async function saveTime(net: Network) {
+    setSavingTime(true);
+    try {
+      const s = settings[net];
+      const { error } = await supabase.functions.invoke("daily-claim-wallets?action=set_settings", {
+        body: { network: net, start_hour_bd: s.hour, start_minute_bd: s.minute, enabled: s.enabled },
+      });
+      if (error) throw error;
+      toast({ title: `Saved ${net.toUpperCase()} start time: ${String(s.hour).padStart(2,"0")}:${String(s.minute).padStart(2,"0")} BD` });
+    } catch (e: any) {
+      toast({ title: "Failed to save", description: e?.message || String(e), variant: "destructive" });
+    } finally {
+      setSavingTime(false);
     }
   }
 
@@ -170,18 +203,18 @@ export default function DailyClaim() {
     copy(txt, `Copied ${failedKeys.length} failed keys`);
   }
 
-  // Time until next BD midnight (UTC 18:00)
+  // Time until next scheduled run for active network (BD time = UTC+6)
   const countdown = useMemo(() => {
+    const s = settings[activeNet];
     const now = new Date(serverNow || Date.now());
-    const next = new Date(now);
-    next.setUTCMinutes(0, 0, 0);
-    next.setUTCHours(18);
-    if (next.getTime() <= now.getTime()) next.setUTCDate(next.getUTCDate() + 1);
-    const diff = next.getTime() - now.getTime();
-    const h = Math.floor(diff / 3_600_000);
-    const m = Math.floor((diff % 3_600_000) / 60_000);
+    const targetUtcMin = ((s.hour * 60 + s.minute) - 360 + 1440) % 1440;
+    const nowMin = now.getUTCHours() * 60 + now.getUTCMinutes();
+    let diff = targetUtcMin - nowMin;
+    if (diff <= 0) diff += 1440;
+    const h = Math.floor(diff / 60);
+    const m = diff % 60;
     return `${h}h ${m}m`;
-  }, [serverNow]);
+  }, [serverNow, settings, activeNet]);
 
   const waitRemainingMin = useMemo(() => {
     if (!run || run.phase !== "waiting_30m" || !run.gas_requests_done_at) return null;
@@ -201,8 +234,8 @@ export default function DailyClaim() {
             <Link to="/" className="text-sm text-muted-foreground hover:text-foreground">← Home</Link>
             <h1 className="text-2xl font-bold mt-1">Daily Auto-Claim</h1>
             <p className="text-sm text-muted-foreground">
-              Runs automatically every day at <span className="text-foreground font-medium">12:00 AM Bangladesh time</span> ·
-              Next start in <span className="text-foreground font-medium">{countdown}</span>
+              Runs automatically every day at your chosen Bangladesh time · Once keys are saved you never need to paste again ·
+              Next <span className="text-foreground font-medium uppercase">{activeNet}</span> run in <span className="text-foreground font-medium">{countdown}</span>
             </p>
           </div>
           <Button variant="outline" size="sm" onClick={fetchAll} disabled={refreshing}>
@@ -218,6 +251,54 @@ export default function DailyClaim() {
 
           {(["celo", "xdc"] as Network[]).map((net) => (
             <TabsContent key={net} value={net} className="space-y-6 mt-4">
+              {/* Schedule */}
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="flex items-center gap-2">
+                    <Clock className="w-4 h-4" /> Daily Start Time — {net.toUpperCase()}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <p className="text-xs text-muted-foreground">
+                    Pick the Bangladesh time (24-hour) when auto-claim should start each day. Once set, every saved {net.toUpperCase()} wallet is claimed automatically at that time — no need to paste keys again.
+                  </p>
+                  <div className="flex items-end gap-2 flex-wrap">
+                    <div>
+                      <label className="text-xs text-muted-foreground">Hour (0–23)</label>
+                      <Input
+                        type="number" min={0} max={23}
+                        value={settings[net].hour}
+                        onChange={(e) => setSettings((s) => ({ ...s, [net]: { ...s[net], hour: Math.max(0, Math.min(23, Number(e.target.value) || 0)) } }))}
+                        className="w-24"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs text-muted-foreground">Minute (0–59)</label>
+                      <Input
+                        type="number" min={0} max={59}
+                        value={settings[net].minute}
+                        onChange={(e) => setSettings((s) => ({ ...s, [net]: { ...s[net], minute: Math.max(0, Math.min(59, Number(e.target.value) || 0)) } }))}
+                        className="w-24"
+                      />
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Switch
+                        checked={settings[net].enabled}
+                        onCheckedChange={(v) => setSettings((s) => ({ ...s, [net]: { ...s[net], enabled: v } }))}
+                      />
+                      <span className="text-xs text-muted-foreground">Enabled</span>
+                    </div>
+                    <Button size="sm" onClick={() => saveTime(net)} disabled={savingTime}>
+                      {savingTime ? "Saving…" : "Save time"}
+                    </Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Current: <span className="text-foreground font-medium">{String(settings[net].hour).padStart(2,"0")}:{String(settings[net].minute).padStart(2,"0")} BD</span>
+                    {!settings[net].enabled && <span className="ml-2 text-amber-400">(disabled)</span>}
+                  </p>
+                </CardContent>
+              </Card>
+
               {/* Today's run */}
               <Card>
                 <CardHeader className="pb-3">

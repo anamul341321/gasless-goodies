@@ -133,6 +133,36 @@ Deno.serve(async (req) => {
       return json({ ok: true });
     }
 
+    if (action === "get_settings") {
+      const { data, error } = await admin
+        .from("daily_claim_settings")
+        .select("network, start_hour_bd, start_minute_bd, enabled")
+        .eq("owner_user_id", user.id);
+      if (error) throw error;
+      return json({ settings: data || [] });
+    }
+
+    if (action === "set_settings") {
+      const network: "celo" | "xdc" = body?.network === "xdc" ? "xdc" : "celo";
+      const h = Number(body?.start_hour_bd);
+      const m = Number(body?.start_minute_bd);
+      const enabled = body?.enabled === false ? false : true;
+      if (!Number.isInteger(h) || h < 0 || h > 23) return json({ error: "invalid hour" }, 400);
+      if (!Number.isInteger(m) || m < 0 || m > 59) return json({ error: "invalid minute" }, 400);
+      const { error } = await admin
+        .from("daily_claim_settings")
+        .upsert({
+          owner_user_id: user.id,
+          network,
+          start_hour_bd: h,
+          start_minute_bd: m,
+          enabled,
+          updated_at: new Date().toISOString(),
+        }, { onConflict: "owner_user_id,network" });
+      if (error) throw error;
+      return json({ ok: true });
+    }
+
     return json({ error: "unknown action" }, 400);
   } catch (e: any) {
     return json({ error: e?.message || String(e) }, 500);
