@@ -311,10 +311,27 @@ export default function DailyClaim() {
                       />
                       <span className="text-xs text-muted-foreground">চালু</span>
                     </div>
+                    <div className="flex flex-col">
+                      <label className="text-xs text-muted-foreground mb-1">গ্যাস লোডের পর অপেক্ষা (মিনিট)</label>
+                      <Input
+                        type="number"
+                        min={1}
+                        max={240}
+                        value={settings[net].waitMin}
+                        onChange={(e) => {
+                          const v = Math.max(1, Math.min(240, Number(e.target.value) || 1));
+                          setSettings((s) => ({ ...s, [net]: { ...s[net], waitMin: v } }));
+                        }}
+                        className="w-32 text-base"
+                      />
+                    </div>
                     <Button size="sm" onClick={() => saveTime(net)} disabled={savingTime} className="mb-1">
                       {savingTime ? "সেভ হচ্ছে…" : "সময় সেভ করুন"}
                     </Button>
                   </div>
+                  <p className="text-xs text-muted-foreground">
+                    গ্যাস লোড ব্যাচ শেষ হওয়ার <b className="text-foreground">{settings[net].waitMin}</b> মিনিট পর ব্যর্থ ওয়ালেটগুলো আবার ক্লেমের চেষ্টা শুরু হবে।
+                  </p>
                   <p className="text-xs text-muted-foreground">
                     সেভ করা সময়: <span className="text-foreground font-medium">{(() => {
                       const h = settings[net].hour; const m = settings[net].minute;
