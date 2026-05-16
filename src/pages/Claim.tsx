@@ -496,7 +496,10 @@ const Claim = () => {
                   )}
                 </div>
               </div>
-              <Badge variant={isJobActive ? "default" : "secondary"}>{job.status}</Badge>
+              <div className="flex flex-col items-end gap-1">
+                <Badge variant={isJobActive ? "default" : "secondary"}>{job.status}</Badge>
+                <Badge variant="outline" className="text-[10px]">{NETWORK_META[jobNetwork].label}</Badge>
+              </div>
             </CardHeader>
             <CardContent className="space-y-3">
               <div className="flex items-center justify-between text-xs">
