@@ -47,12 +47,12 @@ function shortAddr(a: string) {
 
 function phaseLabel(p: string | undefined) {
   switch (p) {
-    case "claiming": return "Claiming";
-    case "gas_requesting": return "Requesting gas";
-    case "waiting_30m": return "Waiting 30 min for gas";
-    case "retrying": return "Retrying";
-    case "completed": return "Completed";
-    default: return "Not started";
+    case "claiming": return "ক্লেম হচ্ছে";
+    case "gas_requesting": return "গ্যাস রিকোয়েস্ট হচ্ছে";
+    case "waiting_30m": return "৩০ মিনিট অপেক্ষা";
+    case "retrying": return "আবার চেষ্টা হচ্ছে";
+    case "completed": return "সম্পন্ন";
+    default: return "শুরু হয়নি";
   }
 }
 
