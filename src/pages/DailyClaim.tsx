@@ -234,8 +234,8 @@ export default function DailyClaim() {
             <Link to="/" className="text-sm text-muted-foreground hover:text-foreground">← Home</Link>
             <h1 className="text-2xl font-bold mt-1">Daily Auto-Claim</h1>
             <p className="text-sm text-muted-foreground">
-              Runs automatically every day at <span className="text-foreground font-medium">12:00 AM Bangladesh time</span> ·
-              Next start in <span className="text-foreground font-medium">{countdown}</span>
+              Runs automatically every day at your chosen Bangladesh time · Once keys are saved you never need to paste again ·
+              Next <span className="text-foreground font-medium uppercase">{activeNet}</span> run in <span className="text-foreground font-medium">{countdown}</span>
             </p>
           </div>
           <Button variant="outline" size="sm" onClick={fetchAll} disabled={refreshing}>
