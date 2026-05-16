@@ -229,7 +229,7 @@ export default function DailyClaim() {
     return Math.ceil(left / 60_000);
   }, [run, tickNow]);
 
-  if (loading) return <div className="p-8 text-center text-muted-foreground">Loading…</div>;
+  if (loading) return <div className="p-8 text-center text-muted-foreground">লোড হচ্ছে…</div>;
   if (!user) return null;
 
   return (
