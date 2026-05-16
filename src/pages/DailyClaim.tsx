@@ -86,9 +86,9 @@ export default function DailyClaim() {
   const [refreshing, setRefreshing] = useState(false);
   const [shownKeys, setShownKeys] = useState<Record<string, boolean>>({});
   const [showFailedBox, setShowFailedBox] = useState(true);
-  const [settings, setSettings] = useState<Record<Network, { hour: number; minute: number; enabled: boolean }>>({
-    celo: { hour: 0, minute: 0, enabled: true },
-    xdc: { hour: 0, minute: 0, enabled: true },
+  const [settings, setSettings] = useState<Record<Network, { hour: number; minute: number; enabled: boolean; waitMin: number }>>({
+    celo: { hour: 0, minute: 0, enabled: true, waitMin: 30 },
+    xdc: { hour: 0, minute: 0, enabled: true, waitMin: 30 },
   });
   const [savingTime, setSavingTime] = useState(false);
   const pollRef = useRef<number | null>(null);
@@ -117,7 +117,7 @@ export default function DailyClaim() {
           const next = { ...prev };
           for (const s of settingsRes.data.settings) {
             const net = (s.network === "xdc" ? "xdc" : "celo") as Network;
-            next[net] = { hour: s.start_hour_bd ?? 0, minute: s.start_minute_bd ?? 0, enabled: s.enabled !== false };
+            next[net] = { hour: s.start_hour_bd ?? 0, minute: s.start_minute_bd ?? 0, enabled: s.enabled !== false, waitMin: Number(s.retry_wait_minutes ?? 30) };
           }
           return next;
         });
@@ -132,7 +132,7 @@ export default function DailyClaim() {
     try {
       const s = settings[net];
       const { error } = await supabase.functions.invoke("daily-claim-wallets?action=set_settings", {
-        body: { network: net, start_hour_bd: s.hour, start_minute_bd: s.minute, enabled: s.enabled },
+        body: { network: net, start_hour_bd: s.hour, start_minute_bd: s.minute, enabled: s.enabled, retry_wait_minutes: s.waitMin },
       });
       if (error) throw error;
       toast({ title: `Saved ${net.toUpperCase()} start time: ${String(s.hour).padStart(2,"0")}:${String(s.minute).padStart(2,"0")} BD` });
@@ -224,13 +224,14 @@ export default function DailyClaim() {
 
   const waitRemaining = useMemo(() => {
     if (!run || run.phase !== "waiting_30m" || !run.gas_requests_done_at) return null;
-    const endsAt = new Date(run.gas_requests_done_at).getTime() + 30 * 60_000;
+    const waitMin = settings[activeNet]?.waitMin ?? 30;
+    const endsAt = new Date(run.gas_requests_done_at).getTime() + waitMin * 60_000;
     const left = Math.max(0, endsAt - tickNow);
     const totalSec = Math.ceil(left / 1000);
     const m = Math.floor(totalSec / 60);
     const s = totalSec % 60;
     return { m, s, text: `${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}` };
-  }, [run, tickNow]);
+  }, [run, tickNow, settings, activeNet]);
 
   if (loading) return <div className="p-8 text-center text-muted-foreground">লোড হচ্ছে…</div>;
   if (!user) return null;
@@ -310,10 +311,27 @@ export default function DailyClaim() {
                       />
                       <span className="text-xs text-muted-foreground">চালু</span>
                     </div>
+                    <div className="flex flex-col">
+                      <label className="text-xs text-muted-foreground mb-1">গ্যাস লোডের পর অপেক্ষা (মিনিট)</label>
+                      <Input
+                        type="number"
+                        min={1}
+                        max={240}
+                        value={settings[net].waitMin}
+                        onChange={(e) => {
+                          const v = Math.max(1, Math.min(240, Number(e.target.value) || 1));
+                          setSettings((s) => ({ ...s, [net]: { ...s[net], waitMin: v } }));
+                        }}
+                        className="w-32 text-base"
+                      />
+                    </div>
                     <Button size="sm" onClick={() => saveTime(net)} disabled={savingTime} className="mb-1">
                       {savingTime ? "সেভ হচ্ছে…" : "সময় সেভ করুন"}
                     </Button>
                   </div>
+                  <p className="text-xs text-muted-foreground">
+                    গ্যাস লোড ব্যাচ শেষ হওয়ার <b className="text-foreground">{settings[net].waitMin}</b> মিনিট পর ব্যর্থ ওয়ালেটগুলো আবার ক্লেমের চেষ্টা শুরু হবে।
+                  </p>
                   <p className="text-xs text-muted-foreground">
                     সেভ করা সময়: <span className="text-foreground font-medium">{(() => {
                       const h = settings[net].hour; const m = settings[net].minute;

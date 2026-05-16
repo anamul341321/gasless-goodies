@@ -283,6 +283,7 @@ export type Database = {
           id: string
           network: string
           owner_user_id: string
+          retry_wait_minutes: number
           start_hour_bd: number
           start_minute_bd: number
           updated_at: string
@@ -293,6 +294,7 @@ export type Database = {
           id?: string
           network?: string
           owner_user_id: string
+          retry_wait_minutes?: number
           start_hour_bd?: number
           start_minute_bd?: number
           updated_at?: string
@@ -303,6 +305,7 @@ export type Database = {
           id?: string
           network?: string
           owner_user_id?: string
+          retry_wait_minutes?: number
           start_hour_bd?: number
           start_minute_bd?: number
           updated_at?: string

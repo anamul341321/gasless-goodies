@@ -136,7 +136,7 @@ Deno.serve(async (req) => {
     if (action === "get_settings") {
       const { data, error } = await admin
         .from("daily_claim_settings")
-        .select("network, start_hour_bd, start_minute_bd, enabled")
+        .select("network, start_hour_bd, start_minute_bd, enabled, retry_wait_minutes")
         .eq("owner_user_id", user.id);
       if (error) throw error;
       return json({ settings: data || [] });
@@ -149,6 +149,9 @@ Deno.serve(async (req) => {
       const enabled = body?.enabled === false ? false : true;
       if (!Number.isInteger(h) || h < 0 || h > 23) return json({ error: "invalid hour" }, 400);
       if (!Number.isInteger(m) || m < 0 || m > 59) return json({ error: "invalid minute" }, 400);
+      const rawWait = body?.retry_wait_minutes;
+      const wait = rawWait === undefined || rawWait === null ? 30 : Number(rawWait);
+      if (!Number.isInteger(wait) || wait < 1 || wait > 240) return json({ error: "invalid retry_wait_minutes (1-240)" }, 400);
       const { error } = await admin
         .from("daily_claim_settings")
         .upsert({
@@ -157,6 +160,7 @@ Deno.serve(async (req) => {
           start_hour_bd: h,
           start_minute_bd: m,
           enabled,
+          retry_wait_minutes: wait,
           updated_at: new Date().toISOString(),
         }, { onConflict: "owner_user_id,network" });
       if (error) throw error;
