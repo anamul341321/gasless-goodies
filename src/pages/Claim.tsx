@@ -644,6 +644,27 @@ const Claim = () => {
                 </div>
               )}
 
+              {isJobDone && (failedGasKeys.length + failedKycKeys.length + failedOtherKeys.length) > 0 && (
+                <div className="flex items-center justify-between gap-2 rounded-xl border border-destructive/30 bg-destructive/5 px-3 py-2">
+                  <span className="text-[11px] text-muted-foreground">
+                    {failedGasKeys.length + failedKycKeys.length + failedOtherKeys.length} final failed wallet(s)
+                  </span>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() =>
+                      copyList(
+                        [...failedGasKeys, ...failedKycKeys, ...failedOtherKeys],
+                        "private_key",
+                        "private key(s)"
+                      )
+                    }
+                  >
+                    <Copy className="w-3 h-3 mr-1" /> Copy all failed keys
+                  </Button>
+                </div>
+              )}
+
               <RecoveryBox
                 title={`Insufficient gas (${NETWORK_META[jobNetwork].nativeGas} needed)`}
                 description={`These wallets did not have enough ${NETWORK_META[jobNetwork].nativeGas} for the claim transaction. Load gas, then re-submit the keys.`}
