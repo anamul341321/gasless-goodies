@@ -203,18 +203,18 @@ export default function DailyClaim() {
     copy(txt, `Copied ${failedKeys.length} failed keys`);
   }
 
-  // Time until next BD midnight (UTC 18:00)
+  // Time until next scheduled run for active network (BD time = UTC+6)
   const countdown = useMemo(() => {
+    const s = settings[activeNet];
     const now = new Date(serverNow || Date.now());
-    const next = new Date(now);
-    next.setUTCMinutes(0, 0, 0);
-    next.setUTCHours(18);
-    if (next.getTime() <= now.getTime()) next.setUTCDate(next.getUTCDate() + 1);
-    const diff = next.getTime() - now.getTime();
-    const h = Math.floor(diff / 3_600_000);
-    const m = Math.floor((diff % 3_600_000) / 60_000);
+    const targetUtcMin = ((s.hour * 60 + s.minute) - 360 + 1440) % 1440;
+    const nowMin = now.getUTCHours() * 60 + now.getUTCMinutes();
+    let diff = targetUtcMin - nowMin;
+    if (diff <= 0) diff += 1440;
+    const h = Math.floor(diff / 60);
+    const m = diff % 60;
     return `${h}h ${m}m`;
-  }, [serverNow]);
+  }, [serverNow, settings, activeNet]);
 
   const waitRemainingMin = useMemo(() => {
     if (!run || run.phase !== "waiting_30m" || !run.gas_requests_done_at) return null;
