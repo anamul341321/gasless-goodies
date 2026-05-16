@@ -152,6 +152,7 @@ export type Database = {
           gas_requested_at: string | null
           gas_tx: string | null
           id: string
+          network: string
           owner_user_id: string
           phase1_error: string | null
           phase1_status: string
@@ -172,6 +173,7 @@ export type Database = {
           gas_requested_at?: string | null
           gas_tx?: string | null
           id?: string
+          network?: string
           owner_user_id: string
           phase1_error?: string | null
           phase1_status?: string
@@ -192,6 +194,7 @@ export type Database = {
           gas_requested_at?: string | null
           gas_tx?: string | null
           id?: string
+          network?: string
           owner_user_id?: string
           phase1_error?: string | null
           phase1_status?: string
@@ -222,6 +225,7 @@ export type Database = {
           gas_requests_done_at: string | null
           id: string
           last_error: string | null
+          network: string
           owner_user_id: string
           phase: string
           phase1_done_at: string | null
@@ -240,6 +244,7 @@ export type Database = {
           gas_requests_done_at?: string | null
           id?: string
           last_error?: string | null
+          network?: string
           owner_user_id: string
           phase?: string
           phase1_done_at?: string | null
@@ -258,6 +263,7 @@ export type Database = {
           gas_requests_done_at?: string | null
           id?: string
           last_error?: string | null
+          network?: string
           owner_user_id?: string
           phase?: string
           phase1_done_at?: string | null
@@ -277,6 +283,7 @@ export type Database = {
           id: string
           is_active: boolean
           label: string | null
+          network: string
           owner_user_id: string
           updated_at: string
           wallet_address: string
@@ -287,6 +294,7 @@ export type Database = {
           id?: string
           is_active?: boolean
           label?: string | null
+          network?: string
           owner_user_id: string
           updated_at?: string
           wallet_address: string
@@ -297,6 +305,7 @@ export type Database = {
           id?: string
           is_active?: boolean
           label?: string | null
+          network?: string
           owner_user_id?: string
           updated_at?: string
           wallet_address?: string
