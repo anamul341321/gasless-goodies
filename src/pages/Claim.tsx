@@ -108,6 +108,7 @@ const Claim = () => {
   const { user, loading: authLoading } = useAuth();
   const [rawInput, setRawInput] = useState("");
   const [batchName, setBatchName] = useState("");
+  const [network, setNetwork] = useState<ClaimNetwork>("celo");
   const [submitting, setSubmitting] = useState(false);
 
   // KYC verification state
