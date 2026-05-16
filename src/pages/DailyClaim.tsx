@@ -96,9 +96,10 @@ export default function DailyClaim() {
     if (!user) return;
     setRefreshing(true);
     try {
-      const [walletsRes, statusRes] = await Promise.all([
+      const [walletsRes, statusRes, settingsRes] = await Promise.all([
         supabase.functions.invoke("daily-claim-wallets"),
         supabase.functions.invoke("daily-claim-status"),
+        supabase.functions.invoke("daily-claim-wallets?action=get_settings"),
       ]);
       if (walletsRes.data?.wallets) setWallets(walletsRes.data.wallets);
       if (statusRes.data) {
@@ -106,8 +107,34 @@ export default function DailyClaim() {
         if (statusRes.data.networks) setNetState(statusRes.data.networks);
         setServerNow(statusRes.data.server_time || "");
       }
+      if (settingsRes.data?.settings) {
+        setSettings((prev) => {
+          const next = { ...prev };
+          for (const s of settingsRes.data.settings) {
+            const net = (s.network === "xdc" ? "xdc" : "celo") as Network;
+            next[net] = { hour: s.start_hour_bd ?? 0, minute: s.start_minute_bd ?? 0, enabled: s.enabled !== false };
+          }
+          return next;
+        });
+      }
     } finally {
       setRefreshing(false);
+    }
+  }
+
+  async function saveTime(net: Network) {
+    setSavingTime(true);
+    try {
+      const s = settings[net];
+      const { error } = await supabase.functions.invoke("daily-claim-wallets?action=set_settings", {
+        body: { network: net, start_hour_bd: s.hour, start_minute_bd: s.minute, enabled: s.enabled },
+      });
+      if (error) throw error;
+      toast({ title: `Saved ${net.toUpperCase()} start time: ${String(s.hour).padStart(2,"0")}:${String(s.minute).padStart(2,"0")} BD` });
+    } catch (e: any) {
+      toast({ title: "Failed to save", description: e?.message || String(e), variant: "destructive" });
+    } finally {
+      setSavingTime(false);
     }
   }
 
