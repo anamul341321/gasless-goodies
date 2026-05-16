@@ -21,16 +21,11 @@ const WEBSHARE_HOST = "p.webshare.io";
 const WEBSHARE_PORT = "80";
 const BALANCE_VERIFY_ATTEMPTS = 8;
 const BALANCE_VERIFY_DELAY_MS = 4_000;
-// GoodDollar faucet tops up wallets that fall below its internal threshold.
-// Empirically: a wallet with 0.05 CELO still receives top-ups from the faucet
-// (verified via esusuafrica.com). So we should NOT pre-skip wallets at low
-// balances — let the faucet decide. We only treat "no balance increase" as
-// success when the wallet is clearly already well-funded for a G$ claim
-// (> 0.2 CELO — way more than any single claim needs).
-// A G$ claim costs ~0.001 CELO. If a wallet already has > 0.005 CELO it can
-// pay gas without faucet help. The GD faucet returns {ok:1} without sending
-// anything for already-funded wallets, so we treat that as success.
-const FAUCET_SKIP_THRESHOLD_WEI = 5_000_000_000_000_000n; // 0.005 CELO
+// Only skip faucet when the wallet is genuinely ready for the expensive Celo
+// claim gas path. Previously this was 0.005 CELO, so wallets with ~0.048 CELO
+// were marked success without receiving any faucet tx, while daily claim still
+// needed ~0.064 CELO. Keep the threshold above the observed requirement.
+const FAUCET_SKIP_THRESHOLD_WEI = 70_000_000_000_000_000n; // 0.07 native coin
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -210,9 +205,8 @@ async function callFaucet(
     const chainId = CHAIN_IDS[network];
     const nativeLabel = NATIVE_LABEL[network];
 
-    // Pre-check: if the wallet already has enough native gas for a G$ claim,
-    // skip calling the faucet entirely. GoodDollar returns {ok:1} but does
-    // not actually send anything, which previously looked like a failure.
+    // Pre-check: only wallets that are already claim-ready are marked success
+    // without a faucet tx. Low-but-nonzero balances must still call faucet.
     if (beforeBalance !== null && beforeBalance >= FAUCET_SKIP_THRESHOLD_WEI) {
       return { ok: true, ip, error: undefined };
     }
@@ -271,9 +265,9 @@ async function callFaucet(
       };
     }
 
-    // If wallet already has enough CELO for a G$ claim, GoodDollar faucet
-    // returns {ok:1} without sending a tx. Treat that as success — the wallet
-    // can already pay gas, which is the whole point of the gas loader.
+    // If wallet already has enough native gas for a G$ claim, GoodDollar faucet
+    // can return {ok:1} without sending a tx. Treat that as success only above
+    // the claim-ready threshold.
     if (
       beforeBalance !== null &&
       beforeBalance >= FAUCET_SKIP_THRESHOLD_WEI
