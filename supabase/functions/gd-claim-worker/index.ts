@@ -1,12 +1,18 @@
-// GoodDollar batch claim worker (parallel mode).
+// GoodDollar batch claim worker (parallel mode, multi-network).
+//
+// Supports both Celo Mainnet and XDC Mainnet. Each gd_claim_jobs row carries a
+// `network` column; queue rows inherit the network from their parent job.
 //
 // Strategy:
-//   - Pick up to BATCH_SIZE pending wallets from gd_claim_queue.
+//   - Pick up to BATCH_SIZE pending wallets from gd_claim_queue, joined with
+//     their job so we know which network each wallet belongs to.
 //   - Mark them all 'claiming' atomically.
+//   - For each wallet, build a provider + UBIScheme + Identity contract using
+//     the per-network config.
 //   - Read checkEntitlement() before sending a tx; entitlement 0 is marked as
-//     already_claimed so CELO is not spent on wallets already claimed today.
-//   - Fire eligible UBIScheme.claim() calls in parallel. Each call uses the
-//     wallet's own nonce so they don't collide.
+//     already_claimed so native gas is not spent on wallets already claimed
+//     today.
+//   - Fire eligible UBIScheme.claim() calls in parallel.
 //   - For each sent tx, await the receipt to record success/failure.
 //   - Classify failures:
 //       * insufficient gas       -> status 'failed_gas'  (key kept for user)
@@ -20,6 +26,7 @@
 //   need the real CELO amount the claim needs.
 
 import { Wallet, JsonRpcProvider, Contract, formatEther } from "npm:ethers@6.13.4";
+import { GD_NETWORKS, type GDNetwork, resolveNetwork } from "../_shared/gdNetworks.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -30,9 +37,6 @@ const corsHeaders = {
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
-const CELO_RPC = "https://forno.celo.org";
-const IDENTITY_ADDRESS = "0xC361A6E67822a0EDc17D899227dd9FC50BD62F42";
-const UBI_SCHEME_ADDRESS = "0x43d72Ff17701B2DA814620735C39C620Ce0ea4A1";
 const UBI_ABI = [
   "function claim() returns (uint256)",
   "function checkEntitlement(address member) view returns (uint256)",
@@ -56,7 +60,16 @@ function sbHeaders(extra: Record<string, string> = {}) {
   };
 }
 
-const provider = new JsonRpcProvider(CELO_RPC, 42220);
+// Cache one provider per network across invocations
+const providers: Partial<Record<GDNetwork, JsonRpcProvider>> = {};
+function providerFor(net: GDNetwork): JsonRpcProvider {
+  const existing = providers[net];
+  if (existing) return existing;
+  const cfg = GD_NETWORKS[net];
+  const p = new JsonRpcProvider(cfg.rpc, cfg.chainId);
+  providers[net] = p;
+  return p;
+}
 
 type QueueRow = {
   id: string;
@@ -64,6 +77,7 @@ type QueueRow = {
   wallet_address: string;
   private_key: string;
   attempts: number;
+  network: GDNetwork;
 };
 
 function classifyError(err: any): "gas" | "kyc" | "already" | "other" {
@@ -121,8 +135,9 @@ async function pickPendingBatch(): Promise<QueueRow[]> {
     }
   ).catch((e) => console.warn("stale claiming reset failed", e));
 
+  // Embed parent job to get network in a single call
   const findRes = await fetch(
-    `${SUPABASE_URL}/rest/v1/gd_claim_queue?status=eq.pending&select=id,job_id,wallet_address,private_key,attempts&order=created_at.asc&limit=${BATCH_SIZE}`,
+    `${SUPABASE_URL}/rest/v1/gd_claim_queue?status=eq.pending&select=id,job_id,wallet_address,private_key,attempts,gd_claim_jobs(network)&order=created_at.asc&limit=${BATCH_SIZE}`,
     { headers: sbHeaders() }
   );
   if (!findRes.ok) return [];
@@ -145,10 +160,19 @@ async function pickPendingBatch(): Promise<QueueRow[]> {
   const claimed = await claimRes.json();
   if (!Array.isArray(claimed)) return [];
   const claimedIds = new Set(claimed.map((c: any) => c.id));
-  const winners = rows.filter((r: any) => claimedIds.has(r.id));
+  const winners = rows
+    .filter((r: any) => claimedIds.has(r.id))
+    .map((r: any) => ({
+      id: r.id,
+      job_id: r.job_id,
+      wallet_address: r.wallet_address,
+      private_key: r.private_key,
+      attempts: r.attempts,
+      network: resolveNetwork(r.gd_claim_jobs?.network).id,
+    })) as QueueRow[];
 
   // Mark involved jobs as 'running'
-  const jobIds = [...new Set(winners.map((r: any) => r.job_id))];
+  const jobIds = [...new Set(winners.map((r) => r.job_id))];
   for (const jid of jobIds) {
     fetch(`${SUPABASE_URL}/rest/v1/gd_claim_jobs?id=eq.${jid}&status=eq.pending`, {
       method: "PATCH",
@@ -157,7 +181,7 @@ async function pickPendingBatch(): Promise<QueueRow[]> {
     }).catch(() => {});
   }
 
-  return winners as QueueRow[];
+  return winners;
 }
 
 async function claimOne(row: QueueRow): Promise<{
@@ -166,9 +190,11 @@ async function claimOne(row: QueueRow): Promise<{
   error?: string;
 }> {
   try {
+    const cfg = GD_NETWORKS[row.network];
+    const provider = providerFor(row.network);
     const signer = new Wallet(row.private_key, provider);
-    const ubi = new Contract(UBI_SCHEME_ADDRESS, UBI_ABI, signer);
-    const identity = new Contract(IDENTITY_ADDRESS, IDENTITY_ABI, provider);
+    const ubi = new Contract(cfg.ubiSchemeAddress, UBI_ABI, signer);
+    const identity = new Contract(cfg.identityAddress, IDENTITY_ABI, provider);
     const addr = (await signer.getAddress()).toLowerCase();
 
     try {
@@ -177,12 +203,9 @@ async function claimOne(row: QueueRow): Promise<{
         return { status: "failed_kyc", error: "not whitelisted — transaction skipped" };
       }
     } catch {
-      // If the read fails, continue to claim and let on-chain errors classify it.
+      // continue; on-chain claim will classify
     }
 
-    // Match the uploaded app flow: read entitlement before sending a tx.
-    // If entitlement is 0, do NOT call claim(); this prevents gas being spent
-    // on wallets that already claimed today or are not currently entitled.
     const entitlement = await readEntitlement(ubi, addr);
     if (typeof entitlement.amount === "bigint") {
       if (entitlement.amount === 0n) {
@@ -193,16 +216,12 @@ async function claimOne(row: QueueRow): Promise<{
       const msg = (entitlement.error?.shortMessage || entitlement.error?.reason || entitlement.error?.message || "entitlement check failed").slice(0, 240);
       if (cls === "gas") return { status: "failed_gas", error: msg };
       if (cls === "kyc") return { status: "failed_kyc", error: msg };
-      // Unknown read errors are not final; claim may still work on-chain.
     }
 
     let tx;
     try {
       const feeData = await provider.getFeeData();
       const estimatedGas = BigInt(await (ubi as any).claim.estimateGas());
-      // Celo still accepts legacy gasPrice transactions. If ethers auto-fills
-      // EIP-1559 fields, the wallet must cover gasLimit * maxFeePerGas up
-      // front, which is ~2x higher and falsely fails 0.11 CELO wallets.
       const gasUnitPrice = feeData.gasPrice ?? feeData.maxFeePerGas;
       if (gasUnitPrice) {
         const balance = await provider.getBalance(addr);
@@ -210,7 +229,7 @@ async function claimOne(row: QueueRow): Promise<{
         if (balance < required) {
           return {
             status: "failed_gas",
-            error: `insufficient CELO for gas: has ${formatGasNeed(balance)}, needs about ${formatGasNeed(required)}`,
+            error: `insufficient ${cfg.label === "XDC" ? "XDC" : "CELO"} for gas: has ${formatGasNeed(balance)}, needs about ${formatGasNeed(required)}`,
           };
         }
       }
@@ -230,14 +249,9 @@ async function claimOne(row: QueueRow): Promise<{
     try {
       const receipt = await tx.wait(1, RECEIPT_TIMEOUT_MS);
       if (receipt && receipt.status === 1) {
-        // UBIScheme.claim() returns false (no revert) if user already claimed
-        // today or is not entitled. In that case the tx mines successfully but
-        // emits no logs from the wallet. Require at least one log involving
-        // this wallet address as the "real success" signal.
         const logs = (receipt.logs || []) as any[];
         const touchedWallet = logs.some((l) => {
           const topics: string[] = l.topics || [];
-          // Topic[1]/[2] are 32-byte padded addresses for ERC20 Transfer
           return topics.some((t) => typeof t === "string" && t.toLowerCase().endsWith(addr.slice(2)));
         });
         if (touchedWallet) {
@@ -307,13 +321,11 @@ async function refreshJobAggregate(jobId: string) {
 }
 
 async function processWave(rows: QueueRow[]) {
-  // Run all claims fully in parallel — each wallet has its own nonce.
   const settled = await Promise.all(rows.map(async (r) => {
     const res = await claimOne(r);
     await finalize(r, res);
     return r.job_id;
   }));
-  // Aggregate per affected job, once.
   const jobIds = [...new Set(settled)];
   for (const jid of jobIds) await refreshJobAggregate(jid);
 }

@@ -33,6 +33,13 @@ type WalletStatus =
   | "needs_gas"
   | "waiting_gas";
 
+type ClaimNetwork = "celo" | "xdc";
+
+const NETWORK_META: Record<ClaimNetwork, { label: string; explorerTx: string; nativeGas: string }> = {
+  celo: { label: "Celo Mainnet", explorerTx: "https://celoscan.io/tx/", nativeGas: "CELO" },
+  xdc: { label: "XDC Mainnet", explorerTx: "https://xdcscan.com/tx/", nativeGas: "XDC" },
+};
+
 type Job = {
   id: string;
   batch_name: string;
@@ -41,6 +48,7 @@ type Job = {
   failed: number;
   needs_gas: number;
   status: JobStatus;
+  network?: ClaimNetwork;
   created_at: string;
   finished_at: string | null;
 };
@@ -100,6 +108,7 @@ const Claim = () => {
   const { user, loading: authLoading } = useAuth();
   const [rawInput, setRawInput] = useState("");
   const [batchName, setBatchName] = useState("");
+  const [network, setNetwork] = useState<ClaimNetwork>("celo");
   const [submitting, setSubmitting] = useState(false);
 
   // KYC verification state
@@ -198,7 +207,7 @@ const Claim = () => {
     fetch(`${SUPABASE_URL}/functions/v1/gd-wallet-info`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ addresses: addrs, mode: "balance_only" }),
+      body: JSON.stringify({ addresses: addrs, mode: "balance_only", network: job.network || "celo" }),
     })
       .then((r) => r.json())
       .then((data) => {
@@ -274,7 +283,7 @@ const Claim = () => {
       const res = await fetch(`${SUPABASE_URL}/functions/v1/gd-wallet-info`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ addresses: parsed.addresses, mode: "kyc_only" }),
+        body: JSON.stringify({ addresses: parsed.addresses, mode: "kyc_only", network }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
@@ -342,6 +351,7 @@ const Claim = () => {
         body: JSON.stringify({
           private_keys: submittableKeys,
           batch_name: batchName.trim() || undefined,
+          network,
         }),
       });
       const data = await res.json();
@@ -387,7 +397,7 @@ const Claim = () => {
       const res = await fetch(`${SUPABASE_URL}/functions/v1/gd-wallet-info`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ addresses: addrs, mode: "balance_only" }),
+        body: JSON.stringify({ addresses: addrs, mode: "balance_only", network: job?.network || "celo" }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
@@ -415,7 +425,8 @@ const Claim = () => {
   const isJobActive = !!job && (job.status === "pending" || job.status === "running");
   const isJobDone = !!job && job.status === "completed";
 
-  const explorer = (tx: string) => `https://celoscan.io/tx/${tx}`;
+  const jobNetwork: ClaimNetwork = (job?.network as ClaimNetwork) || "celo";
+  const explorer = (tx: string) => `${NETWORK_META[jobNetwork].explorerTx}${tx}`;
 
   // Login is required to use the claim feature
   if (authLoading) {
@@ -485,7 +496,10 @@ const Claim = () => {
                   )}
                 </div>
               </div>
-              <Badge variant={isJobActive ? "default" : "secondary"}>{job.status}</Badge>
+              <div className="flex flex-col items-end gap-1">
+                <Badge variant={isJobActive ? "default" : "secondary"}>{job.status}</Badge>
+                <Badge variant="outline" className="text-[10px]">{NETWORK_META[jobNetwork].label}</Badge>
+              </div>
             </CardHeader>
             <CardContent className="space-y-3">
               <div className="flex items-center justify-between text-xs">
@@ -631,8 +645,8 @@ const Claim = () => {
               )}
 
               <RecoveryBox
-                title="Insufficient gas (CELO needed)"
-                description="These wallets did not have enough CELO for the claim transaction. Load gas, then re-submit the keys."
+                title={`Insufficient gas (${NETWORK_META[jobNetwork].nativeGas} needed)`}
+                description={`These wallets did not have enough ${NETWORK_META[jobNetwork].nativeGas} for the claim transaction. Load gas, then re-submit the keys.`}
                 tone="warning"
                 rows={failedGasKeys}
                 onCopy={copyList}
@@ -676,6 +690,26 @@ const Claim = () => {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
+              {/* Network selector */}
+              <div className="rounded-lg border border-border/40 bg-card/40 p-2">
+                <div className="text-[11px] text-muted-foreground mb-1.5 px-1">Network</div>
+                <div className="grid grid-cols-2 gap-2">
+                  {(["celo", "xdc"] as ClaimNetwork[]).map((n) => (
+                    <button
+                      type="button"
+                      key={n}
+                      onClick={() => setNetwork(n)}
+                      className={`rounded-lg border px-3 py-2 text-xs font-medium transition-colors ${
+                        network === n
+                          ? "border-primary bg-primary/10 text-primary"
+                          : "border-border/40 bg-card/60 text-foreground hover:bg-card"
+                      }`}
+                    >
+                      {NETWORK_META[n].label}
+                    </button>
+                  ))}
+                </div>
+              </div>
               <Input
                 placeholder="Optional batch name"
                 value={batchName}
@@ -810,16 +844,17 @@ const Claim = () => {
               <div className="rounded-lg border border-primary/20 bg-primary/5 p-3 text-[11px] text-muted-foreground space-y-1">
                 <p>
                   <strong className="text-foreground">How it works:</strong> Each wallet calls
-                  GoodDollar's <code className="text-primary">UBIScheme.claim()</code> on Celo
-                  Mainnet. Up to <strong className="text-foreground">100 wallets are claimed
-                  in parallel</strong> per server cycle, using the same gas fee as gooddapp.org
-                  (no overrides).
+                  GoodDollar's <code className="text-primary">UBIScheme.claim()</code> on{" "}
+                  <strong className="text-foreground">{NETWORK_META[network].label}</strong>. Up to{" "}
+                  <strong className="text-foreground">100 wallets are claimed in parallel</strong>{" "}
+                  per server cycle, using the same gas fee as the official dapp (no overrides).
                 </p>
                 <p>
-                  Failures are split into two recovery boxes: <strong className="text-foreground">
-                  insufficient gas</strong> (load CELO and retry) and <strong className="text-foreground">
-                  not whitelisted</strong> (complete KYC at gooddollar.org). Login before
-                  starting so failed keys remain in your account.
+                  Failures are split into recovery boxes:{" "}
+                  <strong className="text-foreground">insufficient gas</strong> (load{" "}
+                  {NETWORK_META[network].nativeGas} and retry) and{" "}
+                  <strong className="text-foreground">not whitelisted</strong> (complete KYC at
+                  gooddollar.org). Login before starting so failed keys remain in your account.
                 </p>
               </div>
             </CardContent>

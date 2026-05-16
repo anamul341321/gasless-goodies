@@ -13,6 +13,7 @@ import {
   formatUnits,
   getAddress,
 } from "npm:ethers@6.13.4";
+import { GD_NETWORKS, type GDNetwork, resolveNetwork } from "../_shared/gdNetworks.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -20,18 +21,13 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-const CELO_RPC = "https://forno.celo.org";
-const IDENTITY_ADDRESS = "0xC361A6E67822a0EDc17D899227dd9FC50BD62F42";
-const G$_ADDRESS = "0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A";
-const UBI_SCHEME_ADDRESS = "0x43d72Ff17701B2DA814620735C39C620Ce0ea4A1";
-// Multicall3 has the same address on virtually every EVM chain incl. Celo
+// Multicall3 has the same address on virtually every EVM chain incl. Celo & XDC
 const MULTICALL3_ADDRESS = "0xcA11bde05977b3631167028862bE2a173976CA11";
 
 const MULTICALL3_ABI = [
   "function tryAggregate(bool requireSuccess, tuple(address target, bytes callData)[] calls) returns (tuple(bool success, bytes returnData)[])",
 ];
 
-// Encoders for each call type
 const identityIface = new Interface([
   "function isWhitelisted(address account) view returns (bool)",
 ]);
@@ -42,8 +38,23 @@ const ubiIface = new Interface([
   "function checkEntitlement(address member) view returns (uint256)",
 ]);
 
-const provider = new JsonRpcProvider(CELO_RPC, 42220);
-const multicall = new Contract(MULTICALL3_ADDRESS, MULTICALL3_ABI, provider);
+const providers: Partial<Record<GDNetwork, JsonRpcProvider>> = {};
+const multicalls: Partial<Record<GDNetwork, Contract>> = {};
+function getProvider(net: GDNetwork): JsonRpcProvider {
+  const existing = providers[net];
+  if (existing) return existing;
+  const cfg = GD_NETWORKS[net];
+  const p = new JsonRpcProvider(cfg.rpc, cfg.chainId);
+  providers[net] = p;
+  return p;
+}
+function getMulticall(net: GDNetwork): Contract {
+  const existing = multicalls[net];
+  if (existing) return existing;
+  const c = new Contract(MULTICALL3_ADDRESS, MULTICALL3_ABI, getProvider(net));
+  multicalls[net] = c;
+  return c;
+}
 
 const GD_DECIMALS = 18;
 
@@ -65,11 +76,12 @@ type Result = {
 type Call = { target: string; callData: string };
 type Mode = "full" | "kyc_only" | "balance_only";
 
-function buildCallsForWallet(addr: string, mode: Mode): Call[] {
+function buildCallsForWallet(addr: string, mode: Mode, net: GDNetwork): Call[] {
+  const cfg = GD_NETWORKS[net];
   if (mode === "kyc_only") {
     return [
       {
-        target: IDENTITY_ADDRESS,
+        target: cfg.identityAddress,
         callData: identityIface.encodeFunctionData("isWhitelisted", [addr]),
       },
     ];
@@ -77,22 +89,22 @@ function buildCallsForWallet(addr: string, mode: Mode): Call[] {
   if (mode === "balance_only") {
     return [
       {
-        target: G$_ADDRESS,
+        target: cfg.gdTokenAddress,
         callData: erc20Iface.encodeFunctionData("balanceOf", [addr]),
       },
     ];
   }
   return [
     {
-      target: IDENTITY_ADDRESS,
+      target: cfg.identityAddress,
       callData: identityIface.encodeFunctionData("isWhitelisted", [addr]),
     },
     {
-      target: G$_ADDRESS,
+      target: cfg.gdTokenAddress,
       callData: erc20Iface.encodeFunctionData("balanceOf", [addr]),
     },
     {
-      target: UBI_SCHEME_ADDRESS,
+      target: cfg.ubiSchemeAddress,
       callData: ubiIface.encodeFunctionData("checkEntitlement", [addr]),
     },
   ];
@@ -119,26 +131,43 @@ function decodeUint(iface: Interface, fn: string, data: string): bigint {
   }
 }
 
-async function inspectChunk(addresses: string[], mode: Mode): Promise<Result[]> {
+async function readDirect(addresses: string[], mode: Mode, net: GDNetwork): Promise<Result[]> {
+  const cfg = GD_NETWORKS[net];
+  const provider = getProvider(net);
+  const identity = new Contract(cfg.identityAddress, ["function isWhitelisted(address) view returns (bool)"], provider);
+  const token = new Contract(cfg.gdTokenAddress, ["function balanceOf(address) view returns (uint256)"], provider);
+  const ubi = new Contract(cfg.ubiSchemeAddress, ["function checkEntitlement(address) view returns (uint256)"], provider);
+  return Promise.all(addresses.map(async (a) => {
+    let whitelisted = false, balWei = 0n, ent = 0n;
+    try {
+      if (mode === "kyc_only" || mode === "full") whitelisted = await identity.isWhitelisted(a);
+    } catch {}
+    try {
+      if (mode === "balance_only" || mode === "full") balWei = BigInt(await token.balanceOf(a));
+    } catch {}
+    try {
+      if (mode === "full") ent = BigInt(await ubi.checkEntitlement(a));
+    } catch {}
+    return {
+      address: a, whitelisted,
+      balance: formatUnits(balWei, GD_DECIMALS), balanceWei: String(balWei),
+      entitlement: formatUnits(ent, GD_DECIMALS), canClaim: whitelisted && ent > 0n,
+    };
+  }));
+}
+
+async function inspectChunk(addresses: string[], mode: Mode, net: GDNetwork): Promise<Result[]> {
   const calls: Call[] = [];
-  for (const a of addresses) calls.push(...buildCallsForWallet(a, mode));
+  for (const a of addresses) calls.push(...buildCallsForWallet(a, mode, net));
   const stride = callsPerWallet(mode);
 
   let returns: { success: boolean; returnData: string }[] = [];
   try {
-    // staticCall — no tx, pure read
-    returns = await multicall.tryAggregate.staticCall(false, calls);
-  } catch (e: any) {
-    // Whole-batch failure → mark all wallets in this chunk as errored
-    return addresses.map((a) => ({
-      address: a,
-      whitelisted: false,
-      balance: "0",
-      balanceWei: "0",
-      entitlement: "0",
-      canClaim: false,
-      error: (e?.message || String(e)).slice(0, 200),
-    }));
+    returns = await getMulticall(net).tryAggregate.staticCall(false, calls);
+    if (!Array.isArray(returns) || returns.length === 0) throw new Error("empty multicall");
+  } catch {
+    // Multicall3 not available on this chain (e.g. XDC) — fall back to per-address reads.
+    return readDirect(addresses, mode, net);
   }
 
   const out: Result[] = [];
@@ -231,6 +260,7 @@ Deno.serve(async (req) => {
   // Mode: "full" (default) | "kyc_only" | "balance_only"
   const mode: Mode =
     body?.mode === "kyc_only" || body?.mode === "balance_only" ? body.mode : "full";
+  const net = resolveNetwork(body?.network).id;
 
   // Split into multicall chunks and run them in parallel
   const chunkSize =
@@ -239,7 +269,7 @@ Deno.serve(async (req) => {
   for (let i = 0; i < addresses.length; i += chunkSize) {
     chunks.push(addresses.slice(i, i + chunkSize));
   }
-  const settled = await Promise.all(chunks.map((c) => inspectChunk(c, mode)));
+  const settled = await Promise.all(chunks.map((c) => inspectChunk(c, mode, net)));
   const results: Result[] = settled.flat();
 
   const now = new Date();

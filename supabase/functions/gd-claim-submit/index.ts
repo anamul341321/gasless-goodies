@@ -3,6 +3,7 @@
 
 import { Wallet } from "npm:ethers@6.13.4";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { resolveNetwork } from "../_shared/gdNetworks.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -62,6 +63,7 @@ Deno.serve(async (req) => {
     typeof body?.batch_name === "string" && body.batch_name.trim()
       ? body.batch_name.trim().slice(0, 80)
       : `Claim ${new Date().toISOString().slice(0, 16).replace("T", " ")}`;
+  const network = resolveNetwork(body?.network).id;
 
 
   if (rawKeys.length === 0) {
@@ -121,6 +123,7 @@ Deno.serve(async (req) => {
       total: valid.length,
       status: "pending",
       batch_name: batchName,
+      network,
       owner_user_id: user?.id ?? null,
       owner_label: user?.email ?? null,
     }),

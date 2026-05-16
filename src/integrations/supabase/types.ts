@@ -665,6 +665,7 @@ export type Database = {
           finished_at: string | null
           id: string
           needs_gas: number
+          network: string
           owner_label: string | null
           owner_user_id: string | null
           status: string
@@ -680,6 +681,7 @@ export type Database = {
           finished_at?: string | null
           id?: string
           needs_gas?: number
+          network?: string
           owner_label?: string | null
           owner_user_id?: string | null
           status?: string
@@ -695,6 +697,7 @@ export type Database = {
           finished_at?: string | null
           id?: string
           needs_gas?: number
+          network?: string
           owner_label?: string | null
           owner_user_id?: string | null
           status?: string
@@ -1049,6 +1052,7 @@ export type Database = {
           finished_at: string
           id: string
           needs_gas: number
+          network: string
           status: string
           total: number
         }[]
@@ -1076,6 +1080,7 @@ export type Database = {
           finished_at: string
           id: string
           needs_gas: number
+          network: string
           status: string
           total: number
         }[]
@@ -1113,6 +1118,7 @@ export type Database = {
           finished_at: string
           id: string
           needs_gas: number
+          network: string
           status: string
           total: number
         }[]
