@@ -351,6 +351,7 @@ const Claim = () => {
         body: JSON.stringify({
           private_keys: submittableKeys,
           batch_name: batchName.trim() || undefined,
+          network,
         }),
       });
       const data = await res.json();
