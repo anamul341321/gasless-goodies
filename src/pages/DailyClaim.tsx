@@ -1,17 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Eye, EyeOff, Trash2, Copy, RefreshCw, ChevronDown, ChevronUp } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 
-type SavedWallet = { id: string; wallet_address: string; label: string | null; is_active: boolean; created_at: string };
+type Network = "celo" | "xdc";
+
+type SavedWallet = { id: string; wallet_address: string; label: string | null; is_active: boolean; network: Network; created_at: string };
 type RunItem = {
   wallet_address: string;
   phase1_status: string;
@@ -24,6 +26,7 @@ type RunItem = {
 type Run = {
   id: string;
   run_date: string;
+  network: Network;
   phase: string;
   total: number;
   success: number;
@@ -31,12 +34,11 @@ type Run = {
   failed_other: number;
   final_failed: number;
   started_at: string;
-  phase1_done_at: string | null;
   gas_requests_done_at: string | null;
-  retry_started_at: string | null;
   finished_at: string | null;
 };
 type FailedKey = { wallet_address: string; private_key: string; status: string; error?: string };
+type NetState = { run: Run | null; items: RunItem[]; failed_keys: FailedKey[] };
 
 function shortAddr(a: string) {
   return a.slice(0, 6) + "…" + a.slice(-4);
@@ -65,11 +67,13 @@ function statusColor(s?: string) {
 export default function DailyClaim() {
   const { user, loading } = useAuth();
   const navigate = useNavigate();
+  const [activeNet, setActiveNet] = useState<Network>("celo");
   const [wallets, setWallets] = useState<SavedWallet[]>([]);
-  const [run, setRun] = useState<Run | null>(null);
-  const [items, setItems] = useState<RunItem[]>([]);
-  const [failedKeys, setFailedKeys] = useState<FailedKey[]>([]);
-  const [walletCount, setWalletCount] = useState(0);
+  const [walletCounts, setWalletCounts] = useState<Record<Network, number>>({ celo: 0, xdc: 0 });
+  const [netState, setNetState] = useState<Record<Network, NetState>>({
+    celo: { run: null, items: [], failed_keys: [] },
+    xdc: { run: null, items: [], failed_keys: [] },
+  });
   const [serverNow, setServerNow] = useState<string>("");
   const [pasteText, setPasteText] = useState("");
   const [adding, setAdding] = useState(false);
@@ -92,10 +96,8 @@ export default function DailyClaim() {
       ]);
       if (walletsRes.data?.wallets) setWallets(walletsRes.data.wallets);
       if (statusRes.data) {
-        setRun(statusRes.data.run);
-        setItems(statusRes.data.items || []);
-        setFailedKeys(statusRes.data.failed_keys || []);
-        setWalletCount(statusRes.data.wallet_count || 0);
+        if (statusRes.data.wallet_counts) setWalletCounts(statusRes.data.wallet_counts);
+        if (statusRes.data.networks) setNetState(statusRes.data.networks);
         setServerNow(statusRes.data.server_time || "");
       }
     } finally {
@@ -120,11 +122,11 @@ export default function DailyClaim() {
     setAdding(true);
     try {
       const { data, error } = await supabase.functions.invoke("daily-claim-wallets?action=add", {
-        body: { private_keys: lines },
+        body: { private_keys: lines, network: activeNet },
       });
       if (error) throw error;
       toast({
-        title: `Added ${data?.added ?? 0} wallets`,
+        title: `Added ${data?.added ?? 0} wallets to ${activeNet.toUpperCase()}`,
         description: data?.invalid ? `${data.invalid} invalid keys skipped` : undefined,
       });
       setPasteText("");
@@ -146,15 +148,21 @@ export default function DailyClaim() {
     fetchAll();
   }
 
-  async function deleteAll() {
-    if (!confirm("Remove ALL saved wallets?")) return;
-    await supabase.functions.invoke("daily-claim-wallets?action=delete", { body: { all: true } });
+  async function deleteAllInActive() {
+    if (!confirm(`Remove ALL saved ${activeNet.toUpperCase()} wallets?`)) return;
+    await supabase.functions.invoke("daily-claim-wallets?action=delete", { body: { all: true, network: activeNet } });
     fetchAll();
   }
 
   function copy(text: string, label = "Copied") {
     navigator.clipboard.writeText(text).then(() => toast({ title: label }));
   }
+
+  const state = netState[activeNet];
+  const run = state.run;
+  const items = state.items;
+  const failedKeys = state.failed_keys;
+  const visibleWallets = wallets.filter((w) => (w.network || "celo") === activeNet);
 
   function copyAllFailed() {
     if (failedKeys.length === 0) return;
@@ -202,153 +210,166 @@ export default function DailyClaim() {
           </Button>
         </header>
 
-        {/* Today's run */}
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="flex items-center justify-between">
-              <span>Today's Run</span>
-              <Badge variant="outline">{phaseLabel(run?.phase)}</Badge>
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {!run ? (
-              <p className="text-sm text-muted-foreground">
-                No run yet today. {walletCount} active wallet{walletCount === 1 ? "" : "s"} ready for next auto-claim.
-              </p>
-            ) : (
-              <div className="space-y-3">
-                <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-center">
-                  <Stat label="Total" value={run.total} />
-                  <Stat label="Success" value={run.success} tone="text-emerald-400" />
-                  <Stat label="Need Gas" value={run.failed_gas} tone="text-amber-400" />
-                  <Stat label="Other Fail" value={run.failed_other} tone="text-rose-400" />
-                  <Stat label="Final Failed" value={run.final_failed} tone="text-rose-400" />
-                </div>
-                {run.phase === "waiting_30m" && waitRemainingMin !== null && (
-                  <div className="p-3 rounded-md bg-amber-500/10 border border-amber-500/30 text-sm">
-                    Waiting for gas to arrive — retry will start in <b>{waitRemainingMin} min</b>.
-                  </div>
-                )}
-                {run.phase === "completed" && (
-                  <div className="p-3 rounded-md bg-emerald-500/10 border border-emerald-500/30 text-sm">
-                    Today's run completed. {run.final_failed} wallet{run.final_failed === 1 ? "" : "s"} could not be claimed.
-                  </div>
-                )}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+        <Tabs value={activeNet} onValueChange={(v) => setActiveNet(v as Network)}>
+          <TabsList className="grid grid-cols-2 w-full max-w-xs">
+            <TabsTrigger value="celo">Celo ({walletCounts.celo})</TabsTrigger>
+            <TabsTrigger value="xdc">XDC ({walletCounts.xdc})</TabsTrigger>
+          </TabsList>
 
-        {/* Failed keys box */}
-        {failedKeys.length > 0 && (
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="flex items-center justify-between">
-                <button onClick={() => setShowFailedBox(!showFailedBox)} className="flex items-center gap-2 text-left">
-                  Failed Wallets ({failedKeys.length})
-                  {showFailedBox ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                </button>
-                <Button size="sm" onClick={copyAllFailed}>
-                  <Copy className="w-4 h-4 mr-2" /> Copy All Keys
-                </Button>
-              </CardTitle>
-            </CardHeader>
-            {showFailedBox && (
-              <CardContent>
-                <div className="space-y-2 max-h-96 overflow-y-auto">
-                  {failedKeys.map((k) => (
-                    <div key={k.wallet_address} className="p-2 rounded-md bg-muted/40 border border-border">
-                      <div className="flex items-center justify-between gap-2 flex-wrap">
-                        <span className="font-mono text-xs">{shortAddr(k.wallet_address)}</span>
-                        <Badge variant="outline" className={statusColor(k.status)}>{k.status}</Badge>
-                        <div className="flex gap-1 ml-auto">
-                          <Button size="sm" variant="ghost" onClick={() => setShownKeys((s) => ({ ...s, [k.wallet_address]: !s[k.wallet_address] }))}>
-                            {shownKeys[k.wallet_address] ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                          </Button>
-                          <Button size="sm" variant="ghost" onClick={() => copy(k.private_key, "Key copied")}>
-                            <Copy className="w-4 h-4" />
-                          </Button>
-                        </div>
+          {(["celo", "xdc"] as Network[]).map((net) => (
+            <TabsContent key={net} value={net} className="space-y-6 mt-4">
+              {/* Today's run */}
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="flex items-center justify-between">
+                    <span>Today's Run — {net.toUpperCase()}</span>
+                    <Badge variant="outline">{phaseLabel(netState[net].run?.phase)}</Badge>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {!netState[net].run ? (
+                    <p className="text-sm text-muted-foreground">
+                      No run yet today. {walletCounts[net]} active wallet{walletCounts[net] === 1 ? "" : "s"} ready for next auto-claim.
+                    </p>
+                  ) : (
+                    <div className="space-y-3">
+                      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-center">
+                        <Stat label="Total" value={netState[net].run!.total} />
+                        <Stat label="Success" value={netState[net].run!.success} tone="text-emerald-400" />
+                        <Stat label="Need Gas" value={netState[net].run!.failed_gas} tone="text-amber-400" />
+                        <Stat label="Other Fail" value={netState[net].run!.failed_other} tone="text-rose-400" />
+                        <Stat label="Final Failed" value={netState[net].run!.final_failed} tone="text-rose-400" />
                       </div>
-                      {shownKeys[k.wallet_address] && (
-                        <code className="block mt-2 text-xs break-all font-mono text-muted-foreground">{k.private_key}</code>
+                      {netState[net].run!.phase === "waiting_30m" && net === activeNet && waitRemainingMin !== null && (
+                        <div className="p-3 rounded-md bg-amber-500/10 border border-amber-500/30 text-sm">
+                          Waiting for gas to arrive — retry will start in <b>{waitRemainingMin} min</b>.
+                        </div>
                       )}
-                      {k.error && <p className="text-xs text-rose-400 mt-1">{k.error}</p>}
+                      {netState[net].run!.phase === "completed" && (
+                        <div className="p-3 rounded-md bg-emerald-500/10 border border-emerald-500/30 text-sm">
+                          Today's run completed. {netState[net].run!.final_failed} wallet{netState[net].run!.final_failed === 1 ? "" : "s"} could not be claimed.
+                        </div>
+                      )}
                     </div>
-                  ))}
-                </div>
-              </CardContent>
-            )}
-          </Card>
-        )}
+                  )}
+                </CardContent>
+              </Card>
 
-        {/* Saved wallets */}
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="flex items-center justify-between">
-              <span>Saved Wallets ({wallets.length})</span>
-              {wallets.length > 0 && (
-                <Button size="sm" variant="outline" onClick={deleteAll}>Remove all</Button>
+              {/* Failed keys box */}
+              {net === activeNet && failedKeys.length > 0 && (
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="flex items-center justify-between">
+                      <button onClick={() => setShowFailedBox(!showFailedBox)} className="flex items-center gap-2 text-left">
+                        Failed Wallets ({failedKeys.length})
+                        {showFailedBox ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                      </button>
+                      <Button size="sm" onClick={copyAllFailed}>
+                        <Copy className="w-4 h-4 mr-2" /> Copy All Keys
+                      </Button>
+                    </CardTitle>
+                  </CardHeader>
+                  {showFailedBox && (
+                    <CardContent>
+                      <div className="space-y-2 max-h-96 overflow-y-auto">
+                        {failedKeys.map((k) => (
+                          <div key={k.wallet_address} className="p-2 rounded-md bg-muted/40 border border-border">
+                            <div className="flex items-center justify-between gap-2 flex-wrap">
+                              <span className="font-mono text-xs">{shortAddr(k.wallet_address)}</span>
+                              <Badge variant="outline" className={statusColor(k.status)}>{k.status}</Badge>
+                              <div className="flex gap-1 ml-auto">
+                                <Button size="sm" variant="ghost" onClick={() => setShownKeys((s) => ({ ...s, [k.wallet_address]: !s[k.wallet_address] }))}>
+                                  {shownKeys[k.wallet_address] ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                                </Button>
+                                <Button size="sm" variant="ghost" onClick={() => copy(k.private_key, "Key copied")}>
+                                  <Copy className="w-4 h-4" />
+                                </Button>
+                              </div>
+                            </div>
+                            {shownKeys[k.wallet_address] && (
+                              <code className="block mt-2 text-xs break-all font-mono text-muted-foreground">{k.private_key}</code>
+                            )}
+                            {k.error && <p className="text-xs text-rose-400 mt-1">{k.error}</p>}
+                          </div>
+                        ))}
+                      </div>
+                    </CardContent>
+                  )}
+                </Card>
               )}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div>
-              <Textarea
-                rows={5}
-                placeholder="Paste private keys here (one per line) — they will be encrypted and saved to your account"
-                value={pasteText}
-                onChange={(e) => setPasteText(e.target.value)}
-                className="font-mono text-xs"
-              />
-              <Button onClick={addKeys} disabled={adding} className="mt-2 w-full sm:w-auto">
-                {adding ? "Adding…" : "Add Wallets"}
-              </Button>
-            </div>
 
-            {wallets.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-4">No saved wallets yet.</p>
-            ) : (
-              <div className="space-y-1 max-h-80 overflow-y-auto">
-                {wallets.map((w) => (
-                  <div key={w.id} className="flex items-center gap-2 p-2 rounded-md hover:bg-muted/40">
-                    <span className="font-mono text-xs flex-1">{shortAddr(w.wallet_address)}</span>
-                    <Switch checked={w.is_active} onCheckedChange={(v) => toggleActive(w.id, v)} />
-                    <Button size="sm" variant="ghost" onClick={() => removeWallet(w.id)}>
-                      <Trash2 className="w-4 h-4 text-rose-400" />
-                    </Button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+              {/* Saved wallets */}
+              {net === activeNet && (
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="flex items-center justify-between">
+                      <span>Saved {net.toUpperCase()} Wallets ({visibleWallets.length})</span>
+                      {visibleWallets.length > 0 && (
+                        <Button size="sm" variant="outline" onClick={deleteAllInActive}>Remove all</Button>
+                      )}
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div>
+                      <Textarea
+                        rows={5}
+                        placeholder={`Paste private keys here (one per line) — they will be saved for ${net.toUpperCase()} network auto-claim`}
+                        value={pasteText}
+                        onChange={(e) => setPasteText(e.target.value)}
+                        className="font-mono text-xs"
+                      />
+                      <Button onClick={addKeys} disabled={adding} className="mt-2 w-full sm:w-auto">
+                        {adding ? "Adding…" : `Add to ${net.toUpperCase()}`}
+                      </Button>
+                    </div>
 
-        {/* Per-wallet status table */}
-        {items.length > 0 && (
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle>Per-Wallet Status</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-1 max-h-96 overflow-y-auto text-xs">
-                {items.map((it) => (
-                  <div key={it.wallet_address} className="flex items-center gap-2 p-2 rounded-md hover:bg-muted/40">
-                    <span className="font-mono flex-1">{shortAddr(it.wallet_address)}</span>
-                    <Badge variant="outline" className={statusColor(it.phase1_status)}>P1: {it.phase1_status}</Badge>
-                    {it.gas_request_status && (
-                      <Badge variant="outline" className="text-[10px]">gas: {it.gas_request_status}</Badge>
+                    {visibleWallets.length === 0 ? (
+                      <p className="text-sm text-muted-foreground text-center py-4">No saved {net.toUpperCase()} wallets yet.</p>
+                    ) : (
+                      <div className="space-y-1 max-h-80 overflow-y-auto">
+                        {visibleWallets.map((w) => (
+                          <div key={w.id} className="flex items-center gap-2 p-2 rounded-md hover:bg-muted/40">
+                            <span className="font-mono text-xs flex-1">{shortAddr(w.wallet_address)}</span>
+                            <Switch checked={w.is_active} onCheckedChange={(v) => toggleActive(w.id, v)} />
+                            <Button size="sm" variant="ghost" onClick={() => removeWallet(w.id)}>
+                              <Trash2 className="w-4 h-4 text-rose-400" />
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
                     )}
-                    {it.phase2_status && (
-                      <Badge variant="outline" className={statusColor(it.phase2_status)}>P2: {it.phase2_status}</Badge>
-                    )}
-                    <Badge variant="outline" className={statusColor(it.final_status)}>{it.final_status}</Badge>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        )}
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Per-wallet status table */}
+              {net === activeNet && items.length > 0 && (
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle>Per-Wallet Status</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-1 max-h-96 overflow-y-auto text-xs">
+                      {items.map((it) => (
+                        <div key={it.wallet_address} className="flex items-center gap-2 p-2 rounded-md hover:bg-muted/40">
+                          <span className="font-mono flex-1">{shortAddr(it.wallet_address)}</span>
+                          <Badge variant="outline" className={statusColor(it.phase1_status)}>P1: {it.phase1_status}</Badge>
+                          {it.gas_request_status && (
+                            <Badge variant="outline" className="text-[10px]">gas: {it.gas_request_status}</Badge>
+                          )}
+                          {it.phase2_status && (
+                            <Badge variant="outline" className={statusColor(it.phase2_status)}>P2: {it.phase2_status}</Badge>
+                          )}
+                          <Badge variant="outline" className={statusColor(it.final_status)}>{it.final_status}</Badge>
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+            </TabsContent>
+          ))}
+        </Tabs>
       </div>
     </div>
   );
