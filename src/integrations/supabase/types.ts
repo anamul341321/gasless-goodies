@@ -663,11 +663,17 @@ export type Database = {
           done: number
           failed: number
           finished_at: string | null
+          gas_done_at: string | null
+          gas_job_id: string | null
+          gas_phase: string
+          gas_requested_at: string | null
           id: string
           needs_gas: number
           network: string
           owner_label: string | null
           owner_user_id: string | null
+          retried_at: string | null
+          retry_eligible_at: string | null
           status: string
           total: number
           updated_at: string
@@ -679,11 +685,17 @@ export type Database = {
           done?: number
           failed?: number
           finished_at?: string | null
+          gas_done_at?: string | null
+          gas_job_id?: string | null
+          gas_phase?: string
+          gas_requested_at?: string | null
           id?: string
           needs_gas?: number
           network?: string
           owner_label?: string | null
           owner_user_id?: string | null
+          retried_at?: string | null
+          retry_eligible_at?: string | null
           status?: string
           total?: number
           updated_at?: string
@@ -695,11 +707,17 @@ export type Database = {
           done?: number
           failed?: number
           finished_at?: string | null
+          gas_done_at?: string | null
+          gas_job_id?: string | null
+          gas_phase?: string
+          gas_requested_at?: string | null
           id?: string
           needs_gas?: number
           network?: string
           owner_label?: string | null
           owner_user_id?: string | null
+          retried_at?: string | null
+          retry_eligible_at?: string | null
           status?: string
           total?: number
           updated_at?: string
@@ -1050,6 +1068,7 @@ export type Database = {
           done: number
           failed: number
           finished_at: string
+          gas_phase: string
           id: string
           needs_gas: number
           network: string
@@ -1078,6 +1097,7 @@ export type Database = {
           failed: number
           failed_with_keys: number
           finished_at: string
+          gas_phase: string
           id: string
           needs_gas: number
           network: string
