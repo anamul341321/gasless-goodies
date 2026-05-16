@@ -107,15 +107,22 @@ Deno.serve(async (req) => {
       started++;
     }
 
-    // 2) Resume runs that finished waiting
+    // 2) Resume runs that finished waiting (per-user configurable wait)
     const { data: waiting } = await admin
       .from("daily_claim_runs")
-      .select("id, gas_requests_done_at")
+      .select("id, gas_requests_done_at, owner_user_id, network")
       .eq("phase", "waiting_30m");
     for (const r of waiting || []) {
       if (!r.gas_requests_done_at) continue;
+      const { data: setting } = await admin
+        .from("daily_claim_settings")
+        .select("retry_wait_minutes")
+        .eq("owner_user_id", r.owner_user_id)
+        .eq("network", r.network || "celo")
+        .maybeSingle();
+      const waitMin = Number(setting?.retry_wait_minutes ?? 30);
       const doneAt = new Date(r.gas_requests_done_at).getTime();
-      if (Date.now() - doneAt >= 30 * 60_000) {
+      if (Date.now() - doneAt >= waitMin * 60_000) {
         await admin
           .from("daily_claim_runs")
           .update({ phase: "retrying", retry_started_at: new Date().toISOString() })
