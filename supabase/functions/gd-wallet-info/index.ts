@@ -13,6 +13,7 @@ import {
   formatUnits,
   getAddress,
 } from "npm:ethers@6.13.4";
+import { GD_NETWORKS, type GDNetwork, resolveNetwork } from "../_shared/gdNetworks.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -20,18 +21,13 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-const CELO_RPC = "https://forno.celo.org";
-const IDENTITY_ADDRESS = "0xC361A6E67822a0EDc17D899227dd9FC50BD62F42";
-const G$_ADDRESS = "0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A";
-const UBI_SCHEME_ADDRESS = "0x43d72Ff17701B2DA814620735C39C620Ce0ea4A1";
-// Multicall3 has the same address on virtually every EVM chain incl. Celo
+// Multicall3 has the same address on virtually every EVM chain incl. Celo & XDC
 const MULTICALL3_ADDRESS = "0xcA11bde05977b3631167028862bE2a173976CA11";
 
 const MULTICALL3_ABI = [
   "function tryAggregate(bool requireSuccess, tuple(address target, bytes callData)[] calls) returns (tuple(bool success, bytes returnData)[])",
 ];
 
-// Encoders for each call type
 const identityIface = new Interface([
   "function isWhitelisted(address account) view returns (bool)",
 ]);
@@ -42,8 +38,23 @@ const ubiIface = new Interface([
   "function checkEntitlement(address member) view returns (uint256)",
 ]);
 
-const provider = new JsonRpcProvider(CELO_RPC, 42220);
-const multicall = new Contract(MULTICALL3_ADDRESS, MULTICALL3_ABI, provider);
+const providers: Partial<Record<GDNetwork, JsonRpcProvider>> = {};
+const multicalls: Partial<Record<GDNetwork, Contract>> = {};
+function getProvider(net: GDNetwork): JsonRpcProvider {
+  const existing = providers[net];
+  if (existing) return existing;
+  const cfg = GD_NETWORKS[net];
+  const p = new JsonRpcProvider(cfg.rpc, cfg.chainId);
+  providers[net] = p;
+  return p;
+}
+function getMulticall(net: GDNetwork): Contract {
+  const existing = multicalls[net];
+  if (existing) return existing;
+  const c = new Contract(MULTICALL3_ADDRESS, MULTICALL3_ABI, getProvider(net));
+  multicalls[net] = c;
+  return c;
+}
 
 const GD_DECIMALS = 18;
 
