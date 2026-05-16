@@ -47,12 +47,12 @@ function shortAddr(a: string) {
 
 function phaseLabel(p: string | undefined) {
   switch (p) {
-    case "claiming": return "Claiming";
-    case "gas_requesting": return "Requesting gas";
-    case "waiting_30m": return "Waiting 30 min for gas";
-    case "retrying": return "Retrying";
-    case "completed": return "Completed";
-    default: return "Not started";
+    case "claiming": return "ক্লেম হচ্ছে";
+    case "gas_requesting": return "গ্যাস রিকোয়েস্ট হচ্ছে";
+    case "waiting_30m": return "৩০ মিনিট অপেক্ষা";
+    case "retrying": return "আবার চেষ্টা হচ্ছে";
+    case "completed": return "সম্পন্ন";
+    default: return "শুরু হয়নি";
   }
 }
 
@@ -229,7 +229,7 @@ export default function DailyClaim() {
     return Math.ceil(left / 60_000);
   }, [run, tickNow]);
 
-  if (loading) return <div className="p-8 text-center text-muted-foreground">Loading…</div>;
+  if (loading) return <div className="p-8 text-center text-muted-foreground">লোড হচ্ছে…</div>;
   if (!user) return null;
 
   return (
@@ -237,17 +237,32 @@ export default function DailyClaim() {
       <div className="max-w-4xl mx-auto p-4 sm:p-6 space-y-6">
         <header className="flex items-center justify-between gap-3">
           <div>
-            <Link to="/" className="text-sm text-muted-foreground hover:text-foreground">← Home</Link>
-            <h1 className="text-2xl font-bold mt-1">Daily Auto-Claim</h1>
+            <Link to="/" className="text-sm text-muted-foreground hover:text-foreground">← হোম</Link>
+            <h1 className="text-2xl font-bold mt-1">প্রতিদিনের অটো-ক্লেম</h1>
             <p className="text-sm text-muted-foreground">
-              Runs automatically every day at your chosen Bangladesh time · Once keys are saved you never need to paste again ·
-              Next <span className="text-foreground font-medium uppercase">{activeNet}</span> run in <span className="text-foreground font-medium">{countdown}</span>
+              প্রতিদিন আপনার সেট করা বাংলাদেশ সময়ে স্বয়ংক্রিয়ভাবে চলবে · একবার কী সেভ করলে আর পেস্ট করতে হবে না
             </p>
           </div>
           <Button variant="outline" size="sm" onClick={fetchAll} disabled={refreshing}>
-            <RefreshCw className={`w-4 h-4 mr-2 ${refreshing ? "animate-spin" : ""}`} /> Refresh
+            <RefreshCw className={`w-4 h-4 mr-2 ${refreshing ? "animate-spin" : ""}`} /> রিফ্রেশ
           </Button>
         </header>
+
+        {/* Premium countdown hero */}
+        <Card className="relative overflow-hidden border-emerald-500/30 bg-gradient-to-br from-emerald-500/15 via-background to-sky-500/10 shadow-[0_8px_40px_-12px_hsl(var(--primary)/0.4)]">
+          <div className="absolute inset-0 pointer-events-none opacity-30 bg-[radial-gradient(circle_at_top_right,hsl(var(--primary)/0.25),transparent_60%)]" />
+          <CardContent className="relative p-5 sm:p-7 text-center space-y-3">
+            <div className="flex items-center justify-center gap-2 text-xs sm:text-sm uppercase tracking-[0.2em] text-muted-foreground">
+              <Clock className="w-4 h-4" /> পরবর্তী <span className="text-foreground font-semibold">{activeNet.toUpperCase()}</span> অটো-ক্লেম শুরু হবে
+            </div>
+            <div className="font-mono font-black tabular-nums text-emerald-400 leading-none tracking-tight text-5xl sm:text-6xl md:text-7xl drop-shadow-[0_4px_24px_hsl(142_70%_45%/0.45)]">
+              {countdown}
+            </div>
+            <p className="text-xs sm:text-sm text-muted-foreground">
+              ঘণ্টা · মিনিট · সেকেন্ড — বাংলাদেশ সময় অনুযায়ী
+            </p>
+          </CardContent>
+        </Card>
 
         <Tabs value={activeNet} onValueChange={(v) => setActiveNet(v as Network)}>
           <TabsList className="grid grid-cols-2 w-full max-w-xs">
@@ -261,19 +276,19 @@ export default function DailyClaim() {
               <Card>
                 <CardHeader className="pb-3">
                   <CardTitle className="flex items-center gap-2">
-                    <Clock className="w-4 h-4" /> Daily Start Time — {net.toUpperCase()}
+                    <Clock className="w-4 h-4" /> প্রতিদিনের শুরুর সময় — {net.toUpperCase()}
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3">
                   <p className="text-xs text-muted-foreground">
-                    Pick the Bangladesh time when auto-claim should start each day. Once set, every saved {net.toUpperCase()} wallet is claimed automatically at that time — no need to paste keys again.
+                    বাংলাদেশ সময় বেছে নিন কখন প্রতিদিন অটো-ক্লেম শুরু হবে। একবার সেভ করলে প্রতিদিন এই সময়ে সব সেভ করা {net.toUpperCase()} ওয়ালেট স্বয়ংক্রিয়ভাবে ক্লেম হবে — কী পেস্ট করার দরকার নেই।
                   </p>
                   <div className="rounded-md bg-muted/40 border border-border/40 p-2 text-xs text-muted-foreground">
-                    <b className="text-foreground">Example:</b> to start at 12:00 AM (midnight) pick <b className="text-foreground">12:00 AM</b>. For 1:30 PM pick <b className="text-foreground">1:30 PM</b>.
+                    <b className="text-foreground">উদাহরণ:</b> রাত ১২টায় শুরু করতে চাইলে <b className="text-foreground">12:00 AM</b> বেছে নিন। দুপুর ১:৩০-এর জন্য <b className="text-foreground">1:30 PM</b>।
                   </div>
                   <div className="flex items-end gap-3 flex-wrap">
                     <div className="flex flex-col">
-                      <label className="text-xs text-muted-foreground mb-1">Start time (Bangladesh)</label>
+                      <label className="text-xs text-muted-foreground mb-1">শুরুর সময় (বাংলাদেশ)</label>
                       <Input
                         type="time"
                         step={60}
@@ -290,20 +305,20 @@ export default function DailyClaim() {
                         checked={settings[net].enabled}
                         onCheckedChange={(v) => setSettings((s) => ({ ...s, [net]: { ...s[net], enabled: v } }))}
                       />
-                      <span className="text-xs text-muted-foreground">Enabled</span>
+                      <span className="text-xs text-muted-foreground">চালু</span>
                     </div>
                     <Button size="sm" onClick={() => saveTime(net)} disabled={savingTime} className="mb-1">
-                      {savingTime ? "Saving…" : "Save time"}
+                      {savingTime ? "সেভ হচ্ছে…" : "সময় সেভ করুন"}
                     </Button>
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    Saved start time: <span className="text-foreground font-medium">{(() => {
+                    সেভ করা সময়: <span className="text-foreground font-medium">{(() => {
                       const h = settings[net].hour; const m = settings[net].minute;
                       const ampm = h >= 12 ? "PM" : "AM";
                       const h12 = h % 12 === 0 ? 12 : h % 12;
                       return `${h12}:${String(m).padStart(2,"0")} ${ampm} (${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}) BD`;
                     })()}</span>
-                    {!settings[net].enabled && <span className="ml-2 text-amber-400">(disabled)</span>}
+                    {!settings[net].enabled && <span className="ml-2 text-amber-400">(বন্ধ)</span>}
                   </p>
                 </CardContent>
               </Card>
@@ -312,32 +327,32 @@ export default function DailyClaim() {
               <Card>
                 <CardHeader className="pb-3">
                   <CardTitle className="flex items-center justify-between">
-                    <span>Today's Run — {net.toUpperCase()}</span>
+                    <span>আজকের রান — {net.toUpperCase()}</span>
                     <Badge variant="outline">{phaseLabel(netState[net].run?.phase)}</Badge>
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
                   {!netState[net].run ? (
                     <p className="text-sm text-muted-foreground">
-                      No run yet today. {walletCounts[net]} active wallet{walletCounts[net] === 1 ? "" : "s"} ready for next auto-claim.
+                      আজ এখনো কোনো রান হয়নি। পরবর্তী অটো-ক্লেমের জন্য <b className="text-foreground">{walletCounts[net]}</b> টি সক্রিয় ওয়ালেট প্রস্তুত।
                     </p>
                   ) : (
                     <div className="space-y-3">
                       <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-center">
-                        <Stat label="Total" value={netState[net].run!.total} />
-                        <Stat label="Success" value={netState[net].run!.success} tone="text-emerald-400" />
-                        <Stat label="Need Gas" value={netState[net].run!.failed_gas} tone="text-amber-400" />
-                        <Stat label="Other Fail" value={netState[net].run!.failed_other} tone="text-rose-400" />
-                        <Stat label="Final Failed" value={netState[net].run!.final_failed} tone="text-rose-400" />
+                        <Stat label="মোট" value={netState[net].run!.total} />
+                        <Stat label="সফল" value={netState[net].run!.success} tone="text-emerald-400" />
+                        <Stat label="গ্যাস দরকার" value={netState[net].run!.failed_gas} tone="text-amber-400" />
+                        <Stat label="অন্য ব্যর্থ" value={netState[net].run!.failed_other} tone="text-rose-400" />
+                        <Stat label="ফাইনাল ব্যর্থ" value={netState[net].run!.final_failed} tone="text-rose-400" />
                       </div>
                       {netState[net].run!.phase === "waiting_30m" && net === activeNet && waitRemainingMin !== null && (
                         <div className="p-3 rounded-md bg-amber-500/10 border border-amber-500/30 text-sm">
-                          Waiting for gas to arrive — retry will start in <b>{waitRemainingMin} min</b>.
+                          গ্যাস আসার অপেক্ষায় — <b>{waitRemainingMin} মিনিট</b> পর আবার চেষ্টা শুরু হবে।
                         </div>
                       )}
                       {netState[net].run!.phase === "completed" && (
                         <div className="p-3 rounded-md bg-emerald-500/10 border border-emerald-500/30 text-sm">
-                          Today's run completed. {netState[net].run!.final_failed} wallet{netState[net].run!.final_failed === 1 ? "" : "s"} could not be claimed.
+                          আজকের রান সম্পন্ন। {netState[net].run!.final_failed} টি ওয়ালেট ক্লেম করা যায়নি।
                         </div>
                       )}
                     </div>
@@ -351,11 +366,11 @@ export default function DailyClaim() {
                   <CardHeader className="pb-3">
                     <CardTitle className="flex items-center justify-between">
                       <button onClick={() => setShowFailedBox(!showFailedBox)} className="flex items-center gap-2 text-left">
-                        Failed Wallets ({failedKeys.length})
+                        ব্যর্থ ওয়ালেট ({failedKeys.length})
                         {showFailedBox ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                       </button>
                       <Button size="sm" onClick={copyAllFailed}>
-                        <Copy className="w-4 h-4 mr-2" /> Copy All Keys
+                        <Copy className="w-4 h-4 mr-2" /> সব কী কপি করুন
                       </Button>
                     </CardTitle>
                   </CardHeader>
@@ -371,7 +386,7 @@ export default function DailyClaim() {
                                 <Button size="sm" variant="ghost" onClick={() => setShownKeys((s) => ({ ...s, [k.wallet_address]: !s[k.wallet_address] }))}>
                                   {shownKeys[k.wallet_address] ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                                 </Button>
-                                <Button size="sm" variant="ghost" onClick={() => copy(k.private_key, "Key copied")}>
+                                <Button size="sm" variant="ghost" onClick={() => copy(k.private_key, "কী কপি হয়েছে")}>
                                   <Copy className="w-4 h-4" />
                                 </Button>
                               </div>
@@ -393,9 +408,9 @@ export default function DailyClaim() {
                 <Card>
                   <CardHeader className="pb-3">
                     <CardTitle className="flex items-center justify-between">
-                      <span>Saved {net.toUpperCase()} Wallets ({visibleWallets.length})</span>
+                      <span>সেভ করা {net.toUpperCase()} ওয়ালেট ({visibleWallets.length})</span>
                       {visibleWallets.length > 0 && (
-                        <Button size="sm" variant="outline" onClick={deleteAllInActive}>Remove all</Button>
+                        <Button size="sm" variant="outline" onClick={deleteAllInActive}>সব মুছুন</Button>
                       )}
                     </CardTitle>
                   </CardHeader>
@@ -403,18 +418,18 @@ export default function DailyClaim() {
                     <div>
                       <Textarea
                         rows={5}
-                        placeholder={`Paste private keys here (one per line) — they will be saved for ${net.toUpperCase()} network auto-claim`}
+                        placeholder={`এখানে প্রাইভেট কী পেস্ট করুন (প্রতি লাইনে একটি) — ${net.toUpperCase()} নেটওয়ার্কের অটো-ক্লেমের জন্য সেভ হবে`}
                         value={pasteText}
                         onChange={(e) => setPasteText(e.target.value)}
                         className="font-mono text-xs"
                       />
                       <Button onClick={addKeys} disabled={adding} className="mt-2 w-full sm:w-auto">
-                        {adding ? "Adding…" : `Add to ${net.toUpperCase()}`}
+                        {adding ? "যোগ হচ্ছে…" : `${net.toUpperCase()}-এ যোগ করুন`}
                       </Button>
                     </div>
 
                     {visibleWallets.length === 0 ? (
-                      <p className="text-sm text-muted-foreground text-center py-4">No saved {net.toUpperCase()} wallets yet.</p>
+                      <p className="text-sm text-muted-foreground text-center py-4">এখনো কোনো {net.toUpperCase()} ওয়ালেট সেভ করা হয়নি।</p>
                     ) : (
                       <div className="space-y-1 max-h-80 overflow-y-auto">
                         {visibleWallets.map((w) => (
@@ -436,19 +451,19 @@ export default function DailyClaim() {
               {net === activeNet && items.length > 0 && (
                 <Card>
                   <CardHeader className="pb-3">
-                    <CardTitle>Per-Wallet Status</CardTitle>
+                    <CardTitle>প্রতিটি ওয়ালেটের অবস্থা</CardTitle>
                   </CardHeader>
                   <CardContent>
                     <div className="space-y-1 max-h-96 overflow-y-auto text-xs">
                       {items.map((it) => (
                         <div key={it.wallet_address} className="flex items-center gap-2 p-2 rounded-md hover:bg-muted/40">
                           <span className="font-mono flex-1">{shortAddr(it.wallet_address)}</span>
-                          <Badge variant="outline" className={statusColor(it.phase1_status)}>P1: {it.phase1_status}</Badge>
+                          <Badge variant="outline" className={statusColor(it.phase1_status)}>ধাপ ১: {it.phase1_status}</Badge>
                           {it.gas_request_status && (
-                            <Badge variant="outline" className="text-[10px]">gas: {it.gas_request_status}</Badge>
+                            <Badge variant="outline" className="text-[10px]">গ্যাস: {it.gas_request_status}</Badge>
                           )}
                           {it.phase2_status && (
-                            <Badge variant="outline" className={statusColor(it.phase2_status)}>P2: {it.phase2_status}</Badge>
+                            <Badge variant="outline" className={statusColor(it.phase2_status)}>ধাপ ২: {it.phase2_status}</Badge>
                           )}
                           <Badge variant="outline" className={statusColor(it.final_status)}>{it.final_status}</Badge>
                         </div>
