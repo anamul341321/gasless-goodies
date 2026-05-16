@@ -251,6 +251,54 @@ export default function DailyClaim() {
 
           {(["celo", "xdc"] as Network[]).map((net) => (
             <TabsContent key={net} value={net} className="space-y-6 mt-4">
+              {/* Schedule */}
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="flex items-center gap-2">
+                    <Clock className="w-4 h-4" /> Daily Start Time — {net.toUpperCase()}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <p className="text-xs text-muted-foreground">
+                    Pick the Bangladesh time (24-hour) when auto-claim should start each day. Once set, every saved {net.toUpperCase()} wallet is claimed automatically at that time — no need to paste keys again.
+                  </p>
+                  <div className="flex items-end gap-2 flex-wrap">
+                    <div>
+                      <label className="text-xs text-muted-foreground">Hour (0–23)</label>
+                      <Input
+                        type="number" min={0} max={23}
+                        value={settings[net].hour}
+                        onChange={(e) => setSettings((s) => ({ ...s, [net]: { ...s[net], hour: Math.max(0, Math.min(23, Number(e.target.value) || 0)) } }))}
+                        className="w-24"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs text-muted-foreground">Minute (0–59)</label>
+                      <Input
+                        type="number" min={0} max={59}
+                        value={settings[net].minute}
+                        onChange={(e) => setSettings((s) => ({ ...s, [net]: { ...s[net], minute: Math.max(0, Math.min(59, Number(e.target.value) || 0)) } }))}
+                        className="w-24"
+                      />
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Switch
+                        checked={settings[net].enabled}
+                        onCheckedChange={(v) => setSettings((s) => ({ ...s, [net]: { ...s[net], enabled: v } }))}
+                      />
+                      <span className="text-xs text-muted-foreground">Enabled</span>
+                    </div>
+                    <Button size="sm" onClick={() => saveTime(net)} disabled={savingTime}>
+                      {savingTime ? "Saving…" : "Save time"}
+                    </Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Current: <span className="text-foreground font-medium">{String(settings[net].hour).padStart(2,"0")}:{String(settings[net].minute).padStart(2,"0")} BD</span>
+                    {!settings[net].enabled && <span className="ml-2 text-amber-400">(disabled)</span>}
+                  </p>
+                </CardContent>
+              </Card>
+
               {/* Today's run */}
               <Card>
                 <CardHeader className="pb-3">
