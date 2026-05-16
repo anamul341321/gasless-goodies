@@ -76,6 +76,11 @@ export default function DailyClaim() {
     xdc: { run: null, items: [], failed_keys: [] },
   });
   const [serverNow, setServerNow] = useState<string>("");
+  const [tickNow, setTickNow] = useState<number>(Date.now());
+  useEffect(() => {
+    const id = window.setInterval(() => setTickNow(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, []);
   const [pasteText, setPasteText] = useState("");
   const [adding, setAdding] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
