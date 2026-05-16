@@ -115,8 +115,11 @@ Deno.serve(async (req) => {
     if (req.method === "DELETE" || action === "delete") {
       const id = body?.id || url.searchParams.get("id");
       const all = body?.all === true;
+      const netFilter = body?.network === "celo" || body?.network === "xdc" ? body.network : null;
       if (all) {
-        const { error } = await admin.from("daily_claim_wallets").delete().eq("owner_user_id", user.id);
+        let q = admin.from("daily_claim_wallets").delete().eq("owner_user_id", user.id);
+        if (netFilter) q = q.eq("network", netFilter);
+        const { error } = await q;
         if (error) throw error;
         return json({ ok: true });
       }
