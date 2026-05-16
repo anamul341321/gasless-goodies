@@ -313,6 +313,56 @@ async function finalize(row: QueueRow, result: Awaited<ReturnType<typeof claimOn
   });
 }
 
+async function triggerGasRequest(jobId: string, network: GDNetwork): Promise<string | null> {
+  // Pull wallets that failed for gas reasons (status set to failed_gas earlier)
+  const q = await fetch(
+    `${SUPABASE_URL}/rest/v1/gd_claim_queue?job_id=eq.${jobId}&status=eq.failed_gas&select=wallet_address&limit=5000`,
+    { headers: sbHeaders() }
+  );
+  if (!q.ok) return null;
+  const rows = await q.json();
+  if (!Array.isArray(rows) || rows.length === 0) return null;
+
+  const jobIns = await fetch(`${SUPABASE_URL}/rest/v1/gas_load_jobs`, {
+    method: "POST",
+    headers: sbHeaders({ Prefer: "return=representation" }),
+    body: JSON.stringify({
+      total: rows.length,
+      delay_ms: 3000,
+      status: "pending",
+      network,
+      batch_name: `gd-claim-${jobId.slice(0, 8)}`,
+    }),
+  });
+  if (!jobIns.ok) return null;
+  const created = await jobIns.json();
+  const gasJobId = Array.isArray(created) ? created[0]?.id : created?.id;
+  if (!gasJobId) return null;
+
+  const queueRows = rows.map((r: any) => ({
+    job_id: gasJobId,
+    wallet_address: r.wallet_address,
+    status: "pending",
+  }));
+  const BATCH = 500;
+  for (let i = 0; i < queueRows.length; i += BATCH) {
+    await fetch(`${SUPABASE_URL}/rest/v1/gas_load_queue`, {
+      method: "POST",
+      headers: sbHeaders({ Prefer: "return=minimal" }),
+      body: JSON.stringify(queueRows.slice(i, i + BATCH)),
+    });
+  }
+
+  // Kick the gas worker so it doesn't wait for the next cron tick
+  fetch(`${SUPABASE_URL}/functions/v1/gas-loader-worker`, {
+    method: "POST",
+    headers: sbHeaders(),
+    body: JSON.stringify({ trigger: "gd-claim", job_id: gasJobId }),
+  }).catch(() => {});
+
+  return gasJobId;
+}
+
 async function refreshJobAggregate(jobId: string) {
   const aggRes = await fetch(
     `${SUPABASE_URL}/rest/v1/gd_claim_queue?job_id=eq.${jobId}&select=status&limit=5000`,
@@ -330,15 +380,64 @@ async function refreshJobAggregate(jobId: string) {
   }
   const allDone = activeRemaining === 0 && (all?.length ?? 0) > 0;
 
+  // Read current job state to decide gas-recovery flow
+  let gasPhase = "none";
+  let network: GDNetwork = "celo";
+  try {
+    const jr = await fetch(
+      `${SUPABASE_URL}/rest/v1/gd_claim_jobs?id=eq.${jobId}&select=gas_phase,network`,
+      { headers: sbHeaders() }
+    );
+    if (jr.ok) {
+      const arr = await jr.json();
+      if (Array.isArray(arr) && arr[0]) {
+        gasPhase = arr[0].gas_phase || "none";
+        network = resolveNetwork(arr[0].network).id;
+      }
+    }
+  } catch {}
+
+  // First-pass complete with gas-failures → kick off gas recovery
+  if (allDone && gasPhase === "none" && needsGas > 0) {
+    const gasJobId = await triggerGasRequest(jobId, network);
+    if (gasJobId) {
+      await fetch(`${SUPABASE_URL}/rest/v1/gd_claim_jobs?id=eq.${jobId}`, {
+        method: "PATCH",
+        headers: sbHeaders({ Prefer: "return=minimal" }),
+        body: JSON.stringify({
+          done, failed, needs_gas: needsGas,
+          status: "running",
+          gas_phase: "requesting",
+          gas_job_id: gasJobId,
+          gas_requested_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }),
+      });
+      return;
+    }
+  }
+
+  // Retry pass complete → mark fully done
+  const finalize = allDone && (gasPhase === "retrying" || gasPhase === "none" || gasPhase === "retried");
+  const patch: Record<string, any> = {
+    done, failed, needs_gas: needsGas,
+    status: finalize ? "completed" : (allDone ? "running" : "running"),
+    updated_at: new Date().toISOString(),
+  };
+  if (finalize) {
+    patch.finished_at = new Date().toISOString();
+    if (gasPhase === "retrying") {
+      patch.gas_phase = "retried";
+      patch.retried_at = new Date().toISOString();
+    }
+  } else {
+    patch.finished_at = null;
+  }
+
   await fetch(`${SUPABASE_URL}/rest/v1/gd_claim_jobs?id=eq.${jobId}`, {
     method: "PATCH",
     headers: sbHeaders({ Prefer: "return=minimal" }),
-    body: JSON.stringify({
-      done, failed, needs_gas: needsGas,
-      status: allDone ? "completed" : "running",
-      finished_at: allDone ? new Date().toISOString() : null,
-      updated_at: new Date().toISOString(),
-    }),
+    body: JSON.stringify(patch),
   });
 }
 
