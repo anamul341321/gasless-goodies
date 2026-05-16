@@ -844,16 +844,17 @@ const Claim = () => {
               <div className="rounded-lg border border-primary/20 bg-primary/5 p-3 text-[11px] text-muted-foreground space-y-1">
                 <p>
                   <strong className="text-foreground">How it works:</strong> Each wallet calls
-                  GoodDollar's <code className="text-primary">UBIScheme.claim()</code> on Celo
-                  Mainnet. Up to <strong className="text-foreground">100 wallets are claimed
-                  in parallel</strong> per server cycle, using the same gas fee as gooddapp.org
-                  (no overrides).
+                  GoodDollar's <code className="text-primary">UBIScheme.claim()</code> on{" "}
+                  <strong className="text-foreground">{NETWORK_META[network].label}</strong>. Up to{" "}
+                  <strong className="text-foreground">100 wallets are claimed in parallel</strong>{" "}
+                  per server cycle, using the same gas fee as the official dapp (no overrides).
                 </p>
                 <p>
-                  Failures are split into two recovery boxes: <strong className="text-foreground">
-                  insufficient gas</strong> (load CELO and retry) and <strong className="text-foreground">
-                  not whitelisted</strong> (complete KYC at gooddollar.org). Login before
-                  starting so failed keys remain in your account.
+                  Failures are split into recovery boxes:{" "}
+                  <strong className="text-foreground">insufficient gas</strong> (load{" "}
+                  {NETWORK_META[network].nativeGas} and retry) and{" "}
+                  <strong className="text-foreground">not whitelisted</strong> (complete KYC at
+                  gooddollar.org). Login before starting so failed keys remain in your account.
                 </p>
               </div>
             </CardContent>
