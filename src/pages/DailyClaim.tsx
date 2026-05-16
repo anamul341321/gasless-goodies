@@ -132,7 +132,7 @@ export default function DailyClaim() {
     try {
       const s = settings[net];
       const { error } = await supabase.functions.invoke("daily-claim-wallets?action=set_settings", {
-        body: { network: net, start_hour_bd: s.hour, start_minute_bd: s.minute, enabled: s.enabled },
+        body: { network: net, start_hour_bd: s.hour, start_minute_bd: s.minute, enabled: s.enabled, retry_wait_minutes: s.waitMin },
       });
       if (error) throw error;
       toast({ title: `Saved ${net.toUpperCase()} start time: ${String(s.hour).padStart(2,"0")}:${String(s.minute).padStart(2,"0")} BD` });
