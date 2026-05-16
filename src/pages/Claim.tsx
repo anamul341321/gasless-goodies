@@ -425,7 +425,8 @@ const Claim = () => {
   const isJobActive = !!job && (job.status === "pending" || job.status === "running");
   const isJobDone = !!job && job.status === "completed";
 
-  const explorer = (tx: string) => `https://celoscan.io/tx/${tx}`;
+  const jobNetwork: ClaimNetwork = (job?.network as ClaimNetwork) || "celo";
+  const explorer = (tx: string) => `${NETWORK_META[jobNetwork].explorerTx}${tx}`;
 
   // Login is required to use the claim feature
   if (authLoading) {
