@@ -63,6 +63,7 @@ Deno.serve(async (req) => {
     typeof body?.batch_name === "string" && body.batch_name.trim()
       ? body.batch_name.trim().slice(0, 80)
       : `Claim ${new Date().toISOString().slice(0, 16).replace("T", " ")}`;
+  const network = resolveNetwork(body?.network).id;
 
 
   if (rawKeys.length === 0) {
