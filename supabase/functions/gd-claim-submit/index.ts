@@ -3,6 +3,7 @@
 
 import { Wallet } from "npm:ethers@6.13.4";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { resolveNetwork } from "../_shared/gdNetworks.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
