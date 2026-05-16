@@ -690,6 +690,26 @@ const Claim = () => {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
+              {/* Network selector */}
+              <div className="rounded-lg border border-border/40 bg-card/40 p-2">
+                <div className="text-[11px] text-muted-foreground mb-1.5 px-1">Network</div>
+                <div className="grid grid-cols-2 gap-2">
+                  {(["celo", "xdc"] as ClaimNetwork[]).map((n) => (
+                    <button
+                      type="button"
+                      key={n}
+                      onClick={() => setNetwork(n)}
+                      className={`rounded-lg border px-3 py-2 text-xs font-medium transition-colors ${
+                        network === n
+                          ? "border-primary bg-primary/10 text-primary"
+                          : "border-border/40 bg-card/60 text-foreground hover:bg-card"
+                      }`}
+                    >
+                      {NETWORK_META[n].label}
+                    </button>
+                  ))}
+                </div>
+              </div>
               <Input
                 placeholder="Optional batch name"
                 value={batchName}
