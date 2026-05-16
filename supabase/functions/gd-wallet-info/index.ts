@@ -76,11 +76,12 @@ type Result = {
 type Call = { target: string; callData: string };
 type Mode = "full" | "kyc_only" | "balance_only";
 
-function buildCallsForWallet(addr: string, mode: Mode): Call[] {
+function buildCallsForWallet(addr: string, mode: Mode, net: GDNetwork): Call[] {
+  const cfg = GD_NETWORKS[net];
   if (mode === "kyc_only") {
     return [
       {
-        target: IDENTITY_ADDRESS,
+        target: cfg.identityAddress,
         callData: identityIface.encodeFunctionData("isWhitelisted", [addr]),
       },
     ];
@@ -88,22 +89,22 @@ function buildCallsForWallet(addr: string, mode: Mode): Call[] {
   if (mode === "balance_only") {
     return [
       {
-        target: G$_ADDRESS,
+        target: cfg.gdTokenAddress,
         callData: erc20Iface.encodeFunctionData("balanceOf", [addr]),
       },
     ];
   }
   return [
     {
-      target: IDENTITY_ADDRESS,
+      target: cfg.identityAddress,
       callData: identityIface.encodeFunctionData("isWhitelisted", [addr]),
     },
     {
-      target: G$_ADDRESS,
+      target: cfg.gdTokenAddress,
       callData: erc20Iface.encodeFunctionData("balanceOf", [addr]),
     },
     {
-      target: UBI_SCHEME_ADDRESS,
+      target: cfg.ubiSchemeAddress,
       callData: ubiIface.encodeFunctionData("checkEntitlement", [addr]),
     },
   ];
@@ -130,15 +131,14 @@ function decodeUint(iface: Interface, fn: string, data: string): bigint {
   }
 }
 
-async function inspectChunk(addresses: string[], mode: Mode): Promise<Result[]> {
+async function inspectChunk(addresses: string[], mode: Mode, net: GDNetwork): Promise<Result[]> {
   const calls: Call[] = [];
-  for (const a of addresses) calls.push(...buildCallsForWallet(a, mode));
+  for (const a of addresses) calls.push(...buildCallsForWallet(a, mode, net));
   const stride = callsPerWallet(mode);
 
   let returns: { success: boolean; returnData: string }[] = [];
   try {
-    // staticCall — no tx, pure read
-    returns = await multicall.tryAggregate.staticCall(false, calls);
+    returns = await getMulticall(net).tryAggregate.staticCall(false, calls);
   } catch (e: any) {
     // Whole-batch failure → mark all wallets in this chunk as errored
     return addresses.map((a) => ({
