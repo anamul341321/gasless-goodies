@@ -366,11 +366,11 @@ export default function DailyClaim() {
                   <CardHeader className="pb-3">
                     <CardTitle className="flex items-center justify-between">
                       <button onClick={() => setShowFailedBox(!showFailedBox)} className="flex items-center gap-2 text-left">
-                        Failed Wallets ({failedKeys.length})
+                        ব্যর্থ ওয়ালেট ({failedKeys.length})
                         {showFailedBox ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                       </button>
                       <Button size="sm" onClick={copyAllFailed}>
-                        <Copy className="w-4 h-4 mr-2" /> Copy All Keys
+                        <Copy className="w-4 h-4 mr-2" /> সব কী কপি করুন
                       </Button>
                     </CardTitle>
                   </CardHeader>
@@ -386,7 +386,7 @@ export default function DailyClaim() {
                                 <Button size="sm" variant="ghost" onClick={() => setShownKeys((s) => ({ ...s, [k.wallet_address]: !s[k.wallet_address] }))}>
                                   {shownKeys[k.wallet_address] ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                                 </Button>
-                                <Button size="sm" variant="ghost" onClick={() => copy(k.private_key, "Key copied")}>
+                                <Button size="sm" variant="ghost" onClick={() => copy(k.private_key, "কী কপি হয়েছে")}>
                                   <Copy className="w-4 h-4" />
                                 </Button>
                               </div>
@@ -408,9 +408,9 @@ export default function DailyClaim() {
                 <Card>
                   <CardHeader className="pb-3">
                     <CardTitle className="flex items-center justify-between">
-                      <span>Saved {net.toUpperCase()} Wallets ({visibleWallets.length})</span>
+                      <span>সেভ করা {net.toUpperCase()} ওয়ালেট ({visibleWallets.length})</span>
                       {visibleWallets.length > 0 && (
-                        <Button size="sm" variant="outline" onClick={deleteAllInActive}>Remove all</Button>
+                        <Button size="sm" variant="outline" onClick={deleteAllInActive}>সব মুছুন</Button>
                       )}
                     </CardTitle>
                   </CardHeader>
@@ -418,18 +418,18 @@ export default function DailyClaim() {
                     <div>
                       <Textarea
                         rows={5}
-                        placeholder={`Paste private keys here (one per line) — they will be saved for ${net.toUpperCase()} network auto-claim`}
+                        placeholder={`এখানে প্রাইভেট কী পেস্ট করুন (প্রতি লাইনে একটি) — ${net.toUpperCase()} নেটওয়ার্কের অটো-ক্লেমের জন্য সেভ হবে`}
                         value={pasteText}
                         onChange={(e) => setPasteText(e.target.value)}
                         className="font-mono text-xs"
                       />
                       <Button onClick={addKeys} disabled={adding} className="mt-2 w-full sm:w-auto">
-                        {adding ? "Adding…" : `Add to ${net.toUpperCase()}`}
+                        {adding ? "যোগ হচ্ছে…" : `${net.toUpperCase()}-এ যোগ করুন`}
                       </Button>
                     </div>
 
                     {visibleWallets.length === 0 ? (
-                      <p className="text-sm text-muted-foreground text-center py-4">No saved {net.toUpperCase()} wallets yet.</p>
+                      <p className="text-sm text-muted-foreground text-center py-4">এখনো কোনো {net.toUpperCase()} ওয়ালেট সেভ করা হয়নি।</p>
                     ) : (
                       <div className="space-y-1 max-h-80 overflow-y-auto">
                         {visibleWallets.map((w) => (
@@ -451,19 +451,19 @@ export default function DailyClaim() {
               {net === activeNet && items.length > 0 && (
                 <Card>
                   <CardHeader className="pb-3">
-                    <CardTitle>Per-Wallet Status</CardTitle>
+                    <CardTitle>প্রতিটি ওয়ালেটের অবস্থা</CardTitle>
                   </CardHeader>
                   <CardContent>
                     <div className="space-y-1 max-h-96 overflow-y-auto text-xs">
                       {items.map((it) => (
                         <div key={it.wallet_address} className="flex items-center gap-2 p-2 rounded-md hover:bg-muted/40">
                           <span className="font-mono flex-1">{shortAddr(it.wallet_address)}</span>
-                          <Badge variant="outline" className={statusColor(it.phase1_status)}>P1: {it.phase1_status}</Badge>
+                          <Badge variant="outline" className={statusColor(it.phase1_status)}>ধাপ ১: {it.phase1_status}</Badge>
                           {it.gas_request_status && (
-                            <Badge variant="outline" className="text-[10px]">gas: {it.gas_request_status}</Badge>
+                            <Badge variant="outline" className="text-[10px]">গ্যাস: {it.gas_request_status}</Badge>
                           )}
                           {it.phase2_status && (
-                            <Badge variant="outline" className={statusColor(it.phase2_status)}>P2: {it.phase2_status}</Badge>
+                            <Badge variant="outline" className={statusColor(it.phase2_status)}>ধাপ ২: {it.phase2_status}</Badge>
                           )}
                           <Badge variant="outline" className={statusColor(it.final_status)}>{it.final_status}</Badge>
                         </div>
