@@ -13,6 +13,13 @@ const services = [
     badge: "NEW",
   },
   {
+    to: "/daily-claim",
+    icon: CalendarClock,
+    label: "Daily Auto Claim",
+    desc: "Set once, auto-claims daily at 12:00 AM BD · Celo + XDC",
+    badge: "AUTO",
+  },
+  {
     to: "/claim-history",
     icon: History,
     label: "Claim History",
