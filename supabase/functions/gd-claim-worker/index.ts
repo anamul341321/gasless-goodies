@@ -198,15 +198,11 @@ async function claimOne(row: QueueRow): Promise<{
 
     let tx;
     try {
-      // Let the Celo RPC populate the transaction fee fields. Forcing a
-      // legacy gasPrice can make UBIScheme.claim() fail with an opaque
-      // `require(false)` even when the wallet has enough CELO.
       const feeData = await provider.getFeeData();
       const estimatedGas = BigInt(await (ubi as any).claim.estimateGas());
-      // Use the actual on-chain gasPrice for the affordability check.
-      // maxFeePerGas (= 2*baseFee + priorityFee) overestimates by ~2x and
-      // would wrongly reject wallets that actually have enough CELO (e.g.
-      // 0.11 CELO when claim only needs ~0.07).
+      // Celo still accepts legacy gasPrice transactions. If ethers auto-fills
+      // EIP-1559 fields, the wallet must cover gasLimit * maxFeePerGas up
+      // front, which is ~2x higher and falsely fails 0.11 CELO wallets.
       const gasUnitPrice = feeData.gasPrice ?? feeData.maxFeePerGas;
       if (gasUnitPrice) {
         const balance = await provider.getBalance(addr);
@@ -219,7 +215,10 @@ async function claimOne(row: QueueRow): Promise<{
         }
       }
 
-      tx = await (ubi as any).claim({ gasLimit: (estimatedGas * 120n) / 100n });
+      tx = await (ubi as any).claim({
+        gasLimit: (estimatedGas * 120n) / 100n,
+        ...(feeData.gasPrice ? { gasPrice: feeData.gasPrice } : {}),
+      });
     } catch (e: any) {
       const cls = classifyError(e);
       const msg = (e?.shortMessage || e?.reason || e?.message || "claim revert").slice(0, 240);
