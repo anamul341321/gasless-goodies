@@ -76,6 +76,11 @@ export default function DailyClaim() {
     xdc: { run: null, items: [], failed_keys: [] },
   });
   const [serverNow, setServerNow] = useState<string>("");
+  const [tickNow, setTickNow] = useState<number>(Date.now());
+  useEffect(() => {
+    const id = window.setInterval(() => setTickNow(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, []);
   const [pasteText, setPasteText] = useState("");
   const [adding, setAdding] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -206,22 +211,23 @@ export default function DailyClaim() {
   // Time until next scheduled run for active network (BD time = UTC+6)
   const countdown = useMemo(() => {
     const s = settings[activeNet];
-    const now = new Date(serverNow || Date.now());
+    const now = new Date(tickNow);
     const targetUtcMin = ((s.hour * 60 + s.minute) - 360 + 1440) % 1440;
-    const nowMin = now.getUTCHours() * 60 + now.getUTCMinutes();
-    let diff = targetUtcMin - nowMin;
-    if (diff <= 0) diff += 1440;
-    const h = Math.floor(diff / 60);
-    const m = diff % 60;
-    return `${h}h ${m}m`;
-  }, [serverNow, settings, activeNet]);
+    const nowSec = now.getUTCHours() * 3600 + now.getUTCMinutes() * 60 + now.getUTCSeconds();
+    let diff = targetUtcMin * 60 - nowSec;
+    if (diff <= 0) diff += 86400;
+    const h = Math.floor(diff / 3600);
+    const m = Math.floor((diff % 3600) / 60);
+    const sec = diff % 60;
+    return `${h}h ${String(m).padStart(2,"0")}m ${String(sec).padStart(2,"0")}s`;
+  }, [tickNow, settings, activeNet]);
 
   const waitRemainingMin = useMemo(() => {
     if (!run || run.phase !== "waiting_30m" || !run.gas_requests_done_at) return null;
     const endsAt = new Date(run.gas_requests_done_at).getTime() + 30 * 60_000;
-    const left = Math.max(0, endsAt - Date.now());
+    const left = Math.max(0, endsAt - tickNow);
     return Math.ceil(left / 60_000);
-  }, [run]);
+  }, [run, tickNow]);
 
   if (loading) return <div className="p-8 text-center text-muted-foreground">Loading…</div>;
   if (!user) return null;
