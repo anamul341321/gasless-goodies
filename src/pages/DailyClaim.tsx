@@ -222,11 +222,14 @@ export default function DailyClaim() {
     return `${h}h ${String(m).padStart(2,"0")}m ${String(sec).padStart(2,"0")}s`;
   }, [tickNow, settings, activeNet]);
 
-  const waitRemainingMin = useMemo(() => {
+  const waitRemaining = useMemo(() => {
     if (!run || run.phase !== "waiting_30m" || !run.gas_requests_done_at) return null;
     const endsAt = new Date(run.gas_requests_done_at).getTime() + 30 * 60_000;
     const left = Math.max(0, endsAt - tickNow);
-    return Math.ceil(left / 60_000);
+    const totalSec = Math.ceil(left / 1000);
+    const m = Math.floor(totalSec / 60);
+    const s = totalSec % 60;
+    return { m, s, text: `${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}` };
   }, [run, tickNow]);
 
   if (loading) return <div className="p-8 text-center text-muted-foreground">লোড হচ্ছে…</div>;
