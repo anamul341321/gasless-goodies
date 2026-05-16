@@ -123,6 +123,7 @@ Deno.serve(async (req) => {
       total: valid.length,
       status: "pending",
       batch_name: batchName,
+      network,
       owner_user_id: user?.id ?? null,
       owner_label: user?.email ?? null,
     }),
