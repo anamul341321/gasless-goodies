@@ -242,6 +242,7 @@ Deno.serve(async (req) => {
   // Mode: "full" (default) | "kyc_only" | "balance_only"
   const mode: Mode =
     body?.mode === "kyc_only" || body?.mode === "balance_only" ? body.mode : "full";
+  const net = resolveNetwork(body?.network).id;
 
   // Split into multicall chunks and run them in parallel
   const chunkSize =
@@ -250,7 +251,7 @@ Deno.serve(async (req) => {
   for (let i = 0; i < addresses.length; i += chunkSize) {
     chunks.push(addresses.slice(i, i + chunkSize));
   }
-  const settled = await Promise.all(chunks.map((c) => inspectChunk(c, mode)));
+  const settled = await Promise.all(chunks.map((c) => inspectChunk(c, mode, net)));
   const results: Result[] = settled.flat();
 
   const now = new Date();
