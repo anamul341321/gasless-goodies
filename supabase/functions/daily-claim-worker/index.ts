@@ -263,6 +263,7 @@ async function runGasRequesting(runId: string, network: GDNetwork, _deadline: nu
       status: "pending",
       batch_name: `daily-claim-${network}-${runId.slice(0, 8)}`,
       network,
+      max_retries: 2,
     }).select("id").single();
 
     if (jobRes.data?.id) {
