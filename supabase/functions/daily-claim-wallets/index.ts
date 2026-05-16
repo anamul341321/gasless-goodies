@@ -136,7 +136,7 @@ Deno.serve(async (req) => {
     if (action === "get_settings") {
       const { data, error } = await admin
         .from("daily_claim_settings")
-        .select("network, start_hour_bd, start_minute_bd, enabled")
+        .select("network, start_hour_bd, start_minute_bd, enabled, retry_wait_minutes")
         .eq("owner_user_id", user.id);
       if (error) throw error;
       return json({ settings: data || [] });
