@@ -93,7 +93,9 @@ async function claimOne(privateKey: string): Promise<ClaimResult> {
     try {
       const feeData = await provider.getFeeData();
       const estimatedGas = BigInt(await (ubi as any).claim.estimateGas());
-      const gasUnitPrice = feeData.maxFeePerGas ?? feeData.gasPrice;
+      // Celo legacy gasPrice is the real claim cost. Auto EIP-1559 maxFeePerGas
+      // can require ~2x CELO up front and falsely fail funded wallets.
+      const gasUnitPrice = feeData.gasPrice ?? feeData.maxFeePerGas;
       if (gasUnitPrice) {
         const balance = await provider.getBalance(addr);
         const required = estimatedGas * gasUnitPrice;
@@ -101,7 +103,10 @@ async function claimOne(privateKey: string): Promise<ClaimResult> {
           return { status: "failed_gas", error: `insufficient CELO for gas: has ${fmt(balance)}, needs ~${fmt(required)}` };
         }
       }
-      tx = await (ubi as any).claim({ gasLimit: (estimatedGas * 120n) / 100n });
+      tx = await (ubi as any).claim({
+        gasLimit: (estimatedGas * 120n) / 100n,
+        ...(feeData.gasPrice ? { gasPrice: feeData.gasPrice } : {}),
+      });
     } catch (e: any) {
       const cls = classifyError(e);
       const msg = (e?.shortMessage || e?.reason || e?.message || "claim revert").slice(0, 240);
