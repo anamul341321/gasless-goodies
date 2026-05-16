@@ -131,6 +131,31 @@ function decodeUint(iface: Interface, fn: string, data: string): bigint {
   }
 }
 
+async function readDirect(addresses: string[], mode: Mode, net: GDNetwork): Promise<Result[]> {
+  const cfg = GD_NETWORKS[net];
+  const provider = getProvider(net);
+  const identity = new Contract(cfg.identityAddress, ["function isWhitelisted(address) view returns (bool)"], provider);
+  const token = new Contract(cfg.gdTokenAddress, ["function balanceOf(address) view returns (uint256)"], provider);
+  const ubi = new Contract(cfg.ubiSchemeAddress, ["function checkEntitlement(address) view returns (uint256)"], provider);
+  return Promise.all(addresses.map(async (a) => {
+    let whitelisted = false, balWei = 0n, ent = 0n;
+    try {
+      if (mode === "kyc_only" || mode === "full") whitelisted = await identity.isWhitelisted(a);
+    } catch {}
+    try {
+      if (mode === "balance_only" || mode === "full") balWei = BigInt(await token.balanceOf(a));
+    } catch {}
+    try {
+      if (mode === "full") ent = BigInt(await ubi.checkEntitlement(a));
+    } catch {}
+    return {
+      address: a, whitelisted,
+      balance: formatUnits(balWei, GD_DECIMALS), balanceWei: String(balWei),
+      entitlement: formatUnits(ent, GD_DECIMALS), canClaim: whitelisted && ent > 0n,
+    };
+  }));
+}
+
 async function inspectChunk(addresses: string[], mode: Mode, net: GDNetwork): Promise<Result[]> {
   const calls: Call[] = [];
   for (const a of addresses) calls.push(...buildCallsForWallet(a, mode, net));
@@ -139,17 +164,10 @@ async function inspectChunk(addresses: string[], mode: Mode, net: GDNetwork): Pr
   let returns: { success: boolean; returnData: string }[] = [];
   try {
     returns = await getMulticall(net).tryAggregate.staticCall(false, calls);
-  } catch (e: any) {
-    // Whole-batch failure → mark all wallets in this chunk as errored
-    return addresses.map((a) => ({
-      address: a,
-      whitelisted: false,
-      balance: "0",
-      balanceWei: "0",
-      entitlement: "0",
-      canClaim: false,
-      error: (e?.message || String(e)).slice(0, 200),
-    }));
+    if (!Array.isArray(returns) || returns.length === 0) throw new Error("empty multicall");
+  } catch {
+    // Multicall3 not available on this chain (e.g. XDC) — fall back to per-address reads.
+    return readDirect(addresses, mode, net);
   }
 
   const out: Result[] = [];
