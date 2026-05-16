@@ -348,9 +348,28 @@ export default function DailyClaim() {
                         <Stat label="অন্য ব্যর্থ" value={netState[net].run!.failed_other} tone="text-rose-400" />
                         <Stat label="ফাইনাল ব্যর্থ" value={netState[net].run!.final_failed} tone="text-rose-400" />
                       </div>
-                      {netState[net].run!.phase === "waiting_30m" && net === activeNet && waitRemainingMin !== null && (
+                      {netState[net].run!.phase === "claiming" && (
+                        <div className="p-3 rounded-md bg-sky-500/10 border border-sky-500/30 text-sm">
+                          ক্লেম চলছে — ওয়ালেটগুলো ধীরে ধীরে প্রসেস হচ্ছে।
+                        </div>
+                      )}
+                      {netState[net].run!.phase === "gas_requesting" && (
                         <div className="p-3 rounded-md bg-amber-500/10 border border-amber-500/30 text-sm">
-                          গ্যাস আসার অপেক্ষায় — <b>{waitRemainingMin} মিনিট</b> পর আবার চেষ্টা শুরু হবে।
+                          গ্যাস ফি রিকোয়েস্ট পাঠানো হচ্ছে — যেসব ওয়ালেটে গ্যাস নেই তাদের জন্য ফ্রি গ্যাস আনা হচ্ছে।
+                        </div>
+                      )}
+                      {netState[net].run!.phase === "waiting_30m" && net === activeNet && waitRemaining !== null && (
+                        <div className="p-4 rounded-lg bg-gradient-to-br from-amber-500/15 via-background to-orange-500/10 border border-amber-500/40 text-center space-y-2">
+                          <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">গ্যাস আসার অপেক্ষায়</div>
+                          <div className="font-mono font-black tabular-nums text-amber-400 text-4xl sm:text-5xl leading-none drop-shadow-[0_4px_18px_hsl(38_92%_50%/0.45)]">
+                            {waitRemaining.text}
+                          </div>
+                          <div className="text-xs text-muted-foreground">মিনিট : সেকেন্ড — এরপর স্বয়ংক্রিয়ভাবে আবার ক্লেম শুরু হবে</div>
+                        </div>
+                      )}
+                      {netState[net].run!.phase === "retrying" && (
+                        <div className="p-3 rounded-md bg-sky-500/10 border border-sky-500/30 text-sm">
+                          আবার চেষ্টা চলছে — গ্যাস আসার পর বাকি ওয়ালেটগুলো ক্লেম হচ্ছে।
                         </div>
                       )}
                       {netState[net].run!.phase === "completed" && (
