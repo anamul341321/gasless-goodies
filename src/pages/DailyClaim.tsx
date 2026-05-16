@@ -86,9 +86,9 @@ export default function DailyClaim() {
   const [refreshing, setRefreshing] = useState(false);
   const [shownKeys, setShownKeys] = useState<Record<string, boolean>>({});
   const [showFailedBox, setShowFailedBox] = useState(true);
-  const [settings, setSettings] = useState<Record<Network, { hour: number; minute: number; enabled: boolean }>>({
-    celo: { hour: 0, minute: 0, enabled: true },
-    xdc: { hour: 0, minute: 0, enabled: true },
+  const [settings, setSettings] = useState<Record<Network, { hour: number; minute: number; enabled: boolean; waitMin: number }>>({
+    celo: { hour: 0, minute: 0, enabled: true, waitMin: 30 },
+    xdc: { hour: 0, minute: 0, enabled: true, waitMin: 30 },
   });
   const [savingTime, setSavingTime] = useState(false);
   const pollRef = useRef<number | null>(null);
