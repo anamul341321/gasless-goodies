@@ -276,6 +276,39 @@ export type Database = {
         }
         Relationships: []
       }
+      daily_claim_settings: {
+        Row: {
+          created_at: string
+          enabled: boolean
+          id: string
+          network: string
+          owner_user_id: string
+          start_hour_bd: number
+          start_minute_bd: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          enabled?: boolean
+          id?: string
+          network?: string
+          owner_user_id: string
+          start_hour_bd?: number
+          start_minute_bd?: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          enabled?: boolean
+          id?: string
+          network?: string
+          owner_user_id?: string
+          start_hour_bd?: number
+          start_minute_bd?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
       daily_claim_wallets: {
         Row: {
           created_at: string
