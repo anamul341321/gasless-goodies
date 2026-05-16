@@ -397,7 +397,7 @@ const Claim = () => {
       const res = await fetch(`${SUPABASE_URL}/functions/v1/gd-wallet-info`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ addresses: addrs, mode: "balance_only" }),
+        body: JSON.stringify({ addresses: addrs, mode: "balance_only", network: job?.network || "celo" }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
