@@ -260,40 +260,43 @@ export default function DailyClaim() {
                 </CardHeader>
                 <CardContent className="space-y-3">
                   <p className="text-xs text-muted-foreground">
-                    Pick the Bangladesh time (24-hour) when auto-claim should start each day. Once set, every saved {net.toUpperCase()} wallet is claimed automatically at that time — no need to paste keys again.
+                    Pick the Bangladesh time when auto-claim should start each day. Once set, every saved {net.toUpperCase()} wallet is claimed automatically at that time — no need to paste keys again.
                   </p>
-                  <div className="flex items-end gap-2 flex-wrap">
-                    <div>
-                      <label className="text-xs text-muted-foreground">Hour (0–23)</label>
+                  <div className="rounded-md bg-muted/40 border border-border/40 p-2 text-xs text-muted-foreground">
+                    <b className="text-foreground">Example:</b> to start at 12:00 AM (midnight) pick <b className="text-foreground">12:00 AM</b>. For 1:30 PM pick <b className="text-foreground">1:30 PM</b>.
+                  </div>
+                  <div className="flex items-end gap-3 flex-wrap">
+                    <div className="flex flex-col">
+                      <label className="text-xs text-muted-foreground mb-1">Start time (Bangladesh)</label>
                       <Input
-                        type="number" min={0} max={23}
-                        value={settings[net].hour}
-                        onChange={(e) => setSettings((s) => ({ ...s, [net]: { ...s[net], hour: Math.max(0, Math.min(23, Number(e.target.value) || 0)) } }))}
-                        className="w-24"
+                        type="time"
+                        step={60}
+                        value={`${String(settings[net].hour).padStart(2,"0")}:${String(settings[net].minute).padStart(2,"0")}`}
+                        onChange={(e) => {
+                          const [h, m] = (e.target.value || "00:00").split(":").map((x) => Number(x) || 0);
+                          setSettings((s) => ({ ...s, [net]: { ...s[net], hour: Math.max(0, Math.min(23, h)), minute: Math.max(0, Math.min(59, m)) } }));
+                        }}
+                        className="w-40 text-base"
                       />
                     </div>
-                    <div>
-                      <label className="text-xs text-muted-foreground">Minute (0–59)</label>
-                      <Input
-                        type="number" min={0} max={59}
-                        value={settings[net].minute}
-                        onChange={(e) => setSettings((s) => ({ ...s, [net]: { ...s[net], minute: Math.max(0, Math.min(59, Number(e.target.value) || 0)) } }))}
-                        className="w-24"
-                      />
-                    </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 pb-2">
                       <Switch
                         checked={settings[net].enabled}
                         onCheckedChange={(v) => setSettings((s) => ({ ...s, [net]: { ...s[net], enabled: v } }))}
                       />
                       <span className="text-xs text-muted-foreground">Enabled</span>
                     </div>
-                    <Button size="sm" onClick={() => saveTime(net)} disabled={savingTime}>
+                    <Button size="sm" onClick={() => saveTime(net)} disabled={savingTime} className="mb-1">
                       {savingTime ? "Saving…" : "Save time"}
                     </Button>
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    Current: <span className="text-foreground font-medium">{String(settings[net].hour).padStart(2,"0")}:{String(settings[net].minute).padStart(2,"0")} BD</span>
+                    Saved start time: <span className="text-foreground font-medium">{(() => {
+                      const h = settings[net].hour; const m = settings[net].minute;
+                      const ampm = h >= 12 ? "PM" : "AM";
+                      const h12 = h % 12 === 0 ? 12 : h % 12;
+                      return `${h12}:${String(m).padStart(2,"0")} ${ampm} (${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}) BD`;
+                    })()}</span>
                     {!settings[net].enabled && <span className="ml-2 text-amber-400">(disabled)</span>}
                   </p>
                 </CardContent>
