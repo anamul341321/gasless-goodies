@@ -1,6 +1,7 @@
-// Daily claim worker. Drives a single run through 4 phases:
+// Daily claim worker. Multi-network (Celo + XDC). Drives a single run
+// through 4 phases:
 //   1) claiming        — try claim() on every wallet (slow, parallel waves)
-//   2) gas_requesting  — for failed_gas wallets, hit free-gas-load with 3s gap
+//   2) gas_requesting  — for failed_gas wallets, queue free-gas-load batch
 //   3) waiting_30m     — handed off to the scheduler (no work here)
 //   4) retrying        — re-claim failed_gas wallets ONCE, set final_status
 // Self-recursive: when its time-budget runs low it re-invokes itself.
@@ -8,6 +9,7 @@
 import { Wallet, JsonRpcProvider, Contract, formatEther } from "npm:ethers@6.13.4";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { decryptKey } from "../_shared/dailyCrypto.ts";
+import { GD_NETWORKS, resolveNetwork, type GDNetwork } from "../_shared/gdNetworks.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -16,12 +18,8 @@ const corsHeaders = {
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
 const admin = createClient(SUPABASE_URL, SERVICE_KEY);
 
-const CELO_RPC = "https://forno.celo.org";
-const IDENTITY_ADDRESS = "0xC361A6E67822a0EDc17D899227dd9FC50BD62F42";
-const UBI_SCHEME_ADDRESS = "0x43d72Ff17701B2DA814620735C39C620Ce0ea4A1";
 const UBI_ABI = [
   "function claim() returns (uint256)",
   "function checkEntitlement(address member) view returns (uint256)",
@@ -29,16 +27,22 @@ const UBI_ABI = [
 ];
 const IDENTITY_ABI = ["function isWhitelisted(address account) view returns (bool)"];
 
-const provider = new JsonRpcProvider(CELO_RPC, 42220);
+const providers: Partial<Record<GDNetwork, JsonRpcProvider>> = {};
+function providerFor(net: GDNetwork) {
+  const ex = providers[net];
+  if (ex) return ex;
+  const cfg = GD_NETWORKS[net];
+  const p = new JsonRpcProvider(cfg.rpc, cfg.chainId);
+  providers[net] = p;
+  return p;
+}
 
-const CLAIM_WAVE_SIZE = 8;        // wallets in flight at once for claim
-const CLAIM_WAVE_GAP_MS = 1500;   // pause between waves to keep it slow
-const GAS_GAP_MS = 3000;          // 3 sec between gas requests
+const CLAIM_WAVE_SIZE = 8;
+const CLAIM_WAVE_GAP_MS = 1500;
 const RECEIPT_TIMEOUT_MS = 60_000;
 const TIME_BUDGET_MS = 110_000;
 
 const WORKER_URL = `${SUPABASE_URL}/functions/v1/daily-claim-worker`;
-const FREE_GAS_URL = `${SUPABASE_URL}/functions/v1/free-gas-load`;
 
 const inFlight = new Set<string>();
 
@@ -72,11 +76,13 @@ type ClaimResult = {
   error?: string;
 };
 
-async function claimOne(privateKey: string): Promise<ClaimResult> {
+async function claimOne(privateKey: string, network: GDNetwork): Promise<ClaimResult> {
   try {
+    const cfg = GD_NETWORKS[network];
+    const provider = providerFor(network);
     const signer = new Wallet(privateKey, provider);
-    const ubi = new Contract(UBI_SCHEME_ADDRESS, UBI_ABI, signer);
-    const identity = new Contract(IDENTITY_ADDRESS, IDENTITY_ABI, provider);
+    const ubi = new Contract(cfg.ubiSchemeAddress, UBI_ABI, signer);
+    const identity = new Contract(cfg.identityAddress, IDENTITY_ABI, provider);
     const addr = (await signer.getAddress()).toLowerCase();
 
     try {
@@ -93,14 +99,13 @@ async function claimOne(privateKey: string): Promise<ClaimResult> {
     try {
       const feeData = await provider.getFeeData();
       const estimatedGas = BigInt(await (ubi as any).claim.estimateGas());
-      // Celo legacy gasPrice is the real claim cost. Auto EIP-1559 maxFeePerGas
-      // can require ~2x CELO up front and falsely fail funded wallets.
       const gasUnitPrice = feeData.gasPrice ?? feeData.maxFeePerGas;
       if (gasUnitPrice) {
         const balance = await provider.getBalance(addr);
         const required = estimatedGas * gasUnitPrice;
         if (balance < required) {
-          return { status: "failed_gas", error: `insufficient CELO for gas: has ${fmt(balance)}, needs ~${fmt(required)}` };
+          const nativeLabel = network === "xdc" ? "XDC" : "CELO";
+          return { status: "failed_gas", error: `insufficient ${nativeLabel} for gas: has ${fmt(balance)}, needs ~${fmt(required)}` };
         }
       }
       tx = await (ubi as any).claim({
@@ -171,8 +176,7 @@ async function refreshCounters(runId: string) {
   }).eq("id", runId);
 }
 
-async function runPhase1(runId: string, deadline: number) {
-  // Pick pending phase1 items in waves
+async function runPhase1(runId: string, network: GDNetwork, deadline: number) {
   while (Date.now() < deadline) {
     const { data: rows } = await admin
       .from("daily_claim_run_items")
@@ -182,14 +186,13 @@ async function runPhase1(runId: string, deadline: number) {
       .limit(CLAIM_WAVE_SIZE);
     if (!rows || rows.length === 0) break;
 
-    // Mark claiming
     const ids = rows.map((r: any) => r.id);
     await admin.from("daily_claim_run_items").update({ phase1_status: "claiming" }).in("id", ids);
 
     await Promise.all(rows.map(async (r: any) => {
       try {
         const pk = await decryptKey(r.encrypted_key);
-        const res = await claimOne(pk);
+        const res = await claimOne(pk, network);
         const patch: any = {
           phase1_status: res.status,
           phase1_tx: res.txHash || null,
@@ -215,7 +218,6 @@ async function runPhase1(runId: string, deadline: number) {
     await new Promise((r) => setTimeout(r, CLAIM_WAVE_GAP_MS));
   }
 
-  // Any pending left? continue later.
   const { count: pendingLeft } = await admin
     .from("daily_claim_run_items")
     .select("id", { count: "exact", head: true })
@@ -226,7 +228,6 @@ async function runPhase1(runId: string, deadline: number) {
     return false;
   }
 
-  // Phase 1 done. Move to gas_requesting (or skip directly to retrying if no failed_gas).
   const { count: gasNeeded } = await admin
     .from("daily_claim_run_items")
     .select("id", { count: "exact", head: true })
@@ -245,13 +246,7 @@ async function runPhase1(runId: string, deadline: number) {
   return true;
 }
 
-async function runGasRequesting(runId: string, _deadline: number) {
-  // Bulk-create ONE gas_load job for all failed_gas wallets needing gas.
-  // The existing gas-loader-worker (pg_cron, proxy IP rotation, 3s delay)
-  // will process them in the background. We then wait until all queued
-  // wallets reach a terminal status, marking each item's gas_request_status.
-
-  // Find items still needing a gas request
+async function runGasRequesting(runId: string, network: GDNetwork, _deadline: number) {
   const { data: needGas } = await admin
     .from("daily_claim_run_items")
     .select("id, wallet_address")
@@ -261,12 +256,12 @@ async function runGasRequesting(runId: string, _deadline: number) {
     .is("gas_request_status", null);
 
   if (needGas && needGas.length > 0) {
-    // Create one job
     const jobRes = await admin.from("gas_load_jobs").insert({
       total: needGas.length,
       delay_ms: 3000,
       status: "pending",
-      batch_name: `daily-claim-${runId.slice(0, 8)}`,
+      batch_name: `daily-claim-${network}-${runId.slice(0, 8)}`,
+      network,
     }).select("id").single();
 
     if (jobRes.data?.id) {
@@ -280,17 +275,15 @@ async function runGasRequesting(runId: string, _deadline: number) {
       for (let i = 0; i < queueRows.length; i += BATCH) {
         await admin.from("gas_load_queue").insert(queueRows.slice(i, i + BATCH));
       }
-      // Mark items as 'requested' with the job id stored in gas_tx temporarily
       await admin
         .from("daily_claim_run_items")
         .update({
           gas_request_status: "requested",
           gas_requested_at: new Date().toISOString(),
-          gas_tx: jobId, // store job id so we can poll
+          gas_tx: jobId,
         })
         .in("id", needGas.map((r: any) => r.id));
 
-      // Kick the gas worker
       fetch(`${SUPABASE_URL}/functions/v1/gas-loader-worker`, {
         method: "POST",
         headers: { Authorization: `Bearer ${SERVICE_KEY}`, apikey: SERVICE_KEY, "Content-Type": "application/json" },
@@ -299,8 +292,6 @@ async function runGasRequesting(runId: string, _deadline: number) {
     }
   }
 
-  // Poll: count items still 'requested'. If gas-loader queue rows for
-  // those wallets are all in terminal status, mark our items 'done'/'error'.
   const { data: requested } = await admin
     .from("daily_claim_run_items")
     .select("id, wallet_address, gas_tx")
@@ -308,7 +299,6 @@ async function runGasRequesting(runId: string, _deadline: number) {
     .eq("gas_request_status", "requested");
 
   if (requested && requested.length > 0) {
-    // Group by job id
     const byJob = new Map<string, { id: string; wallet_address: string }[]>();
     for (const r of requested as any[]) {
       const j = r.gas_tx;
@@ -317,7 +307,6 @@ async function runGasRequesting(runId: string, _deadline: number) {
       byJob.get(j)!.push({ id: r.id, wallet_address: r.wallet_address });
     }
     for (const [jobId, items] of byJob.entries()) {
-      const addrs = items.map((i) => i.wallet_address.toLowerCase());
       const { data: queueRows } = await admin
         .from("gas_load_queue")
         .select("wallet_address, status, tx_hash, error_message")
@@ -343,7 +332,6 @@ async function runGasRequesting(runId: string, _deadline: number) {
     }
   }
 
-  // Anything still requested? Re-poll later.
   const { count: leftRequested } = await admin
     .from("daily_claim_run_items")
     .select("id", { count: "exact", head: true })
@@ -351,12 +339,10 @@ async function runGasRequesting(runId: string, _deadline: number) {
     .eq("gas_request_status", "requested");
 
   if ((leftRequested || 0) > 0) {
-    // Re-kick after a short wait so we poll again
     setTimeout(() => selfKick(runId, "gas_requesting"), 15_000);
     return false;
   }
 
-  // All gas requests complete (done or error). Move to waiting_30m.
   await admin.from("daily_claim_runs").update({
     phase: "waiting_30m",
     gas_requests_done_at: new Date().toISOString(),
@@ -364,7 +350,7 @@ async function runGasRequesting(runId: string, _deadline: number) {
   return true;
 }
 
-async function runRetrying(runId: string, deadline: number) {
+async function runRetrying(runId: string, network: GDNetwork, deadline: number) {
   while (Date.now() < deadline) {
     const { data: rows } = await admin
       .from("daily_claim_run_items")
@@ -382,7 +368,7 @@ async function runRetrying(runId: string, deadline: number) {
     await Promise.all(rows.map(async (r: any) => {
       try {
         const pk = await decryptKey(r.encrypted_key);
-        const res = await claimOne(pk);
+        const res = await claimOne(pk, network);
         const patch: any = {
           phase2_status: res.status,
           phase2_tx: res.txHash || null,
@@ -442,17 +428,13 @@ Deno.serve(async (req) => {
     const { data: run } = await admin.from("daily_claim_runs").select("*").eq("id", runId).maybeSingle();
     if (!run) return new Response(JSON.stringify({ error: "run not found" }), { status: 404, headers: corsHeaders });
 
+    const network = resolveNetwork(run.network).id;
     let phase = body?.phase || run.phase;
-    if (phase === "claiming") await runPhase1(runId, deadline);
-    else if (phase === "gas_requesting") await runGasRequesting(runId, deadline);
-    else if (phase === "retrying") await runRetrying(runId, deadline);
-    else if (phase === "waiting_30m") {
-      // No-op, scheduler handles it
-    }
-
-    return new Response(JSON.stringify({ ok: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    if (phase === "claiming") await runPhase1(runId, network, deadline);
+    else if (phase === "gas_requesting") await runGasRequesting(runId, network, deadline);
+    else if (phase === "retrying") await runRetrying(runId, network, deadline);
+    return new Response(JSON.stringify({ ok: true, phase }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
   } catch (e: any) {
-    console.error("daily-claim-worker error", e?.message || e);
     return new Response(JSON.stringify({ ok: false, error: e?.message || String(e) }), {
       status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
