@@ -67,18 +67,27 @@ Deno.serve(async (req) => {
   if (!user) return json({ error: "unauthorized" }, 401);
 
   try {
-    // Wallets (for counts and per-group counts)
-    const { data: walletRows } = await admin
-      .from("daily_claim_wallets")
-      .select("network, is_active, group_id")
-      .eq("owner_user_id", user.id);
+    // Wallets (for counts and per-group counts) — page through to avoid 1000-row default cap
     const walletCounts: Record<string, number> = { celo: 0, xdc: 0 };
     const perGroupCount = new Map<string, number>();
-    for (const w of walletRows || []) {
-      if (!w.is_active) continue;
-      const net = w.network || "celo";
-      walletCounts[net] = (walletCounts[net] || 0) + 1;
-      if (w.group_id) perGroupCount.set(w.group_id, (perGroupCount.get(w.group_id) || 0) + 1);
+    const PAGE = 1000;
+    let from = 0;
+    while (true) {
+      const { data: page, error: pErr } = await admin
+        .from("daily_claim_wallets")
+        .select("network, is_active, group_id")
+        .eq("owner_user_id", user.id)
+        .range(from, from + PAGE - 1);
+      if (pErr) throw pErr;
+      const rows = page || [];
+      for (const w of rows) {
+        if (!w.is_active) continue;
+        const net = w.network || "celo";
+        walletCounts[net] = (walletCounts[net] || 0) + 1;
+        if (w.group_id) perGroupCount.set(w.group_id, (perGroupCount.get(w.group_id) || 0) + 1);
+      }
+      if (rows.length < PAGE) break;
+      from += PAGE;
     }
 
     // Groups
