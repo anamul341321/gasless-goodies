@@ -37,9 +37,9 @@ function providerFor(net: GDNetwork) {
   return p;
 }
 
-// Daily auto-claim runs intentionally slow to stay gentle on RPC/network.
-const CLAIM_WAVE_SIZE = 2;
-const CLAIM_WAVE_GAP_MS = 6000;
+// Daily auto-claim — tuned for faster throughput while staying RPC-friendly.
+const CLAIM_WAVE_SIZE = 10;
+const CLAIM_WAVE_GAP_MS = 1500;
 const RECEIPT_TIMEOUT_MS = 90_000;
 const TIME_BUDGET_MS = 110_000;
 
