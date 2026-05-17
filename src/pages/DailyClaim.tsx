@@ -262,6 +262,28 @@ export default function DailyClaim() {
     navigator.clipboard.writeText(text).then(() => toast({ title: label }));
   }
 
+  async function loadHistory(groupId: string) {
+    setHistoryLoading((s) => ({ ...s, [groupId]: true }));
+    try {
+      const { data, error } = await supabase.functions.invoke("daily-claim-history", {
+        body: { group_id: groupId, limit: 30 },
+      });
+      if (error || (data as any)?.error) {
+        toast({ title: "ইতিহাস লোড ব্যর্থ", description: (data as any)?.error || error?.message, variant: "destructive" });
+        return;
+      }
+      setHistoryByGroup((s) => ({ ...s, [groupId]: (data as any)?.runs || [] }));
+    } finally {
+      setHistoryLoading((s) => ({ ...s, [groupId]: false }));
+    }
+  }
+
+  function toggleHistory(groupId: string) {
+    const willOpen = !openGroupHistory[groupId];
+    setOpenGroupHistory((s) => ({ ...s, [groupId]: willOpen }));
+    if (willOpen && !historyByGroup[groupId]) loadHistory(groupId);
+  }
+
   function copyFailed(g: Group) {
     if (g.failed_keys.length === 0) return;
     copy(g.failed_keys.map((k) => k.private_key).join("\n"), `${g.failed_keys.length} টি ব্যর্থ কী কপি`);
