@@ -167,9 +167,9 @@ Deno.serve(async (req) => {
     if (action === "delete_group") {
       const id = body?.id;
       if (!id) return json({ error: "id required" }, 400);
-      // Detach wallets, then delete group
+      // Delete wallets in the group too (previous behavior left them orphaned)
       await admin.from("daily_claim_wallets")
-        .update({ group_id: null }).eq("group_id", id).eq("owner_user_id", user.id);
+        .delete().eq("group_id", id).eq("owner_user_id", user.id);
       const { error } = await admin
         .from("daily_claim_groups")
         .delete().eq("id", id).eq("owner_user_id", user.id);
