@@ -1,8 +1,12 @@
 // Runs every minute via pg_cron. Two responsibilities:
-//  1) At Bangladesh midnight (UTC 18:00–18:09), create today's run for every
-//     user that has active wallets and kick the worker in phase 1.
-//  2) For runs in phase 'waiting_30m' whose gas_requests_done_at + 30m has
-//     passed, advance to phase 'retrying' and trigger the worker.
+//  1) When a claim group's scheduled BD time fires (within a 10-minute window),
+//     create today's run for that group and kick the worker (phase: claiming).
+//  2) Resume runs in phase 'waiting_30m' whose group's retry_wait_minutes has
+//     elapsed → phase 'retrying'.
+//
+// Each user can define unlimited groups; each group has its own wallets,
+// start time, and retry wait. Uniqueness key for "today's run" is
+// (group_id, run_date).
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 
@@ -36,36 +40,33 @@ Deno.serve(async (req) => {
   const utcNowMin = now.getUTCHours() * 60 + now.getUTCMinutes();
   // Bangladesh = UTC + 6
   const bdNow = new Date(now.getTime() + 6 * 60 * 60_000);
-  const today = bdNow.toISOString().slice(0, 10); // run_date keyed in BD date
+  const today = bdNow.toISOString().slice(0, 10);
 
   let started = 0;
   let resumed = 0;
 
   try {
-    // 1) Per-user/per-network scheduled start. Trigger any setting whose
-    //    target time has passed within the last 10 minutes and hasn't run today.
-    const { data: settings } = await admin
-      .from("daily_claim_settings")
-      .select("owner_user_id, network, start_hour_bd, start_minute_bd, enabled")
+    // 1) Fire each enabled group whose target time hit within the last 10 min.
+    const { data: groups } = await admin
+      .from("daily_claim_groups")
+      .select("id, owner_user_id, network, start_hour_bd, start_minute_bd, enabled")
       .eq("enabled", true);
 
-    for (const s of settings || []) {
-      // target time expressed in UTC minutes-of-day
-      const targetUtcMin = (((s.start_hour_bd as number) * 60 + (s.start_minute_bd as number)) - 360 + 1440) % 1440;
-      // diff = how many minutes since target fired today (handle midnight wrap)
+    for (const g of groups || []) {
+      const targetUtcMin = (((g.start_hour_bd as number) * 60 + (g.start_minute_bd as number)) - 360 + 1440) % 1440;
       let diff = utcNowMin - targetUtcMin;
       if (diff < 0) diff += 1440;
-      if (diff > 9) continue; // only fire within a 10-minute window
+      if (diff > 9) continue;
 
-      const uid = s.owner_user_id as string;
-      const network = (s.network as string) || "celo";
+      const groupId = g.id as string;
+      const uid = g.owner_user_id as string;
+      const network = (g.network as string) || "celo";
 
       const { data: existing } = await admin
         .from("daily_claim_runs")
         .select("id")
-        .eq("owner_user_id", uid)
+        .eq("group_id", groupId)
         .eq("run_date", today)
-        .eq("network", network)
         .maybeSingle();
       if (existing) continue;
 
@@ -73,7 +74,7 @@ Deno.serve(async (req) => {
         .from("daily_claim_wallets")
         .select("wallet_address, encrypted_key")
         .eq("owner_user_id", uid)
-        .eq("network", network)
+        .eq("group_id", groupId)
         .eq("is_active", true);
       if (!wallets || wallets.length === 0) continue;
 
@@ -83,6 +84,7 @@ Deno.serve(async (req) => {
           owner_user_id: uid,
           run_date: today,
           network,
+          group_id: groupId,
           phase: "claiming",
           total: wallets.length,
           started_at: new Date().toISOString(),
@@ -107,20 +109,31 @@ Deno.serve(async (req) => {
       started++;
     }
 
-    // 2) Resume runs that finished waiting (per-user configurable wait)
+    // 2) Resume runs whose group wait window has elapsed
     const { data: waiting } = await admin
       .from("daily_claim_runs")
-      .select("id, gas_requests_done_at, owner_user_id, network")
+      .select("id, gas_requests_done_at, group_id, owner_user_id, network")
       .eq("phase", "waiting_30m");
     for (const r of waiting || []) {
       if (!r.gas_requests_done_at) continue;
-      const { data: setting } = await admin
-        .from("daily_claim_settings")
-        .select("retry_wait_minutes")
-        .eq("owner_user_id", r.owner_user_id)
-        .eq("network", r.network || "celo")
-        .maybeSingle();
-      const waitMin = Number(setting?.retry_wait_minutes ?? 30);
+      let waitMin = 30;
+      if (r.group_id) {
+        const { data: g } = await admin
+          .from("daily_claim_groups")
+          .select("retry_wait_minutes")
+          .eq("id", r.group_id)
+          .maybeSingle();
+        if (g?.retry_wait_minutes != null) waitMin = Number(g.retry_wait_minutes);
+      } else {
+        // legacy fallback
+        const { data: setting } = await admin
+          .from("daily_claim_settings")
+          .select("retry_wait_minutes")
+          .eq("owner_user_id", r.owner_user_id)
+          .eq("network", r.network || "celo")
+          .maybeSingle();
+        if (setting?.retry_wait_minutes != null) waitMin = Number(setting.retry_wait_minutes);
+      }
       const doneAt = new Date(r.gas_requests_done_at).getTime();
       if (Date.now() - doneAt >= waitMin * 60_000) {
         await admin
@@ -133,7 +146,7 @@ Deno.serve(async (req) => {
       }
     }
 
-    // 3) Re-kick any in-progress runs in case they stalled
+    // 3) Re-kick any stalled in-progress runs
     const { data: stuck } = await admin
       .from("daily_claim_runs")
       .select("id, phase, updated_at")

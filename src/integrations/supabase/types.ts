@@ -142,6 +142,45 @@ export type Database = {
           },
         ]
       }
+      daily_claim_groups: {
+        Row: {
+          created_at: string
+          enabled: boolean
+          id: string
+          name: string
+          network: string
+          owner_user_id: string
+          retry_wait_minutes: number
+          start_hour_bd: number
+          start_minute_bd: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          enabled?: boolean
+          id?: string
+          name?: string
+          network?: string
+          owner_user_id: string
+          retry_wait_minutes?: number
+          start_hour_bd?: number
+          start_minute_bd?: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          enabled?: boolean
+          id?: string
+          name?: string
+          network?: string
+          owner_user_id?: string
+          retry_wait_minutes?: number
+          start_hour_bd?: number
+          start_minute_bd?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
       daily_claim_run_items: {
         Row: {
           attempts: number
@@ -223,6 +262,7 @@ export type Database = {
           final_failed: number
           finished_at: string | null
           gas_requests_done_at: string | null
+          group_id: string | null
           id: string
           last_error: string | null
           network: string
@@ -242,6 +282,7 @@ export type Database = {
           final_failed?: number
           finished_at?: string | null
           gas_requests_done_at?: string | null
+          group_id?: string | null
           id?: string
           last_error?: string | null
           network?: string
@@ -261,6 +302,7 @@ export type Database = {
           final_failed?: number
           finished_at?: string | null
           gas_requests_done_at?: string | null
+          group_id?: string | null
           id?: string
           last_error?: string | null
           network?: string
@@ -316,6 +358,7 @@ export type Database = {
         Row: {
           created_at: string
           encrypted_key: string
+          group_id: string | null
           id: string
           is_active: boolean
           label: string | null
@@ -327,6 +370,7 @@ export type Database = {
         Insert: {
           created_at?: string
           encrypted_key: string
+          group_id?: string | null
           id?: string
           is_active?: boolean
           label?: string | null
@@ -338,6 +382,7 @@ export type Database = {
         Update: {
           created_at?: string
           encrypted_key?: string
+          group_id?: string | null
           id?: string
           is_active?: boolean
           label?: string | null

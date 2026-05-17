@@ -1,105 +1,64 @@
-## Daily Auto-Claim System (notun, alada)
+## Goal
+Allow the user to create multiple auto-claim schedules per network, each with its own start time and its own wallet group. Example: 500 wallets claim at 12:00 AM, another 300 wallets claim at 3:00 AM, etc. Unlimited schedules.
 
-Existing "GoodDollar Claim" page emnei thakbe. Eta ekta **separate slow-claim system** hobe — protidin Bangladesh raat 12:00 (UTC 18:00) te apnar shob saved wallet er jonno auto claim chalabe.
+## Approach
 
----
+Introduce the concept of a "claim group" (named bucket of wallets with its own schedule). Each wallet belongs to one group per network. The scheduler fires per-group instead of per-(user, network).
 
-### 1. Database (notun tables)
+## Database changes
 
-**`daily_claim_wallets`** — apnar saved keys (per user)
-- `owner_user_id`, `wallet_address`, `private_key` (encrypted at rest), `label`, `is_active`, `created_at`
-- RLS: user shudhu nijer wallet dekhbe/manage korbe
+New table `daily_claim_groups`:
+- `id` (uuid, pk)
+- `owner_user_id` (uuid)
+- `network` (text, default 'celo')
+- `name` (text) — e.g. "Batch A — 12:00 AM"
+- `start_hour_bd` (smallint, 0-23)
+- `start_minute_bd` (smallint, 0-59)
+- `retry_wait_minutes` (int, default 30)
+- `enabled` (bool, default true)
+- timestamps
+- RLS: owner only
 
-**`daily_claim_runs`** — protidin er run history
-- `owner_user_id`, `run_date` (UTC date), `phase` (`claiming` | `gas_requesting` | `waiting_30m` | `retrying` | `completed`)
-- `total`, `success`, `failed_gas`, `failed_other`, `final_failed`
-- `started_at`, `gas_requests_done_at`, `retry_started_at`, `finished_at`
-- Unique: (owner_user_id, run_date) — dine ekbar matro
+Add `group_id uuid` to:
+- `daily_claim_wallets` — assigns wallet to a group (nullable for backward compat → migrate existing wallets to a default group)
+- `daily_claim_runs` — so each run is tied to one group (one run per group per day, instead of one per user+network)
 
-**`daily_claim_run_items`** — per wallet per run status
-- `run_id`, `wallet_address`, `private_key` (run shesh hole erase, kintu **final_failed** hole ucched korbo na — apni dekhte/copy korte parben)
-- `phase1_status`, `phase1_tx`, `phase1_error`
-- `gas_request_status`, `gas_tx`, `gas_requested_at`
-- `phase2_status` (retry), `phase2_tx`, `phase2_error`
-- `final_status` (`success` | `failed_gas` | `failed_kyc` | `failed_other` | `already_claimed`)
+Migration also creates a default group per existing `daily_claim_settings` row and assigns all that user's wallets to it, preserving current behavior.
 
----
+Keep `daily_claim_settings` for backward compatibility but the scheduler will use groups going forward.
 
-### 2. Edge Functions (notun)
+## Scheduler change
 
-**`daily-claim-wallets`** (CRUD, JWT-protected)
-- `POST` add (single ba bulk paste), `GET` list, `DELETE` remove, `PATCH` toggle active
+`daily-claim-scheduler` loops over `daily_claim_groups` (enabled = true) instead of `daily_claim_settings`. For each group whose target time fired within the last 10 min and no run exists today for that group, create a run with the wallets belonging to that group.
 
-**`daily-claim-scheduler`** (cron-only, runs every minute)
-- Check kore: ajker (UTC) `daily_claim_runs` row exist kore ki na, jodi UTC 18:00–18:05 er moddhe time hoy ar today er run nai → notun run create kore phase 1 shuru kore
-- Per user grouped — alada run
+Uniqueness key for "today's run" becomes `(group_id, run_date)` instead of `(owner_user_id, network, run_date)`.
 
-**`daily-claim-worker`** (heavy-lifting, self-recursive)
-- **Phase 1 — claiming**: 5-10 wallet/wave parallel, slow (gap), `claimOne()` similar to existing worker. Fail hole `failed_gas` / `failed_kyc` / `failed_other` mark kore.
-- Phase 1 shesh → automatic Phase 2 e jay.
-- **Phase 2 — gas_requesting**: shob `failed_gas` wallet er jonno **3 second gap** diye `free-gas-load` invoke kore (existing function, Webshare proxy diye IP rotate ache otokhanei). Onek time lagleo problem nai — shob complete na howa porjonto wait kore.
-- Phase 2 shesh → `gas_requests_done_at = now()`, phase = `waiting_30m`.
-- **Phase 3 — wait**: scheduler protidin minute e check kore — `gas_requests_done_at + 30min < now()` hole phase = `retrying` kore worker abar trigger kore.
-- **Phase 4 — retrying**: `failed_gas` wallet gulai abar 1 bar claim try kore. Result update kore `final_status` set kore.
-- Phase 4 shesh → `final_failed` count refresh, phase = `completed`. **Success wallet er private_key erase**, failed wallet er key thakbe (apnake show korar jonno).
+Phase-2 wait read from group's `retry_wait_minutes`.
 
-**`daily-claim-status`** (JWT-protected)
-- Latest run + items return kore (failed wallets keys shoho)
+## UI changes (`src/pages/DailyClaim.tsx`)
 
----
+Replace the single "schedule + wait" panel with a **Groups** section:
+- List of groups with: name, time (HH:MM BD), wait minutes, enabled toggle, wallet count, "Run now" / Edit / Delete.
+- "Add group" button → create new group with name + time + wait.
+- Wallets table gets a new "Group" column with a dropdown to reassign wallet to any group.
+- Bulk-assign selected wallets to a group.
 
-### 3. Cron (pg_cron)
+Stats and history still group by user but show per-group breakdown.
 
-```sql
--- Every minute: scheduler decides if today's run should start, or if 30m wait is over
-select cron.schedule('daily-claim-scheduler', '* * * * *', $$
-  select net.http_post(
-    url := '.../functions/v1/daily-claim-scheduler',
-    headers := '{"apikey":"<anon>","Content-Type":"application/json"}'::jsonb,
-    body := '{}'::jsonb
-  );
-$$);
-```
+## Edge function changes
+- `daily-claim-scheduler`: switch loop source to `daily_claim_groups`; create run per group; resume wait per group.
+- `daily-claim-worker`: when building items for a run, pull wallets by `group_id` (passed in run row) instead of by user+network.
+- `daily-claim-wallets`: add CRUD for groups; add `group_id` to wallet insert/update.
+- `daily-claim-status`: include group info per run.
 
-Scheduler logic:
-- Current UTC time `>= 18:00` AND `< 18:10` AND today er run nai → start
-- Phase = `waiting_30m` AND `gas_requests_done_at + 30m <= now()` → trigger retry
+## Backward compatibility
+Migration auto-creates one default group per existing `daily_claim_settings` row, copies its time + wait, and assigns all that user's wallets (per network) into it. Nothing breaks for current users — they just see one group named e.g. "Default — Celo".
 
----
-
-### 4. Frontend (notun page `/daily-claim`)
-
-**Top section: "Saved Wallets"**
-- Textarea/file paste → bulk add
-- Table: address + active toggle + delete
-- Counter: "X wallets ready for tomorrow's auto-claim"
-
-**Middle: "Today's Run"**
-- Status pill: `Not started` / `Claiming (12/87)` / `Requesting gas (45/52)` / `Waiting 30m (~14m left)` / `Retrying (5/12)` / `Completed`
-- Progress bar per phase
-- Stats: Success / Failed gas / Failed KYC / Final failed
-
-**Bottom: "Failed Keys" (collapsed by default)**
-- Run shesh hole opening hole shob `final_status != success` wallet shoho **private_key**
-- Per-row "Show key" button (eye icon) + global **"Copy all failed keys"** button
-- Note: shudhu apnar nijer keys, JWT-locked
-
-**Sidebar/header link**: "Daily Claim" — alada page, existing `/claim` thakbe untouched
-
----
-
-### 5. Security & Notes
-
-- Private keys: AES-256-GCM with a server-side `DAILY_CLAIM_ENCRYPTION_KEY` secret (notun secret lagbe)
-- All endpoints JWT-protected (auth required), RLS enforced
-- Scheduler is idempotent — multiple invocations safe (unique constraint on `(owner_user_id, run_date)`)
-- Free-gas-load already has IP/wallet/fingerprint daily limit — daily claim er gas request o oi limit menei korbe, je gula limit hit korbe sheguloke `final_failed` mark korbe
-- Existing `/claim` page, `gd-claim-*` functions, `gd_claim_jobs` etc. — kichui change hocche na
-
----
-
-### Confirm korar age 1 ta secret lagbe
-
-`DAILY_CLAIM_ENCRYPTION_KEY` — apnar saved private key gula database e encrypt kore rakhar jonno. Apni approve korle ami secret request pathabo, tarpor migration + functions + frontend build korbo.
-
-Approve korben?
+## Files to touch
+- new migration (tables + columns + backfill)
+- `supabase/functions/daily-claim-scheduler/index.ts`
+- `supabase/functions/daily-claim-worker/index.ts`
+- `supabase/functions/daily-claim-wallets/index.ts`
+- `supabase/functions/daily-claim-status/index.ts`
+- `src/pages/DailyClaim.tsx` (groups UI, wallet group assignment)
+- `src/integrations/supabase/types.ts` (auto)
