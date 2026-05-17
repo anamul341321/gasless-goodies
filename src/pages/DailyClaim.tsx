@@ -554,6 +554,30 @@ export default function DailyClaim() {
                                               ফেজ: {phaseLabel(r.phase)} · শুরু: {new Date(r.started_at).toLocaleString("en-GB", { hour12: false })}
                                               {r.finished_at && <> · শেষ: {new Date(r.finished_at).toLocaleTimeString()}</>}
                                             </div>
+                                            {r.gas_summary && r.gas_summary.total > 0 && (
+                                              <div className="rounded-md border border-border bg-background/40 p-2 text-[11px] space-y-1">
+                                                <div className="flex items-center justify-between">
+                                                  <span className="font-medium">Gas requests</span>
+                                                  <span className="flex items-center gap-1">
+                                                    <Badge variant="outline" className="text-emerald-400 border-emerald-500/30">✓{r.gas_summary.done}</Badge>
+                                                    {r.gas_summary.requested > 0 && <Badge variant="outline" className="text-sky-400 border-sky-500/30">…{r.gas_summary.requested}</Badge>}
+                                                    {r.gas_summary.error > 0 && <Badge variant="outline" className="text-rose-400 border-rose-500/30">✗{r.gas_summary.error}</Badge>}
+                                                    <Badge variant="outline">{r.gas_summary.total}</Badge>
+                                                  </span>
+                                                </div>
+                                                {(r.gas_jobs || []).map((j: any) => (
+                                                  <div key={j.id} className="flex items-center justify-between gap-2 text-muted-foreground">
+                                                    <span className="font-mono truncate">{j.batch_name}</span>
+                                                    <span className="flex items-center gap-1">
+                                                      <Badge variant="outline" className="text-emerald-400 border-emerald-500/30">✓{j.done}</Badge>
+                                                      {j.failed > 0 && <Badge variant="outline" className="text-rose-400 border-rose-500/30">✗{j.failed}</Badge>}
+                                                      <Badge variant="outline">{j.total}</Badge>
+                                                      <Badge variant="outline" className="text-[10px]">{j.status}</Badge>
+                                                    </span>
+                                                  </div>
+                                                ))}
+                                              </div>
+                                            )}
                                             {r.failed_keys?.length > 0 && (
                                               <div className="rounded-md border border-border bg-background/40">
                                                 <div className="px-2 py-1 flex items-center justify-between text-xs">
