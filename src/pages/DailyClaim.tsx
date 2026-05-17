@@ -88,6 +88,20 @@ function countdownTo(hour: number, minute: number, now: number) {
   return `${h}h ${String(m).padStart(2, "0")}m ${String(s).padStart(2, "0")}s`;
 }
 
+function countdownParts(hour: number, minute: number, now: number) {
+  const n = new Date(now);
+  const targetUtcMin = ((hour * 60 + minute) - 360 + 1440) % 1440;
+  const nowSec = n.getUTCHours() * 3600 + n.getUTCMinutes() * 60 + n.getUTCSeconds();
+  let diff = targetUtcMin * 60 - nowSec;
+  if (diff <= 0) diff += 86400;
+  return {
+    h: String(Math.floor(diff / 3600)).padStart(2, "0"),
+    m: String(Math.floor((diff % 3600) / 60)).padStart(2, "0"),
+    s: String(diff % 60).padStart(2, "0"),
+    total: diff,
+  };
+}
+
 export default function DailyClaim() {
   const { user, loading } = useAuth();
   const navigate = useNavigate();
@@ -438,14 +452,57 @@ export default function DailyClaim() {
                                 <>
                                   <span className="text-muted-foreground">শুরু: <b className="text-foreground">{fmt12(hr, mn)} BD</b></span>
                                   <span className="text-muted-foreground">অপেক্ষা: <b className="text-foreground">{wt} মিনিট</b></span>
-                                  <span className="ml-auto text-xs font-mono text-emerald-400">পরবর্তী: {countdownTo(hr, mn, tickNow)}</span>
-                                  <Button size="sm" variant="outline" onClick={() => { setEditingGroup(g.id); setEditDraft({ enabled: g.enabled }); }}>এডিট</Button>
+                                  <Button size="sm" variant="outline" className="ml-auto" onClick={() => { setEditingGroup(g.id); setEditDraft({ enabled: g.enabled }); }}>এডিট</Button>
                                   <Button size="sm" variant="ghost" onClick={() => deleteGroup(g)}>
                                     <Trash2 className="w-4 h-4 text-rose-400" />
                                   </Button>
                                 </>
                               )}
                             </div>
+
+                            {/* Premium next-claim countdown */}
+                            {!isEditing && (() => {
+                              const cp = countdownParts(hr, mn, tickNow);
+                              const isSoon = cp.total <= 300;
+                              const isLive = !!(g.run && ["claiming","requesting_gas","waiting_30m","retrying"].includes(g.run.phase));
+                              const segs = [
+                                { v: cp.h, l: "HRS" },
+                                { v: cp.m, l: "MIN" },
+                                { v: cp.s, l: "SEC" },
+                              ];
+                              return (
+                                <div className={`relative overflow-hidden rounded-xl border ${isSoon ? "border-emerald-500/40" : "border-primary/25"} bg-gradient-to-br from-background via-card to-background p-4 shadow-[0_0_40px_-12px_hsl(var(--primary)/0.35)]`}>
+                                  <div aria-hidden className="pointer-events-none absolute inset-0 opacity-60 [background:radial-gradient(120%_60%_at_50%_-10%,hsl(var(--primary)/0.18),transparent_60%)]" />
+                                  <div className="relative flex items-center justify-between gap-3 mb-3">
+                                    <div className="flex items-center gap-2">
+                                      <span className={`inline-flex h-2 w-2 rounded-full ${isLive ? "bg-emerald-400 animate-pulse" : isSoon ? "bg-amber-400 animate-pulse" : "bg-primary/70"}`} />
+                                      <span className="text-[10px] uppercase tracking-[0.22em] text-muted-foreground font-semibold">
+                                        {isLive ? "Running now" : "Next claim in"}
+                                      </span>
+                                    </div>
+                                    <span className="text-[10px] uppercase tracking-wider text-muted-foreground/80">{fmt12(hr, mn)} BD</span>
+                                  </div>
+                                  <div className="relative flex items-end justify-center gap-1.5 sm:gap-3">
+                                    {segs.map((seg, i) => (
+                                      <div key={seg.l} className="contents">
+                                        <div className="flex flex-col items-center">
+                                          <div className="rounded-lg border border-border/60 bg-gradient-to-b from-card to-background px-3 sm:px-5 py-2 sm:py-3 shadow-inner min-w-[64px] sm:min-w-[88px]">
+                                            <div className={`font-mono font-black tabular-nums text-4xl sm:text-6xl leading-none tracking-tight bg-clip-text text-transparent ${isSoon ? "bg-gradient-to-b from-emerald-300 to-emerald-500" : "bg-gradient-to-b from-foreground to-primary"}`}>
+                                              {seg.v}
+                                            </div>
+                                          </div>
+                                          <div className="mt-1.5 text-[9px] sm:text-[10px] uppercase tracking-[0.28em] text-muted-foreground font-semibold">{seg.l}</div>
+                                        </div>
+                                        {i < 2 && (
+                                          <div className="pb-7 sm:pb-8 text-3xl sm:text-5xl font-black text-primary/40 select-none">:</div>
+                                        )}
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              );
+                            })()}
+
 
                             {/* Today's run summary */}
                             {g.run && (
