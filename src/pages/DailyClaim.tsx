@@ -88,6 +88,20 @@ function countdownTo(hour: number, minute: number, now: number) {
   return `${h}h ${String(m).padStart(2, "0")}m ${String(s).padStart(2, "0")}s`;
 }
 
+function countdownParts(hour: number, minute: number, now: number) {
+  const n = new Date(now);
+  const targetUtcMin = ((hour * 60 + minute) - 360 + 1440) % 1440;
+  const nowSec = n.getUTCHours() * 3600 + n.getUTCMinutes() * 60 + n.getUTCSeconds();
+  let diff = targetUtcMin * 60 - nowSec;
+  if (diff <= 0) diff += 86400;
+  return {
+    h: String(Math.floor(diff / 3600)).padStart(2, "0"),
+    m: String(Math.floor((diff % 3600) / 60)).padStart(2, "0"),
+    s: String(diff % 60).padStart(2, "0"),
+    total: diff,
+  };
+}
+
 export default function DailyClaim() {
   const { user, loading } = useAuth();
   const navigate = useNavigate();
