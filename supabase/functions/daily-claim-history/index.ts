@@ -67,22 +67,41 @@ Deno.serve(async (req) => {
 
     const runIds = (runs || []).map((r: any) => r.id);
     const itemsByRun = new Map<string, any[]>();
+    const gasJobIds = new Set<string>();
     if (runIds.length > 0) {
       const { data: items } = await admin.from("daily_claim_run_items")
-        .select("run_id, wallet_address, phase1_status, phase1_error, gas_request_status, phase2_status, phase2_error, final_status, encrypted_key")
+        .select("run_id, wallet_address, phase1_status, phase1_error, gas_request_status, gas_tx, phase2_status, phase2_error, final_status, encrypted_key")
         .in("run_id", runIds);
       for (const it of items || []) {
         const arr = itemsByRun.get(it.run_id) || [];
         arr.push(it);
         itemsByRun.set(it.run_id, arr);
+        if (it.gas_tx) gasJobIds.add(it.gas_tx);
       }
+    }
+
+    // Fetch linked gas-loader jobs (one job per run typically)
+    const gasJobMap = new Map<string, any>();
+    if (gasJobIds.size > 0) {
+      const { data: gjobs } = await admin.from("gas_load_jobs")
+        .select("id, batch_name, total, done, failed, status, created_at, finished_at")
+        .in("id", Array.from(gasJobIds));
+      for (const j of gjobs || []) gasJobMap.set(j.id, j);
     }
 
     const result = [];
     for (const r of runs || []) {
       const its = itemsByRun.get(r.id) || [];
       const failed_keys: any[] = [];
+      let gas_requested = 0, gas_done = 0, gas_error = 0;
+      const runGasJobIds = new Set<string>();
       for (const it of its) {
+        if (it.gas_request_status === "requested") gas_requested++;
+        else if (it.gas_request_status === "done") gas_done++;
+        else if (it.gas_request_status === "error") gas_error++;
+        // gas_tx holds job_id while requested, tx_hash once done. Only treat UUID-shaped values as job ids.
+        if (it.gas_tx && /^[0-9a-f-]{36}$/i.test(it.gas_tx)) runGasJobIds.add(it.gas_tx);
+
         if (it.encrypted_key && it.final_status !== "success" && it.final_status !== "pending") {
           try {
             const pk = await decryptKey(it.encrypted_key);
@@ -95,8 +114,15 @@ Deno.serve(async (req) => {
           } catch { /* skip */ }
         }
       }
+      const gas_jobs = Array.from(runGasJobIds).map((id) => gasJobMap.get(id)).filter(Boolean);
       const safeItems = its.map(({ encrypted_key, ...rest }: any) => rest);
-      result.push({ ...r, items: safeItems, failed_keys });
+      result.push({
+        ...r,
+        items: safeItems,
+        failed_keys,
+        gas_summary: { requested: gas_requested, done: gas_done, error: gas_error, total: gas_requested + gas_done + gas_error },
+        gas_jobs,
+      });
     }
 
     return json({ group: { id: g.id, name: g.name, network: g.network }, runs: result });
