@@ -77,14 +77,25 @@ Deno.serve(async (req) => {
     // -------- Wallet list --------
     if (req.method === "GET" || action === "list") {
       const network = url.searchParams.get("network");
-      let q = admin
-        .from("daily_claim_wallets")
-        .select("id, wallet_address, label, is_active, network, group_id, created_at")
-        .eq("owner_user_id", user.id);
-      if (network === "celo" || network === "xdc") q = q.eq("network", network);
-      const { data, error } = await q.order("created_at", { ascending: true });
-      if (error) throw error;
-      return json({ wallets: data || [] });
+      const all: any[] = [];
+      const PAGE = 1000;
+      let from = 0;
+      while (true) {
+        let q = admin
+          .from("daily_claim_wallets")
+          .select("id, wallet_address, label, is_active, network, group_id, created_at")
+          .eq("owner_user_id", user.id);
+        if (network === "celo" || network === "xdc") q = q.eq("network", network);
+        const { data, error } = await q
+          .order("created_at", { ascending: true })
+          .range(from, from + PAGE - 1);
+        if (error) throw error;
+        const rows = data || [];
+        all.push(...rows);
+        if (rows.length < PAGE) break;
+        from += PAGE;
+      }
+      return json({ wallets: all });
     }
 
     const body = await req.json().catch(() => ({}));
