@@ -1,5 +1,5 @@
-// Returns the user's saved-wallet count, today's run summary (per network),
-// and items (failed wallets include their decrypted private key for the owner only).
+// Returns the user's groups (each with its schedule, wallet count, today's run,
+// items, and failed-key reveals), plus aggregate wallet counts per network.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { decryptKey } from "../_shared/dailyCrypto.ts";
@@ -35,11 +35,11 @@ function json(b: any, s = 200) {
   });
 }
 
-async function summarizeRun(run: any) {
+async function summarizeRun(runId: string) {
   const { data: rows } = await admin
     .from("daily_claim_run_items")
     .select("wallet_address, phase1_status, phase1_error, gas_request_status, phase2_status, phase2_error, final_status, encrypted_key")
-    .eq("run_id", run.id)
+    .eq("run_id", runId)
     .order("wallet_address", { ascending: true });
   const items = rows || [];
   const failedKeys: { wallet_address: string; private_key: string; status: string; error?: string }[] = [];
@@ -67,44 +67,64 @@ Deno.serve(async (req) => {
   if (!user) return json({ error: "unauthorized" }, 401);
 
   try {
-    // Wallet counts per network
+    // Wallets (for counts and per-group counts)
     const { data: walletRows } = await admin
       .from("daily_claim_wallets")
-      .select("network, is_active")
+      .select("network, is_active, group_id")
       .eq("owner_user_id", user.id);
     const walletCounts: Record<string, number> = { celo: 0, xdc: 0 };
+    const perGroupCount = new Map<string, number>();
     for (const w of walletRows || []) {
-      if (w.is_active) walletCounts[w.network || "celo"] = (walletCounts[w.network || "celo"] || 0) + 1;
+      if (!w.is_active) continue;
+      const net = w.network || "celo";
+      walletCounts[net] = (walletCounts[net] || 0) + 1;
+      if (w.group_id) perGroupCount.set(w.group_id, (perGroupCount.get(w.group_id) || 0) + 1);
     }
 
-    // Latest run per network
-    const { data: runs } = await admin
-      .from("daily_claim_runs")
-      .select("*")
+    // Groups
+    const { data: groups } = await admin
+      .from("daily_claim_groups")
+      .select("id, name, network, start_hour_bd, start_minute_bd, retry_wait_minutes, enabled, created_at")
       .eq("owner_user_id", user.id)
-      .order("run_date", { ascending: false })
-      .limit(20);
+      .order("created_at", { ascending: true });
 
-    const latestByNet: Record<string, any> = {};
-    for (const r of runs || []) {
-      const net = r.network || "celo";
-      if (!latestByNet[net]) latestByNet[net] = r;
+    // Latest run per group (today or most recent)
+    const groupIds = (groups || []).map((g: any) => g.id);
+    const runByGroup = new Map<string, any>();
+    if (groupIds.length > 0) {
+      const { data: runs } = await admin
+        .from("daily_claim_runs")
+        .select("*")
+        .in("group_id", groupIds)
+        .order("run_date", { ascending: false })
+        .order("started_at", { ascending: false })
+        .limit(500);
+      for (const r of runs || []) {
+        const gid = r.group_id;
+        if (gid && !runByGroup.has(gid)) runByGroup.set(gid, r);
+      }
     }
 
-    const results: Record<string, any> = {};
-    for (const net of ["celo", "xdc"]) {
-      const r = latestByNet[net];
-      if (r) {
-        const detail = await summarizeRun(r);
-        results[net] = { run: r, ...detail };
-      } else {
-        results[net] = { run: null, items: [], failed_keys: [] };
+    const groupResults = [];
+    for (const g of groups || []) {
+      const run = runByGroup.get(g.id) || null;
+      let items: any[] = [];
+      let failed_keys: any[] = [];
+      if (run) {
+        const s = await summarizeRun(run.id);
+        items = s.items;
+        failed_keys = s.failed_keys;
       }
+      groupResults.push({
+        ...g,
+        wallet_count: perGroupCount.get(g.id) || 0,
+        run, items, failed_keys,
+      });
     }
 
     return json({
       wallet_counts: walletCounts,
-      networks: results,
+      groups: groupResults,
       server_time: new Date().toISOString(),
     });
   } catch (e: any) {
