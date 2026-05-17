@@ -517,6 +517,93 @@ export default function DailyClaim() {
                                 )}
                               </div>
                             )}
+
+                            {/* History */}
+                            <div className="pt-2 border-t border-border">
+                              <button className="w-full text-xs text-muted-foreground hover:text-foreground flex items-center justify-center gap-1 py-1"
+                                onClick={() => toggleHistory(g.id)}>
+                                {openGroupHistory[g.id] ? <>ইতিহাস লুকান <ChevronUp className="w-3 h-3" /></> : <>ইতিহাস দেখুন <ChevronDown className="w-3 h-3" /></>}
+                              </button>
+                              {openGroupHistory[g.id] && (
+                                <div className="mt-2 space-y-2">
+                                  {historyLoading[g.id] && (
+                                    <p className="text-xs text-muted-foreground text-center py-2">লোড হচ্ছে…</p>
+                                  )}
+                                  {!historyLoading[g.id] && (historyByGroup[g.id]?.length ?? 0) === 0 && (
+                                    <p className="text-xs text-muted-foreground text-center py-2">কোনো পুরনো রান নেই।</p>
+                                  )}
+                                  {(historyByGroup[g.id] || []).map((r: any) => {
+                                    const rk = `${g.id}:${r.id}`;
+                                    const isOpen = !!openHistoryRun[rk];
+                                    return (
+                                      <div key={r.id} className="rounded-md border border-border bg-muted/20">
+                                        <button className="w-full p-2 flex items-center justify-between gap-2 text-xs"
+                                          onClick={() => setOpenHistoryRun((s) => ({ ...s, [rk]: !s[rk] }))}>
+                                          <span className="font-mono">{r.run_date}</span>
+                                          <span className="flex items-center gap-1">
+                                            <Badge variant="outline" className="text-emerald-400 border-emerald-500/30">✓{r.success}</Badge>
+                                            <Badge variant="outline" className="text-amber-400 border-amber-500/30">⛽{r.failed_gas}</Badge>
+                                            <Badge variant="outline" className="text-rose-400 border-rose-500/30">✗{(r.final_failed || 0) + (r.failed_other || 0)}</Badge>
+                                            <Badge variant="outline">{r.total}</Badge>
+                                          </span>
+                                          {isOpen ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                                        </button>
+                                        {isOpen && (
+                                          <div className="px-2 pb-2 space-y-2">
+                                            <div className="text-[11px] text-muted-foreground">
+                                              ফেজ: {phaseLabel(r.phase)} · শুরু: {new Date(r.started_at).toLocaleString("en-GB", { hour12: false })}
+                                              {r.finished_at && <> · শেষ: {new Date(r.finished_at).toLocaleTimeString()}</>}
+                                            </div>
+                                            {r.failed_keys?.length > 0 && (
+                                              <div className="rounded-md border border-border bg-background/40">
+                                                <div className="px-2 py-1 flex items-center justify-between text-xs">
+                                                  <span>ব্যর্থ কী ({r.failed_keys.length})</span>
+                                                  <Button size="sm" variant="ghost" onClick={() => copy(r.failed_keys.map((k: any) => k.private_key).join("\n"), `${r.failed_keys.length} টি কপি`)}>
+                                                    <Copy className="w-3 h-3" />
+                                                  </Button>
+                                                </div>
+                                                <div className="px-2 pb-2 space-y-1 max-h-48 overflow-y-auto">
+                                                  {r.failed_keys.map((k: any) => {
+                                                    const sk = `h:${r.id}:${k.wallet_address}`;
+                                                    return (
+                                                      <div key={k.wallet_address} className="p-1.5 rounded bg-muted/40 border border-border text-[11px]">
+                                                        <div className="flex items-center gap-2">
+                                                          <span className="font-mono flex-1">{shortAddr(k.wallet_address)}</span>
+                                                          <Badge variant="outline" className={statusColor(k.status)}>{k.status}</Badge>
+                                                          <Button size="sm" variant="ghost" onClick={() => setShownKeys((s) => ({ ...s, [sk]: !s[sk] }))}>
+                                                            {shownKeys[sk] ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                                                          </Button>
+                                                          <Button size="sm" variant="ghost" onClick={() => copy(k.private_key)}>
+                                                            <Copy className="w-3 h-3" />
+                                                          </Button>
+                                                        </div>
+                                                        {shownKeys[sk] && (
+                                                          <code className="block mt-1 break-all font-mono text-muted-foreground">{k.private_key}</code>
+                                                        )}
+                                                      </div>
+                                                    );
+                                                  })}
+                                                </div>
+                                              </div>
+                                            )}
+                                            {r.items?.length > 0 && (
+                                              <div className="space-y-0.5 max-h-48 overflow-y-auto text-[11px]">
+                                                {r.items.map((it: any) => (
+                                                  <div key={it.wallet_address} className="flex items-center gap-2 p-1 rounded hover:bg-muted/40">
+                                                    <span className="font-mono flex-1">{shortAddr(it.wallet_address)}</span>
+                                                    <Badge variant="outline" className={statusColor(it.final_status)}>{it.final_status}</Badge>
+                                                  </div>
+                                                ))}
+                                              </div>
+                                            )}
+                                          </div>
+                                        )}
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </div>
                           </div>
                         );
                       })}
