@@ -47,15 +47,18 @@ Deno.serve(async (req) => {
 
   try {
     // 1) Fire each enabled group whose target time hit within the last 10 min.
-    const { data: groups } = await admin
+    const { data: groups, error: gErr } = await admin
       .from("daily_claim_groups")
       .select("id, owner_user_id, network, start_hour_bd, start_minute_bd, enabled")
       .eq("enabled", true);
+    if (gErr) console.error("groups fetch err", gErr);
+    console.log(`scheduler tick: utcNowMin=${utcNowMin} today=${today} groups=${(groups||[]).length}`);
 
     for (const g of groups || []) {
       const targetUtcMin = (((g.start_hour_bd as number) * 60 + (g.start_minute_bd as number)) - 360 + 1440) % 1440;
       let diff = utcNowMin - targetUtcMin;
       if (diff < 0) diff += 1440;
+      console.log(`  group ${g.id} ${g.start_hour_bd}:${g.start_minute_bd} target=${targetUtcMin} diff=${diff}`);
       if (diff > 9) continue;
 
       const groupId = g.id as string;
@@ -68,14 +71,16 @@ Deno.serve(async (req) => {
         .eq("group_id", groupId)
         .eq("run_date", today)
         .maybeSingle();
-      if (existing) continue;
+      if (existing) { console.log(`  group ${groupId}: existing run ${existing.id}`); continue; }
 
-      const { data: wallets } = await admin
+      const { data: wallets, error: wErr } = await admin
         .from("daily_claim_wallets")
         .select("wallet_address, encrypted_key")
         .eq("owner_user_id", uid)
         .eq("group_id", groupId)
         .eq("is_active", true);
+      if (wErr) console.error("wallets fetch err", wErr);
+      console.log(`  group ${groupId}: wallets=${wallets?.length ?? 0}`);
       if (!wallets || wallets.length === 0) continue;
 
       const { data: runRow, error: runErr } = await admin
@@ -91,6 +96,7 @@ Deno.serve(async (req) => {
         })
         .select("id")
         .single();
+      if (runErr) console.error(`  run insert err for group ${groupId}:`, runErr);
       if (runErr || !runRow) continue;
 
       const items = wallets.map((w: any) => ({
@@ -102,7 +108,8 @@ Deno.serve(async (req) => {
       }));
       const BATCH = 500;
       for (let i = 0; i < items.length; i += BATCH) {
-        await admin.from("daily_claim_run_items").insert(items.slice(i, i + BATCH));
+        const { error: itErr } = await admin.from("daily_claim_run_items").insert(items.slice(i, i + BATCH));
+        if (itErr) console.error(`  items insert err:`, itErr);
       }
 
       kickWorker(runRow.id, "claiming");
