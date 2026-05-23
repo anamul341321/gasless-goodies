@@ -232,15 +232,20 @@ async function runPhase1(runId: string, network: GDNetwork, deadline: number) {
     await new Promise((r) => setTimeout(r, CLAIM_WAVE_GAP_MS));
   }
 
+  // Count anything not yet resolved — including rows still "claiming" from a
+  // crashed wave. Those get reset to "pending" by the recovery step at the top
+  // of the next runPhase1 invocation.
   const { count: pendingLeft } = await admin
     .from("daily_claim_run_items")
     .select("id", { count: "exact", head: true })
     .eq("run_id", runId)
-    .eq("phase1_status", "pending");
+    .eq("final_status", "pending")
+    .in("phase1_status", ["pending", "claiming"]);
   if ((pendingLeft || 0) > 0) {
     selfKick(runId, "claiming");
     return false;
   }
+
 
   const { count: gasNeeded } = await admin
     .from("daily_claim_run_items")
