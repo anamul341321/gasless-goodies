@@ -178,6 +178,18 @@ async function refreshCounters(runId: string) {
 }
 
 async function runPhase1(runId: string, network: GDNetwork, deadline: number) {
+  // Recover wallets stuck in "claiming" from a previous worker invocation that
+  // died mid-flight (timeout/crash before writing the result patch). Without
+  // this, those rows are orphaned and the run completes with phantom "missing"
+  // wallets (e.g. 985 total / 975 success / 10 silently stuck).
+  const staleCutoff = new Date(Date.now() - 2 * 60 * 1000).toISOString();
+  await admin.from("daily_claim_run_items")
+    .update({ phase1_status: "pending" })
+    .eq("run_id", runId)
+    .eq("phase1_status", "claiming")
+    .eq("final_status", "pending")
+    .lt("updated_at", staleCutoff);
+
   while (Date.now() < deadline) {
     const { data: rows } = await admin
       .from("daily_claim_run_items")
@@ -186,6 +198,7 @@ async function runPhase1(runId: string, network: GDNetwork, deadline: number) {
       .eq("phase1_status", "pending")
       .limit(CLAIM_WAVE_SIZE);
     if (!rows || rows.length === 0) break;
+
 
     const ids = rows.map((r: any) => r.id);
     await admin.from("daily_claim_run_items").update({ phase1_status: "claiming" }).in("id", ids);
@@ -219,15 +232,20 @@ async function runPhase1(runId: string, network: GDNetwork, deadline: number) {
     await new Promise((r) => setTimeout(r, CLAIM_WAVE_GAP_MS));
   }
 
+  // Count anything not yet resolved — including rows still "claiming" from a
+  // crashed wave. Those get reset to "pending" by the recovery step at the top
+  // of the next runPhase1 invocation.
   const { count: pendingLeft } = await admin
     .from("daily_claim_run_items")
     .select("id", { count: "exact", head: true })
     .eq("run_id", runId)
-    .eq("phase1_status", "pending");
+    .eq("final_status", "pending")
+    .in("phase1_status", ["pending", "claiming"]);
   if ((pendingLeft || 0) > 0) {
     selfKick(runId, "claiming");
     return false;
   }
+
 
   const { count: gasNeeded } = await admin
     .from("daily_claim_run_items")
