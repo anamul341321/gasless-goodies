@@ -61,6 +61,20 @@ const features = [
 export default function Index() {
   const { user } = useAuth();
   const [notice, setNotice] = useState<string>("");
+  const [guideOpen, setGuideOpen] = useState(false);
+  const [guideTab, setGuideTab] = useState<"first" | "re">("first");
+
+  // Auto-open guide after fresh signup
+  useEffect(() => {
+    try {
+      const flag = localStorage.getItem("show_verify_guide");
+      if (flag) {
+        setGuideTab(flag === "re" ? "re" : "first");
+        setGuideOpen(true);
+        localStorage.removeItem("show_verify_guide");
+      }
+    } catch {}
+  }, []);
 
   useEffect(() => {
     let mounted = true;
