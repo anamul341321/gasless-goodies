@@ -45,7 +45,7 @@ export default function Auth() {
         if (error) throw error;
         toast({ title: "Welcome back" });
       }
-      nav("/account");
+      nav(mode === "signup" ? "/" : "/account");
     } catch (e: any) {
       toast({
         title: mode === "signup" ? "Sign up failed" : "Sign in failed",
