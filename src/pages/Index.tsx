@@ -2,10 +2,12 @@ import { useEffect, useState } from "react";
 import {
   ArrowRight, Coins, Megaphone, Menu, Shield, Sparkles, Zap,
   CheckCircle2, Clock, Wallet, Lock, TrendingUp, User, LogIn, Send, Download,
+  ShieldCheck, Volume2,
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import appLogo from "@/assets/logo.png";
 import ServicesDrawer from "@/components/ServicesDrawer";
+import VerifyGuide from "@/components/VerifyGuide";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -59,6 +61,20 @@ const features = [
 export default function Index() {
   const { user } = useAuth();
   const [notice, setNotice] = useState<string>("");
+  const [guideOpen, setGuideOpen] = useState(false);
+  const [guideTab, setGuideTab] = useState<"first" | "re">("first");
+
+  // Auto-open guide after fresh signup
+  useEffect(() => {
+    try {
+      const flag = localStorage.getItem("show_verify_guide");
+      if (flag) {
+        setGuideTab(flag === "re" ? "re" : "first");
+        setGuideOpen(true);
+        localStorage.removeItem("show_verify_guide");
+      }
+    } catch {}
+  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -150,6 +166,47 @@ export default function Index() {
             </div>
           </div>
         )}
+
+        {/* Face Verification Voice Guide card */}
+        <div className="color-card card-emerald shimmer-sheen p-4 flex items-start gap-3 animate-fade-in">
+          <span className="icon-chip icon-emerald h-10 w-10 rounded-xl shrink-0">
+            <ShieldCheck className="h-5 w-5" />
+          </span>
+          <div className="min-w-0 flex-1 space-y-2">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-foreground/70 flex items-center gap-1">
+                <Volume2 className="h-3 w-3" /> Bangla Voice Guide
+              </p>
+              <p className="text-sm font-bold text-foreground leading-tight mt-0.5">
+                Face Verify & Re-Verify শিখুন
+              </p>
+              <p className="text-xs text-muted-foreground leading-snug mt-1">
+                বাংলায় ভয়েসে ধাপে ধাপে দেখানো হবে কিভাবে প্রথম ভেরিফাই ও রি-ভেরিফাই করবেন।
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                className="h-9 rounded-xl btn-premium text-xs"
+                onClick={() => { setGuideTab("first"); setGuideOpen(true); }}
+              >
+                First Verify
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-9 rounded-xl text-xs"
+                onClick={() => { setGuideTab("re"); setGuideOpen(true); }}
+              >
+                Re-Verify
+              </Button>
+            </div>
+          </div>
+        </div>
+
+        <VerifyGuide open={guideOpen} onOpenChange={setGuideOpen} defaultTab={guideTab} />
+
+
 
         {/* Hero */}
         <section className="color-card card-violet shimmer-sheen p-6 relative overflow-hidden">

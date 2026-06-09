@@ -38,13 +38,14 @@ export default function Auth() {
           options: { emailRedirectTo: window.location.origin },
         });
         if (error) throw error;
+        try { localStorage.setItem("show_verify_guide", "first"); } catch {}
         toast({ title: "Account created", description: "You're signed in." });
       } else {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
         toast({ title: "Welcome back" });
       }
-      nav("/account");
+      nav(mode === "signup" ? "/" : "/account");
     } catch (e: any) {
       toast({
         title: mode === "signup" ? "Sign up failed" : "Sign in failed",
