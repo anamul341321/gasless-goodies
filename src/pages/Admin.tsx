@@ -169,6 +169,32 @@ export default function Admin() {
     setSavingSecretPw(false);
   };
 
+  const saveDailyClaimPassword = async () => {
+    const pw = dailyClaimPassword.trim();
+    if (pw.length < 4) {
+      toast.error("Password must be at least 4 characters");
+      return;
+    }
+    setSavingDailyPw(true);
+    try {
+      const res = await fetch(`${EDGE_FUNCTION_BASE}/admin-settings`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-admin-password": password.trim() },
+        body: JSON.stringify({ daily_claim_password: pw }),
+      });
+      if (res.ok) {
+        toast.success("Daily Claim password updated ✅ All devices will be locked out.");
+      } else {
+        const j = await res.json().catch(() => ({}));
+        toast.error(j?.error || "Failed to update password");
+      }
+    } catch {
+      toast.error("Server error");
+    }
+    setSavingDailyPw(false);
+  };
+
+
   useEffect(() => {
     if (authenticated) {
       const interval = setInterval(fetchRequests, 15000);
