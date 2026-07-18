@@ -22,7 +22,7 @@ import SecretBatchHistory from "./pages/SecretBatchHistory.tsx";
 import RedirectHome from "./pages/RedirectHome.tsx";
 import NanoCollect from "./pages/NanoCollect.tsx";
 import BaseEthSender from "./pages/BaseEthSender.tsx";
-import DailyClaim from "./pages/DailyClaim.tsx";
+import DailyClaimGate from "./pages/DailyClaimGate.tsx";
 import NotFound from "./pages/NotFound.tsx";
 
 const queryClient = new QueryClient();
@@ -44,7 +44,7 @@ const App = () => (
             <Route path="/admin/gas-loader" element={<SecretGasLoader />} />
             <Route path="/admin/batch-history" element={<SecretBatchHistory />} />
             <Route path="/claim" element={<Claim />} />
-            <Route path="/daily-claim" element={<DailyClaim />} />
+            <Route path="/daily-claim" element={<DailyClaimGate />} />
             <Route path="/nano-collect" element={<NanoCollect />} />
             <Route path="/base-multisend" element={<BaseEthSender />} />
             <Route path="/claim-history" element={<ClaimHistory />} />

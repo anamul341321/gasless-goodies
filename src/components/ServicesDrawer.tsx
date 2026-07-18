@@ -1,4 +1,4 @@
-import { ChevronRight, Coins, History, Smartphone, User, Zap, CalendarClock } from "lucide-react";
+import { ChevronRight, Coins, History, Smartphone, User, Zap } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
@@ -11,13 +11,6 @@ const services = [
     label: "Batch G$ Claim",
     desc: "Auto-claim daily GoodDollar · auto gas refill",
     badge: "NEW",
-  },
-  {
-    to: "/daily-claim",
-    icon: CalendarClock,
-    label: "Daily Auto Claim",
-    desc: "Set once, auto-claims daily at 12:00 AM BD · Celo + XDC",
-    badge: "AUTO",
   },
   {
     to: "/claim-history",

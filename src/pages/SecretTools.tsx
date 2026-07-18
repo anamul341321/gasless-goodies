@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { Lock, Fuel, History, Sparkles, LogOut } from "lucide-react";
+import { Lock, Fuel, History, Sparkles, LogOut, CalendarClock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
@@ -167,6 +167,9 @@ export default function SecretTools() {
             </Button>
             <Button asChild variant="ghost" size="sm" className="h-8 rounded-lg text-xs font-semibold">
               <Link to="/batch-history-tool"><History className="h-3.5 w-3.5 mr-1" />History</Link>
+            </Button>
+            <Button asChild variant="ghost" size="sm" className="h-8 rounded-lg text-xs font-semibold">
+              <Link to="/daily-claim"><CalendarClock className="h-3.5 w-3.5 mr-1" />Daily Auto</Link>
             </Button>
             <Button onClick={lock} variant="ghost" size="sm" className="h-8 rounded-lg text-xs font-semibold text-muted-foreground" title="Lock">
               <LogOut className="h-3.5 w-3.5" />
