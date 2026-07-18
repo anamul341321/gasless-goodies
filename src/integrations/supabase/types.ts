@@ -16,6 +16,7 @@ export type Database = {
     Tables: {
       admin_settings: {
         Row: {
+          daily_claim_password: string
           gas_loader_enabled: boolean
           id: string
           mobile_recharge_enabled: boolean
@@ -24,6 +25,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          daily_claim_password?: string
           gas_loader_enabled?: boolean
           id?: string
           mobile_recharge_enabled?: boolean
@@ -32,6 +34,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          daily_claim_password?: string
           gas_loader_enabled?: boolean
           id?: string
           mobile_recharge_enabled?: boolean
@@ -1146,6 +1149,7 @@ export type Database = {
         Args: { p_job_id: string; p_wallet_address: string }
         Returns: boolean
       }
+      get_daily_claim_fingerprint: { Args: never; Returns: string }
       get_free_gas_count_today: {
         Args: { p_fingerprint?: string; p_ip: string; p_wallets?: string[] }
         Returns: number

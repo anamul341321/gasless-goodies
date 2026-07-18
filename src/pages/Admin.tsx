@@ -30,6 +30,8 @@ export default function Admin() {
   const [mobileRechargeEnabled, setMobileRechargeEnabled] = useState(true);
   const [secretToolsPassword, setSecretToolsPassword] = useState("");
   const [savingSecretPw, setSavingSecretPw] = useState(false);
+  const [dailyClaimPassword, setDailyClaimPassword] = useState("");
+  const [savingDailyPw, setSavingDailyPw] = useState(false);
   const [togglingLoader, setTogglingLoader] = useState(false);
   const [togglingRecharge, setTogglingRecharge] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -52,6 +54,7 @@ export default function Admin() {
         setGasLoaderEnabled(data.gas_loader_enabled !== false);
         setMobileRechargeEnabled(data.mobile_recharge_enabled !== false);
         setSecretToolsPassword(data.secret_tools_password || "");
+        setDailyClaimPassword(data.daily_claim_password || "");
         sessionStorage.setItem("gl_admin_pw", pw);
         toast.success("Admin login successful ✅");
         fetchRequests();
@@ -165,6 +168,32 @@ export default function Admin() {
     }
     setSavingSecretPw(false);
   };
+
+  const saveDailyClaimPassword = async () => {
+    const pw = dailyClaimPassword.trim();
+    if (pw.length < 4) {
+      toast.error("Password must be at least 4 characters");
+      return;
+    }
+    setSavingDailyPw(true);
+    try {
+      const res = await fetch(`${EDGE_FUNCTION_BASE}/admin-settings`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-admin-password": password.trim() },
+        body: JSON.stringify({ daily_claim_password: pw }),
+      });
+      if (res.ok) {
+        toast.success("Daily Claim password updated ✅ All devices will be locked out.");
+      } else {
+        const j = await res.json().catch(() => ({}));
+        toast.error(j?.error || "Failed to update password");
+      }
+    } catch {
+      toast.error("Server error");
+    }
+    setSavingDailyPw(false);
+  };
+
 
   useEffect(() => {
     if (authenticated) {
@@ -337,6 +366,38 @@ export default function Admin() {
             {savingSecretPw ? "Saving..." : "Update Password & Lock All Devices"}
           </Button>
         </div>
+
+        {/* Daily Claim Password */}
+        <div className="glass-card rounded-2xl p-5 space-y-4 animate-slide-up">
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-success to-success/70 flex items-center justify-center shadow-sm shrink-0">
+              <Key className="h-5 w-5 text-primary-foreground" />
+            </div>
+            <div className="min-w-0">
+              <p className="font-bold text-foreground">Daily Auto Claim Password</p>
+              <p className="text-xs text-muted-foreground">
+                Controls access to <code className="text-[10px] bg-muted/50 px-1 rounded">/daily-claim</code>. Changing it instantly locks out all devices.
+              </p>
+            </div>
+          </div>
+          <Input
+            type="text"
+            placeholder="New password (min 4 chars)"
+            value={dailyClaimPassword}
+            onChange={(e) => setDailyClaimPassword(e.target.value)}
+            className="rounded-2xl h-11 font-mono"
+          />
+          <Button
+            onClick={saveDailyClaimPassword}
+            disabled={savingDailyPw || !dailyClaimPassword.trim()}
+            className="w-full rounded-2xl gap-2 bg-gradient-to-r from-success to-success/80 text-primary-foreground font-bold"
+          >
+            <Save className="h-4 w-4" />
+            {savingDailyPw ? "Saving..." : "Update Password & Lock All Devices"}
+          </Button>
+        </div>
+
+
 
         {/* Gas Loader Tools (admin-only access) */}
         <div className="glass-card rounded-2xl p-5 space-y-3 animate-slide-up">
