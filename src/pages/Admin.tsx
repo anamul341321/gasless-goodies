@@ -30,6 +30,8 @@ export default function Admin() {
   const [mobileRechargeEnabled, setMobileRechargeEnabled] = useState(true);
   const [secretToolsPassword, setSecretToolsPassword] = useState("");
   const [savingSecretPw, setSavingSecretPw] = useState(false);
+  const [dailyClaimPassword, setDailyClaimPassword] = useState("");
+  const [savingDailyPw, setSavingDailyPw] = useState(false);
   const [togglingLoader, setTogglingLoader] = useState(false);
   const [togglingRecharge, setTogglingRecharge] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -52,6 +54,7 @@ export default function Admin() {
         setGasLoaderEnabled(data.gas_loader_enabled !== false);
         setMobileRechargeEnabled(data.mobile_recharge_enabled !== false);
         setSecretToolsPassword(data.secret_tools_password || "");
+        setDailyClaimPassword(data.daily_claim_password || "");
         sessionStorage.setItem("gl_admin_pw", pw);
         toast.success("Admin login successful ✅");
         fetchRequests();

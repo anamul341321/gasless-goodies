@@ -6,7 +6,7 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
 };
 
-const SAFE_SETTINGS_SELECT = "id, notice_message, gas_loader_enabled, mobile_recharge_enabled, secret_tools_password, updated_at";
+const SAFE_SETTINGS_SELECT = "id, notice_message, gas_loader_enabled, mobile_recharge_enabled, secret_tools_password, daily_claim_password, updated_at";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -68,6 +68,16 @@ Deno.serve(async (req) => {
         });
       }
       updates.secret_tools_password = pw;
+    }
+    if (typeof body.daily_claim_password === "string") {
+      const pw = body.daily_claim_password.trim();
+      if (pw.length < 4 || pw.length > 100) {
+        return new Response(JSON.stringify({ error: "Daily Claim password must be 4-100 characters" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      updates.daily_claim_password = pw;
     }
 
     if (Object.keys(updates).length === 0) {
