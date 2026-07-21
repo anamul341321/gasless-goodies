@@ -195,6 +195,27 @@ export default function Admin() {
     setSavingDailyPw(false);
   };
 
+  const purgeAllGroups = async () => {
+    if (!window.confirm("Delete ALL Daily Auto Claim groups, wallets and history? This cannot be undone.")) return;
+    setPurgingGroups(true);
+    try {
+      const res = await fetch(`${EDGE_FUNCTION_BASE}/daily-claim-purge`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-admin-password": password.trim() },
+        body: JSON.stringify({}),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (res.ok) {
+        toast.success("All Daily Auto Claim groups & data removed ✅");
+      } else {
+        toast.error(j?.error || "Failed to purge");
+      }
+    } catch {
+      toast.error("Server error");
+    }
+    setPurgingGroups(false);
+  };
+
 
   useEffect(() => {
     if (authenticated) {
