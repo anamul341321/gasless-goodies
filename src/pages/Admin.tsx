@@ -419,6 +419,31 @@ export default function Admin() {
           </Button>
         </div>
 
+        {/* Purge Daily Auto Claim Groups */}
+        <div className="glass-card rounded-2xl p-5 space-y-4 animate-slide-up">
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-destructive to-destructive/70 flex items-center justify-center shadow-sm shrink-0">
+              <Trash2 className="h-5 w-5 text-primary-foreground" />
+            </div>
+            <div className="min-w-0">
+              <p className="font-bold text-foreground">Remove All Daily Auto Claim Groups</p>
+              <p className="text-xs text-muted-foreground">
+                Deletes every group, saved wallet, and run history across all users. Cannot be undone.
+              </p>
+            </div>
+          </div>
+          <Button
+            onClick={purgeAllGroups}
+            disabled={purgingGroups}
+            className="w-full rounded-2xl gap-2 bg-gradient-to-r from-destructive to-destructive/80 text-primary-foreground font-bold"
+          >
+            <Trash2 className="h-4 w-4" />
+            {purgingGroups ? "Deleting..." : "Delete All Groups & Wallets"}
+          </Button>
+        </div>
+
+
+
 
 
         {/* Gas Loader Tools (admin-only access) */}
