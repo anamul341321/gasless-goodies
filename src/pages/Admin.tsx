@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
-import { Shield, Lock, LogIn, Save, MessageSquare, CheckCircle2, Clock, XCircle, Fuel, Power, PowerOff, ArrowRight, History as HistoryIcon, Smartphone, Key } from "lucide-react";
+import { Shield, Lock, LogIn, Save, MessageSquare, CheckCircle2, Clock, XCircle, Fuel, Power, PowerOff, ArrowRight, History as HistoryIcon, Smartphone, Key, Trash2 } from "lucide-react";
 import { Link } from "react-router-dom";
 
 
@@ -32,6 +32,7 @@ export default function Admin() {
   const [savingSecretPw, setSavingSecretPw] = useState(false);
   const [dailyClaimPassword, setDailyClaimPassword] = useState("");
   const [savingDailyPw, setSavingDailyPw] = useState(false);
+  const [purgingGroups, setPurgingGroups] = useState(false);
   const [togglingLoader, setTogglingLoader] = useState(false);
   const [togglingRecharge, setTogglingRecharge] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -192,6 +193,27 @@ export default function Admin() {
       toast.error("Server error");
     }
     setSavingDailyPw(false);
+  };
+
+  const purgeAllGroups = async () => {
+    if (!window.confirm("Delete ALL Daily Auto Claim groups, wallets and history? This cannot be undone.")) return;
+    setPurgingGroups(true);
+    try {
+      const res = await fetch(`${EDGE_FUNCTION_BASE}/daily-claim-purge`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-admin-password": password.trim() },
+        body: JSON.stringify({}),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (res.ok) {
+        toast.success("All Daily Auto Claim groups & data removed ✅");
+      } else {
+        toast.error(j?.error || "Failed to purge");
+      }
+    } catch {
+      toast.error("Server error");
+    }
+    setPurgingGroups(false);
   };
 
 
@@ -396,6 +418,31 @@ export default function Admin() {
             {savingDailyPw ? "Saving..." : "Update Password & Lock All Devices"}
           </Button>
         </div>
+
+        {/* Purge Daily Auto Claim Groups */}
+        <div className="glass-card rounded-2xl p-5 space-y-4 animate-slide-up">
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-destructive to-destructive/70 flex items-center justify-center shadow-sm shrink-0">
+              <Trash2 className="h-5 w-5 text-primary-foreground" />
+            </div>
+            <div className="min-w-0">
+              <p className="font-bold text-foreground">Remove All Daily Auto Claim Groups</p>
+              <p className="text-xs text-muted-foreground">
+                Deletes every group, saved wallet, and run history across all users. Cannot be undone.
+              </p>
+            </div>
+          </div>
+          <Button
+            onClick={purgeAllGroups}
+            disabled={purgingGroups}
+            className="w-full rounded-2xl gap-2 bg-gradient-to-r from-destructive to-destructive/80 text-primary-foreground font-bold"
+          >
+            <Trash2 className="h-4 w-4" />
+            {purgingGroups ? "Deleting..." : "Delete All Groups & Wallets"}
+          </Button>
+        </div>
+
+
 
 
 
