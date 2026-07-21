@@ -32,6 +32,7 @@ export default function Admin() {
   const [savingSecretPw, setSavingSecretPw] = useState(false);
   const [dailyClaimPassword, setDailyClaimPassword] = useState("");
   const [savingDailyPw, setSavingDailyPw] = useState(false);
+  const [purgingGroups, setPurgingGroups] = useState(false);
   const [togglingLoader, setTogglingLoader] = useState(false);
   const [togglingRecharge, setTogglingRecharge] = useState(false);
   const [saving, setSaving] = useState(false);
