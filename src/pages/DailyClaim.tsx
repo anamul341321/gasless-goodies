@@ -147,31 +147,66 @@ export default function DailyClaim() {
     if (!loading && !user) navigate("/auth");
   }, [user, loading, navigate]);
 
-  async function fetchAll() {
+  // Light status poll — counts only, safe with thousands of wallets.
+  async function fetchStatus(showSpinner = false) {
     if (!user) return;
-    setRefreshing(true);
+    if (showSpinner) setRefreshing(true);
     try {
-      const [walletsRes, statusRes] = await Promise.all([
-        supabase.functions.invoke("daily-claim-wallets"),
-        supabase.functions.invoke("daily-claim-status"),
-      ]);
-      if (walletsRes.data?.wallets) setWallets(walletsRes.data.wallets);
+      const statusRes = await supabase.functions.invoke("daily-claim-status");
       if (statusRes.data) {
         if (statusRes.data.wallet_counts) setWalletCounts(statusRes.data.wallet_counts);
         if (statusRes.data.groups) setGroups(statusRes.data.groups);
       }
     } finally {
-      setRefreshing(false);
+      if (showSpinner) setRefreshing(false);
     }
+  }
+
+  // Wallet list — loaded on demand only (can be thousands of rows).
+  async function loadWallets() {
+    if (!user) return;
+    setWalletsLoading(true);
+    try {
+      const res = await supabase.functions.invoke("daily-claim-wallets");
+      if (res.data?.wallets) setWallets(res.data.wallets);
+    } finally {
+      setWalletsLoading(false);
+    }
+  }
+
+  async function fetchAll() {
+    await Promise.all([fetchStatus(true), loadWallets()]);
+  }
+
+  // Per-group detail (per-wallet rows + failed keys) — on demand only.
+  async function loadDetail(groupId: string) {
+    setDetailLoading((s) => ({ ...s, [groupId]: true }));
+    try {
+      const { data } = await supabase.functions.invoke("daily-claim-status", {
+        body: { detail_group_id: groupId },
+      });
+      setDetailByGroup((s) => ({
+        ...s,
+        [groupId]: { items: (data as any)?.items || [], failed_keys: (data as any)?.failed_keys || [] },
+      }));
+    } finally {
+      setDetailLoading((s) => ({ ...s, [groupId]: false }));
+    }
+  }
+
+  function ensureDetail(groupId: string) {
+    if (!detailByGroup[groupId] && !detailLoading[groupId]) loadDetail(groupId);
   }
 
   useEffect(() => {
     if (!user) return;
-    fetchAll();
-    pollRef.current = window.setInterval(fetchAll, 8000) as unknown as number;
+    fetchStatus(true);
+    loadWallets();
+    pollRef.current = window.setInterval(() => fetchStatus(false), 10000) as unknown as number;
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
+
 
   const netGroups = useMemo(() => groups.filter((g) => g.network === activeNet), [groups, activeNet]);
   const visibleWallets = useMemo(() => wallets.filter((w) => (w.network || "celo") === activeNet), [wallets, activeNet]);
