@@ -115,6 +115,29 @@ export default function Admin() {
     setTogglingRecharge(false);
   };
 
+  const toggleAllTools = async (next: boolean) => {
+    setTogglingAll(true);
+    setAllToolsEnabled(next);
+    try {
+      const res = await fetch(`${EDGE_FUNCTION_BASE}/admin-settings`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-admin-password": password.trim() },
+        body: JSON.stringify({ all_tools_enabled: next }),
+      });
+      if (res.ok) {
+        toast.success(next ? "All services are live ✅" : "Everything temporarily OFF 🚫");
+      } else {
+        setAllToolsEnabled(!next);
+        toast.error("Failed to update");
+      }
+    } catch {
+      setAllToolsEnabled(!next);
+      toast.error("Server error");
+    }
+    setTogglingAll(false);
+  };
+
+
   const fetchRequests = async () => {
     setLoadingRequests(true);
     try {
