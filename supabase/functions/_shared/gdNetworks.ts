@@ -39,6 +39,12 @@ export const GD_NETWORKS: Record<GDNetwork, GDNetworkConfig> = {
     label: "XDC",
     chainId: 50,
     rpc: "https://erpc.xinfin.network",
+    rpcs: [
+      "https://erpc.xinfin.network",
+      "https://rpc.xinfin.network",
+      "https://rpc1.xinfin.network",
+    ],
+
     identityAddress: "0x27a4a02C9ed591E1a86e2e5D05870292c34622C9",
     ubiSchemeAddress: "0x22867567E2D80f2049200E25C6F31CB6Ec2F0faf",
     gdTokenAddress: "0xEC2136843a983885AebF2feB3931F73A8eBEe50c",
