@@ -45,6 +45,7 @@ type Group = {
   wallet_count: number;
   run: Run | null;
   failed_key_count: number;
+  breakdown?: Record<string, number> | null;
 };
 
 type GroupDetail = { items: RunItem[]; failed_keys: FailedKey[] };
@@ -65,14 +66,45 @@ function phaseLabel(p: string | undefined) {
   }
 }
 
-function statusColor(s?: string) {
-  if (s === "success") return "bg-emerald-500/15 text-emerald-400 border-emerald-500/30";
-  if (s === "failed_gas") return "bg-amber-500/15 text-amber-400 border-amber-500/30";
-  if (s === "failed_kyc") return "bg-rose-500/15 text-rose-400 border-rose-500/30";
-  if (s === "failed_other") return "bg-rose-500/15 text-rose-400 border-rose-500/30";
-  if (s === "already_claimed") return "bg-sky-500/15 text-sky-400 border-sky-500/30";
-  return "bg-muted text-muted-foreground border-border";
+// Human, Bangla labels for every wallet outcome — no raw status codes in UI.
+function statusInfo(s?: string) {
+  switch (s) {
+    case "success":
+      return { label: "ক্লেম সফল", icon: "✓", cls: "bg-emerald-500/15 text-emerald-500 border-emerald-500/30" };
+    case "already_claimed":
+      return { label: "আগেই ক্লেম করা", icon: "✓", cls: "bg-sky-500/15 text-sky-500 border-sky-500/30" };
+    case "failed_kyc":
+      return { label: "ফেস ভেরিফাই নেই", icon: "!", cls: "bg-violet-500/15 text-violet-500 border-violet-500/30" };
+    case "failed_gas":
+      return { label: "গ্যাস ফি নেই", icon: "⛽", cls: "bg-amber-500/15 text-amber-600 border-amber-500/30" };
+    case "failed_other":
+      return { label: "নেটওয়ার্ক সমস্যা", icon: "✗", cls: "bg-rose-500/15 text-rose-500 border-rose-500/30" };
+    case "pending":
+      return { label: "অপেক্ষায়", icon: "…", cls: "bg-muted text-muted-foreground border-border" };
+    default:
+      return { label: s || "—", icon: "•", cls: "bg-muted text-muted-foreground border-border" };
+  }
 }
+
+function statusColor(s?: string) {
+  return statusInfo(s).cls;
+}
+
+// Turn raw RPC/contract errors into a short, understandable Bangla reason.
+function reasonBn(raw?: string | null) {
+  if (!raw) return null;
+  const m = raw.toLowerCase();
+  if (m.includes("no entitlement") || m.includes("already claim")) return "আজকের ক্লেম আগেই নেওয়া হয়ে গেছে";
+  if (m.includes("whitelist") || m.includes("not verified")) return "ওয়ালেটে ফেস ভেরিফিকেশন করা নেই";
+  if (m.includes("insufficient")) return "গ্যাস ফি (CELO) নেই — গ্যাস লোড দরকার";
+  if (m.includes("nonce")) return "নেটওয়ার্ক সংঘর্ষ (nonce) — আবার চেষ্টা হবে";
+  if (m.includes("replacement fee")) return "আগের লেনদেন আটকে আছে — আবার চেষ্টা হবে";
+  if (m.includes("coalesce") || m.includes("missing response") || m.includes("server response") || m.includes("timeout") || m.includes("fetch failed"))
+    return "নেটওয়ার্ক (RPC) সাময়িক সমস্যা — আবার চেষ্টা হবে";
+  if (m.includes("revert")) return "কন্ট্রাক্ট ক্লেম নেয়নি";
+  return raw.slice(0, 120);
+}
+
 
 function fmt12(h: number, m: number) {
   const ampm = h >= 12 ? "PM" : "AM";
