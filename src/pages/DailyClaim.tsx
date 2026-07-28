@@ -298,16 +298,27 @@ export default function DailyClaim() {
     const lines = pasteText.split(/\s+/).map((l) => l.trim()).filter(Boolean);
     if (lines.length === 0) { toast({ title: "অন্তত একটি কী পেস্ট করুন" }); return; }
     if (netGroups.length === 0) { toast({ title: "আগে একটি গ্রুপ তৈরি করুন" }); return; }
+    const targetGroup = pasteGroupId || netGroups[0].id;
+    const CHUNK = 200;
     setAdding(true);
+    setAddProgress({ done: 0, total: lines.length });
+    let added = 0;
+    let invalid = 0;
     try {
-      const { data, error } = await supabase.functions.invoke("daily-claim-wallets?action=add", {
-        body: { private_keys: lines, network: activeNet, group_id: pasteGroupId || netGroups[0].id },
-      });
-      if (error) throw error;
-      const groupName = netGroups.find((g) => g.id === pasteGroupId)?.name || netGroups[0].name;
+      for (let i = 0; i < lines.length; i += CHUNK) {
+        const slice = lines.slice(i, i + CHUNK);
+        const { data, error } = await supabase.functions.invoke("daily-claim-wallets?action=add", {
+          body: { private_keys: slice, network: activeNet, group_id: targetGroup },
+        });
+        if (error) throw error;
+        added += (data as any)?.added ?? 0;
+        invalid += (data as any)?.invalid ?? 0;
+        setAddProgress({ done: Math.min(i + CHUNK, lines.length), total: lines.length });
+      }
+      const groupName = netGroups.find((g) => g.id === targetGroup)?.name || netGroups[0].name;
       toast({
-        title: `${data?.added ?? 0} টি ওয়ালেট "${groupName}" গ্রুপে যোগ হয়েছে`,
-        description: data?.invalid ? `${data.invalid} টি অবৈধ কী বাদ` : undefined,
+        title: `${added} টি ওয়ালেট "${groupName}" গ্রুপে যোগ হয়েছে`,
+        description: invalid ? `${invalid} টি অবৈধ কী বাদ` : undefined,
       });
       setPasteText("");
       fetchAll();
@@ -315,8 +326,10 @@ export default function DailyClaim() {
       toast({ title: "ব্যর্থ", description: e?.message || String(e), variant: "destructive" });
     } finally {
       setAdding(false);
+      setAddProgress(null);
     }
   }
+
 
   async function assignWalletGroup(walletId: string, groupId: string | null) {
     await supabase.functions.invoke("daily-claim-wallets?action=assign_group", {
