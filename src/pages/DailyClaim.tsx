@@ -121,10 +121,16 @@ export default function DailyClaim() {
   const [pasteText, setPasteText] = useState("");
   const [pasteGroupId, setPasteGroupId] = useState<string>("");
   const [adding, setAdding] = useState(false);
+  const [addProgress, setAddProgress] = useState<{ done: number; total: number } | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [walletsLoading, setWalletsLoading] = useState(false);
+  const [walletSearch, setWalletSearch] = useState("");
+  const [walletLimit, setWalletLimit] = useState(100);
   const [shownKeys, setShownKeys] = useState<Record<string, boolean>>({});
   const [openGroupRuns, setOpenGroupRuns] = useState<Record<string, boolean>>({});
   const [openGroupFailed, setOpenGroupFailed] = useState<Record<string, boolean>>({});
+  const [detailByGroup, setDetailByGroup] = useState<Record<string, GroupDetail>>({});
+  const [detailLoading, setDetailLoading] = useState<Record<string, boolean>>({});
   const [openGroupHistory, setOpenGroupHistory] = useState<Record<string, boolean>>({});
   const [historyByGroup, setHistoryByGroup] = useState<Record<string, any[]>>({});
   const [historyLoading, setHistoryLoading] = useState<Record<string, boolean>>({});
@@ -134,6 +140,8 @@ export default function DailyClaim() {
   const [showNewGroup, setShowNewGroup] = useState(false);
   const [newGroup, setNewGroup] = useState({ name: "", hour: 0, minute: 0, waitMin: 30 });
   const pollRef = useRef<number | null>(null);
+  const pasteRef = useRef<HTMLTextAreaElement | null>(null);
+
 
   useEffect(() => {
     if (!loading && !user) navigate("/auth");
