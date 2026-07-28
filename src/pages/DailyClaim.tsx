@@ -614,14 +614,61 @@ export default function DailyClaim() {
 
                             {/* Today's run summary */}
                             {g.run && (
-                              <div className="pt-2 border-t border-border space-y-2">
-                                <div className="grid grid-cols-5 gap-2 text-center">
-                                  <Stat label="মোট" value={g.run.total} />
-                                  <Stat label="সফল" value={g.run.success} tone="text-emerald-400" />
-                                  <Stat label="গ্যাস" value={g.run.failed_gas} tone="text-amber-400" />
-                                  <Stat label="অন্য" value={g.run.failed_other} tone="text-rose-400" />
-                                  <Stat label="ফাইনাল" value={g.run.final_failed} tone="text-rose-400" />
-                                </div>
+                              <div className="pt-3 border-t border-border space-y-3">
+                                {(() => {
+                                  const b = g.breakdown || {};
+                                  const total = g.run.total || 0;
+                                  const ok = (b.success ?? g.run.success) || 0;
+                                  const already = b.already_claimed || 0;
+                                  const kyc = b.failed_kyc || 0;
+                                  const gas = (b.failed_gas || 0) + (b.pending_gas || 0);
+                                  const other = b.failed_other || 0;
+                                  const waiting = b.pending_other ?? Math.max(0, total - ok - already - kyc - gas - other);
+                                  const done = ok + already;
+                                  const pct = total > 0 ? Math.round(((total - waiting) / total) * 100) : 0;
+                                  const rows = [
+                                    { k: "ok", label: "ক্লেম সফল", value: ok, hint: "নতুন G$ পেয়েছে", cls: "text-emerald-500", bar: "bg-emerald-500", bg: "bg-emerald-500/10 border-emerald-500/25" },
+                                    { k: "already", label: "আগেই ক্লেম করা", value: already, hint: "আজকের ক্লেম আগেই নেওয়া", cls: "text-sky-500", bar: "bg-sky-500", bg: "bg-sky-500/10 border-sky-500/25" },
+                                    { k: "gas", label: "গ্যাস ফি নেই", value: gas, hint: "অটো গ্যাস লোড হবে", cls: "text-amber-600", bar: "bg-amber-500", bg: "bg-amber-500/10 border-amber-500/25" },
+                                    { k: "kyc", label: "ফেস ভেরিফাই নেই", value: kyc, hint: "ওয়ালেট ভেরিফাই করুন", cls: "text-violet-500", bar: "bg-violet-500", bg: "bg-violet-500/10 border-violet-500/25" },
+                                    { k: "other", label: "নেটওয়ার্ক সমস্যা", value: other, hint: "পরে আবার চেষ্টা হবে", cls: "text-rose-500", bar: "bg-rose-500", bg: "bg-rose-500/10 border-rose-500/25" },
+                                    { k: "wait", label: "অপেক্ষায়", value: waiting, hint: "এখনো প্রসেস হয়নি", cls: "text-muted-foreground", bar: "bg-muted-foreground/40", bg: "bg-muted/40 border-border" },
+                                  ].filter((r) => r.value > 0 || r.k === "ok");
+                                  return (
+                                    <>
+                                      <div className="rounded-xl border border-border bg-gradient-to-br from-card to-muted/30 p-3 space-y-2">
+                                        <div className="flex items-end justify-between">
+                                          <div>
+                                            <div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground font-semibold">আজকের ফলাফল</div>
+                                            <div className="text-2xl font-black tabular-nums">
+                                              {done}<span className="text-muted-foreground text-base font-bold"> / {total}</span>
+                                            </div>
+                                            <div className="text-[11px] text-muted-foreground">ক্লেম সম্পন্ন (নতুন + আগেই করা)</div>
+                                          </div>
+                                          <div className="text-right">
+                                            <div className="text-xl font-black tabular-nums text-primary">{pct}%</div>
+                                            <div className="text-[10px] text-muted-foreground">প্রসেস হয়েছে</div>
+                                          </div>
+                                        </div>
+                                        <div className="h-2.5 w-full rounded-full bg-muted overflow-hidden flex">
+                                          {rows.filter((r) => r.value > 0).map((r) => (
+                                            <div key={r.k} className={r.bar} style={{ width: `${total ? (r.value / total) * 100 : 0}%` }} />
+                                          ))}
+                                        </div>
+                                      </div>
+                                      <div className="grid grid-cols-2 gap-2">
+                                        {rows.map((r) => (
+                                          <div key={r.k} className={`rounded-xl border p-2.5 ${r.bg}`}>
+                                            <div className={`text-xl font-black tabular-nums leading-none ${r.cls}`}>{r.value}</div>
+                                            <div className="text-[12px] font-semibold mt-1">{r.label}</div>
+                                            <div className="text-[10px] text-muted-foreground leading-tight">{r.hint}</div>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </>
+                                  );
+                                })()}
+
                                 {g.run.phase === "waiting_30m" && wr && (
                                   <div className="p-3 rounded-md bg-amber-500/10 border border-amber-500/30 text-center">
                                     <div className="text-xs uppercase tracking-wider text-muted-foreground">গ্যাস আসার অপেক্ষা</div>
