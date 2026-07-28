@@ -210,6 +210,12 @@ export default function DailyClaim() {
 
   const netGroups = useMemo(() => groups.filter((g) => g.network === activeNet), [groups, activeNet]);
   const visibleWallets = useMemo(() => wallets.filter((w) => (w.network || "celo") === activeNet), [wallets, activeNet]);
+  const filteredWallets = useMemo(() => {
+    const q = walletSearch.trim().toLowerCase();
+    if (!q) return visibleWallets;
+    return visibleWallets.filter((w) => w.wallet_address.toLowerCase().includes(q));
+  }, [visibleWallets, walletSearch]);
+
 
   // Default selected group for the paste box
   useEffect(() => {
