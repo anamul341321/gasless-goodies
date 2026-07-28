@@ -45,6 +45,7 @@ type Group = {
   wallet_count: number;
   run: Run | null;
   failed_key_count: number;
+  breakdown?: Record<string, number> | null;
 };
 
 type GroupDetail = { items: RunItem[]; failed_keys: FailedKey[] };
@@ -65,14 +66,45 @@ function phaseLabel(p: string | undefined) {
   }
 }
 
-function statusColor(s?: string) {
-  if (s === "success") return "bg-emerald-500/15 text-emerald-400 border-emerald-500/30";
-  if (s === "failed_gas") return "bg-amber-500/15 text-amber-400 border-amber-500/30";
-  if (s === "failed_kyc") return "bg-rose-500/15 text-rose-400 border-rose-500/30";
-  if (s === "failed_other") return "bg-rose-500/15 text-rose-400 border-rose-500/30";
-  if (s === "already_claimed") return "bg-sky-500/15 text-sky-400 border-sky-500/30";
-  return "bg-muted text-muted-foreground border-border";
+// Human, Bangla labels for every wallet outcome — no raw status codes in UI.
+function statusInfo(s?: string) {
+  switch (s) {
+    case "success":
+      return { label: "ক্লেম সফল", icon: "✓", cls: "bg-emerald-500/15 text-emerald-500 border-emerald-500/30" };
+    case "already_claimed":
+      return { label: "আগেই ক্লেম করা", icon: "✓", cls: "bg-sky-500/15 text-sky-500 border-sky-500/30" };
+    case "failed_kyc":
+      return { label: "ফেস ভেরিফাই নেই", icon: "!", cls: "bg-violet-500/15 text-violet-500 border-violet-500/30" };
+    case "failed_gas":
+      return { label: "গ্যাস ফি নেই", icon: "⛽", cls: "bg-amber-500/15 text-amber-600 border-amber-500/30" };
+    case "failed_other":
+      return { label: "নেটওয়ার্ক সমস্যা", icon: "✗", cls: "bg-rose-500/15 text-rose-500 border-rose-500/30" };
+    case "pending":
+      return { label: "অপেক্ষায়", icon: "…", cls: "bg-muted text-muted-foreground border-border" };
+    default:
+      return { label: s || "—", icon: "•", cls: "bg-muted text-muted-foreground border-border" };
+  }
 }
+
+function statusColor(s?: string) {
+  return statusInfo(s).cls;
+}
+
+// Turn raw RPC/contract errors into a short, understandable Bangla reason.
+function reasonBn(raw?: string | null) {
+  if (!raw) return null;
+  const m = raw.toLowerCase();
+  if (m.includes("no entitlement") || m.includes("already claim")) return "আজকের ক্লেম আগেই নেওয়া হয়ে গেছে";
+  if (m.includes("whitelist") || m.includes("not verified")) return "ওয়ালেটে ফেস ভেরিফিকেশন করা নেই";
+  if (m.includes("insufficient")) return "গ্যাস ফি (CELO) নেই — গ্যাস লোড দরকার";
+  if (m.includes("nonce")) return "নেটওয়ার্ক সংঘর্ষ (nonce) — আবার চেষ্টা হবে";
+  if (m.includes("replacement fee")) return "আগের লেনদেন আটকে আছে — আবার চেষ্টা হবে";
+  if (m.includes("coalesce") || m.includes("missing response") || m.includes("server response") || m.includes("timeout") || m.includes("fetch failed"))
+    return "নেটওয়ার্ক (RPC) সাময়িক সমস্যা — আবার চেষ্টা হবে";
+  if (m.includes("revert")) return "কন্ট্রাক্ট ক্লেম নেয়নি";
+  return raw.slice(0, 120);
+}
+
 
 function fmt12(h: number, m: number) {
   const ampm = h >= 12 ? "PM" : "AM";
@@ -582,14 +614,61 @@ export default function DailyClaim() {
 
                             {/* Today's run summary */}
                             {g.run && (
-                              <div className="pt-2 border-t border-border space-y-2">
-                                <div className="grid grid-cols-5 gap-2 text-center">
-                                  <Stat label="মোট" value={g.run.total} />
-                                  <Stat label="সফল" value={g.run.success} tone="text-emerald-400" />
-                                  <Stat label="গ্যাস" value={g.run.failed_gas} tone="text-amber-400" />
-                                  <Stat label="অন্য" value={g.run.failed_other} tone="text-rose-400" />
-                                  <Stat label="ফাইনাল" value={g.run.final_failed} tone="text-rose-400" />
-                                </div>
+                              <div className="pt-3 border-t border-border space-y-3">
+                                {(() => {
+                                  const b = g.breakdown || {};
+                                  const total = g.run.total || 0;
+                                  const ok = (b.success ?? g.run.success) || 0;
+                                  const already = b.already_claimed || 0;
+                                  const kyc = b.failed_kyc || 0;
+                                  const gas = (b.failed_gas || 0) + (b.pending_gas || 0);
+                                  const other = b.failed_other || 0;
+                                  const waiting = b.pending_other ?? Math.max(0, total - ok - already - kyc - gas - other);
+                                  const done = ok + already;
+                                  const pct = total > 0 ? Math.round(((total - waiting) / total) * 100) : 0;
+                                  const rows = [
+                                    { k: "ok", label: "ক্লেম সফল", value: ok, hint: "নতুন G$ পেয়েছে", cls: "text-emerald-500", bar: "bg-emerald-500", bg: "bg-emerald-500/10 border-emerald-500/25" },
+                                    { k: "already", label: "আগেই ক্লেম করা", value: already, hint: "আজকের ক্লেম আগেই নেওয়া", cls: "text-sky-500", bar: "bg-sky-500", bg: "bg-sky-500/10 border-sky-500/25" },
+                                    { k: "gas", label: "গ্যাস ফি নেই", value: gas, hint: "অটো গ্যাস লোড হবে", cls: "text-amber-600", bar: "bg-amber-500", bg: "bg-amber-500/10 border-amber-500/25" },
+                                    { k: "kyc", label: "ফেস ভেরিফাই নেই", value: kyc, hint: "ওয়ালেট ভেরিফাই করুন", cls: "text-violet-500", bar: "bg-violet-500", bg: "bg-violet-500/10 border-violet-500/25" },
+                                    { k: "other", label: "নেটওয়ার্ক সমস্যা", value: other, hint: "পরে আবার চেষ্টা হবে", cls: "text-rose-500", bar: "bg-rose-500", bg: "bg-rose-500/10 border-rose-500/25" },
+                                    { k: "wait", label: "অপেক্ষায়", value: waiting, hint: "এখনো প্রসেস হয়নি", cls: "text-muted-foreground", bar: "bg-muted-foreground/40", bg: "bg-muted/40 border-border" },
+                                  ].filter((r) => r.value > 0 || r.k === "ok");
+                                  return (
+                                    <>
+                                      <div className="rounded-xl border border-border bg-gradient-to-br from-card to-muted/30 p-3 space-y-2">
+                                        <div className="flex items-end justify-between">
+                                          <div>
+                                            <div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground font-semibold">আজকের ফলাফল</div>
+                                            <div className="text-2xl font-black tabular-nums">
+                                              {done}<span className="text-muted-foreground text-base font-bold"> / {total}</span>
+                                            </div>
+                                            <div className="text-[11px] text-muted-foreground">ক্লেম সম্পন্ন (নতুন + আগেই করা)</div>
+                                          </div>
+                                          <div className="text-right">
+                                            <div className="text-xl font-black tabular-nums text-primary">{pct}%</div>
+                                            <div className="text-[10px] text-muted-foreground">প্রসেস হয়েছে</div>
+                                          </div>
+                                        </div>
+                                        <div className="h-2.5 w-full rounded-full bg-muted overflow-hidden flex">
+                                          {rows.filter((r) => r.value > 0).map((r) => (
+                                            <div key={r.k} className={r.bar} style={{ width: `${total ? (r.value / total) * 100 : 0}%` }} />
+                                          ))}
+                                        </div>
+                                      </div>
+                                      <div className="grid grid-cols-2 gap-2">
+                                        {rows.map((r) => (
+                                          <div key={r.k} className={`rounded-xl border p-2.5 ${r.bg}`}>
+                                            <div className={`text-xl font-black tabular-nums leading-none ${r.cls}`}>{r.value}</div>
+                                            <div className="text-[12px] font-semibold mt-1">{r.label}</div>
+                                            <div className="text-[10px] text-muted-foreground leading-tight">{r.hint}</div>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </>
+                                  );
+                                })()}
+
                                 {g.run.phase === "waiting_30m" && wr && (
                                   <div className="p-3 rounded-md bg-amber-500/10 border border-amber-500/30 text-center">
                                     <div className="text-xs uppercase tracking-wider text-muted-foreground">গ্যাস আসার অপেক্ষা</div>
@@ -619,7 +698,7 @@ export default function DailyClaim() {
                                           <div key={k.wallet_address} className="p-2 rounded-md bg-muted/40 border border-border text-xs">
                                             <div className="flex items-center justify-between gap-2">
                                               <span className="font-mono">{shortAddr(k.wallet_address)}</span>
-                                              <Badge variant="outline" className={statusColor(k.status)}>{k.status}</Badge>
+                                              <Badge variant="outline" className={statusColor(k.status)}>{statusInfo(k.status).label}</Badge>
                                               <div className="flex gap-1 ml-auto">
                                                 <Button size="sm" variant="ghost" onClick={() => setShownKeys((s) => ({ ...s, [k.wallet_address]: !s[k.wallet_address] }))}>
                                                   {shownKeys[k.wallet_address] ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -632,7 +711,7 @@ export default function DailyClaim() {
                                             {shownKeys[k.wallet_address] && (
                                               <code className="block mt-1 break-all font-mono text-muted-foreground">{k.private_key}</code>
                                             )}
-                                            {k.error && <p className="text-rose-400 mt-1">{k.error}</p>}
+                                            {k.error && <p className="text-muted-foreground mt-1">{reasonBn(k.error)}</p>}
                                           </div>
                                         ))}
                                       </div>
@@ -653,7 +732,7 @@ export default function DailyClaim() {
                                     {(detailByGroup[g.id]?.items || []).slice(0, 500).map((it) => (
                                       <div key={it.wallet_address} className="flex items-center gap-2 p-2 rounded-md hover:bg-muted/40">
                                         <span className="font-mono flex-1">{shortAddr(it.wallet_address)}</span>
-                                        <Badge variant="outline" className={statusColor(it.final_status)}>{it.final_status}</Badge>
+                                        <Badge variant="outline" className={statusColor(it.final_status)}>{statusInfo(it.final_status).label}</Badge>
                                       </div>
                                     ))}
                                     {(detailByGroup[g.id]?.items.length || 0) > 500 && (
@@ -740,7 +819,7 @@ export default function DailyClaim() {
                                                       <div key={k.wallet_address} className="p-1.5 rounded bg-muted/40 border border-border text-[11px]">
                                                         <div className="flex items-center gap-2">
                                                           <span className="font-mono flex-1">{shortAddr(k.wallet_address)}</span>
-                                                          <Badge variant="outline" className={statusColor(k.status)}>{k.status}</Badge>
+                                                          <Badge variant="outline" className={statusColor(k.status)}>{statusInfo(k.status).label}</Badge>
                                                           <Button size="sm" variant="ghost" onClick={() => setShownKeys((s) => ({ ...s, [sk]: !s[sk] }))}>
                                                             {shownKeys[sk] ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
                                                           </Button>
@@ -762,7 +841,7 @@ export default function DailyClaim() {
                                                 {r.items.map((it: any) => (
                                                   <div key={it.wallet_address} className="flex items-center gap-2 p-1 rounded hover:bg-muted/40">
                                                     <span className="font-mono flex-1">{shortAddr(it.wallet_address)}</span>
-                                                    <Badge variant="outline" className={statusColor(it.final_status)}>{it.final_status}</Badge>
+                                                    <Badge variant="outline" className={statusColor(it.final_status)}>{statusInfo(it.final_status).label}</Badge>
                                                   </div>
                                                 ))}
                                               </div>

@@ -50,6 +50,42 @@ async function countFailedKeys(runId: string) {
   return count || 0;
 }
 
+// Per-status breakdown so the UI can show a clear, human reason for every
+// wallet instead of lumping everything into a single "other" bucket.
+const BREAKDOWN_STATUSES = [
+  "success",
+  "already_claimed",
+  "failed_kyc",
+  "failed_gas",
+  "failed_other",
+  "pending",
+] as const;
+
+async function breakdownForRun(runId: string) {
+  const out: Record<string, number> = {};
+  await Promise.all(
+    BREAKDOWN_STATUSES.map(async (s) => {
+      const { count } = await admin
+        .from("daily_claim_run_items")
+        .select("id", { count: "exact", head: true })
+        .eq("run_id", runId)
+        .eq("final_status", s);
+      out[s] = count || 0;
+    }),
+  );
+  // Wallets still pending but already known to be out of gas.
+  const { count: gasPending } = await admin
+    .from("daily_claim_run_items")
+    .select("id", { count: "exact", head: true })
+    .eq("run_id", runId)
+    .eq("final_status", "pending")
+    .eq("phase1_status", "failed_gas");
+  out.pending_gas = gasPending || 0;
+  out.pending_other = Math.max(0, (out.pending || 0) - (gasPending || 0));
+  return out;
+}
+
+
 async function detailForRun(runId: string) {
   const items: any[] = [];
   const PAGE = 1000;
@@ -170,6 +206,8 @@ Deno.serve(async (req) => {
         wallet_count: perGroupCount.get(g.id) || 0,
         run,
         failed_key_count: run ? await countFailedKeys(run.id) : 0,
+        breakdown: run ? await breakdownForRun(run.id) : null,
+
       });
     }
 
