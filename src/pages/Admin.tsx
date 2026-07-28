@@ -321,6 +321,36 @@ export default function Admin() {
           </Button>
         </div>
 
+        {/* Master Kill Switch */}
+        <div className="glass-card rounded-2xl p-5 space-y-4 animate-slide-up">
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className={`h-10 w-10 rounded-xl flex items-center justify-center shadow-sm shrink-0 transition-all ${
+                allToolsEnabled
+                  ? "bg-gradient-to-br from-primary to-accent shadow-primary/30"
+                  : "bg-gradient-to-br from-destructive/80 to-destructive shadow-destructive/30"
+              }`}>
+                {allToolsEnabled
+                  ? <Power className="h-5 w-5 text-primary-foreground" />
+                  : <PowerOff className="h-5 w-5 text-primary-foreground" />}
+              </div>
+              <div className="min-w-0">
+                <p className="font-bold text-foreground">Master Switch — Everything</p>
+                <p className="text-xs text-muted-foreground">
+                  {allToolsEnabled
+                    ? "All services live"
+                    : "Everything temporarily OFF · only admin panel reachable"}
+                </p>
+              </div>
+            </div>
+            <Switch
+              checked={allToolsEnabled}
+              onCheckedChange={toggleAllTools}
+              disabled={togglingAll}
+            />
+          </div>
+        </div>
+
         {/* Gas Loader Toggle */}
         <div className="glass-card rounded-2xl p-5 space-y-4 animate-slide-up">
           <div className="flex items-center justify-between gap-4">
