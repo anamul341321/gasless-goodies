@@ -59,6 +59,7 @@ Deno.serve(async (req) => {
     if (typeof body.notice_message === "string") updates.notice_message = body.notice_message;
     if (typeof body.gas_loader_enabled === "boolean") updates.gas_loader_enabled = body.gas_loader_enabled;
     if (typeof body.mobile_recharge_enabled === "boolean") updates.mobile_recharge_enabled = body.mobile_recharge_enabled;
+    if (typeof body.all_tools_enabled === "boolean") updates.all_tools_enabled = body.all_tools_enabled;
     if (typeof body.secret_tools_password === "string") {
       const pw = body.secret_tools_password.trim();
       if (pw.length < 4 || pw.length > 100) {
