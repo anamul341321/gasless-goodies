@@ -530,7 +530,15 @@ export default function DailyClaim() {
                                 <>
                                   <span className="text-muted-foreground">শুরু: <b className="text-foreground">{fmt12(hr, mn)} BD</b></span>
                                   <span className="text-muted-foreground">অপেক্ষা: <b className="text-foreground">{wt} মিনিট</b></span>
-                                  <Button size="sm" variant="outline" className="ml-auto" onClick={() => { setEditingGroup(g.id); setEditDraft({ enabled: g.enabled }); }}>এডিট</Button>
+                                  <Button size="sm" variant="secondary" className="ml-auto" onClick={() => {
+                                    setPasteGroupId(g.id);
+                                    pasteRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+                                    setTimeout(() => pasteRef.current?.focus(), 400);
+                                  }}>
+                                    <Plus className="w-4 h-4 mr-1" /> কী যোগ করুন
+                                  </Button>
+                                  <Button size="sm" variant="outline" onClick={() => { setEditingGroup(g.id); setEditDraft({ enabled: g.enabled }); }}>এডিট</Button>
+
                                   <Button size="sm" variant="ghost" onClick={() => deleteGroup(g)}>
                                     <Trash2 className="w-4 h-4 text-rose-400" />
                                   </Button>
