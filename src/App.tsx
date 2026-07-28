@@ -64,6 +64,7 @@ const App = () => (
             <Route path="/batch-history" element={<RedirectHome />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
+          </MaintenanceGate>
         </AuthProvider>
       </BrowserRouter>
     </TooltipProvider>
