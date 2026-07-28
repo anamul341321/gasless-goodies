@@ -27,21 +27,35 @@ const UBI_ABI = [
 ];
 const IDENTITY_ABI = ["function isWhitelisted(address account) view returns (bool)"];
 
-const providers: Partial<Record<GDNetwork, JsonRpcProvider>> = {};
+// Round-robin over several RPC endpoints so one flaky/rate-limited node cannot
+// stall a whole wave.
+const providerPools: Partial<Record<GDNetwork, JsonRpcProvider[]>> = {};
+let rpcCursor = 0;
 function providerFor(net: GDNetwork) {
-  const ex = providers[net];
-  if (ex) return ex;
-  const cfg = GD_NETWORKS[net];
-  const p = new JsonRpcProvider(cfg.rpc, cfg.chainId);
-  providers[net] = p;
-  return p;
+  let pool = providerPools[net];
+  if (!pool) {
+    const cfg = GD_NETWORKS[net];
+    const urls = cfg.rpcs && cfg.rpcs.length > 0 ? cfg.rpcs : [cfg.rpc];
+    pool = urls.map((u) => new JsonRpcProvider(u, cfg.chainId, { staticNetwork: true, batchMaxCount: 1 }));
+    providerPools[net] = pool;
+  }
+  return pool[rpcCursor++ % pool.length];
 }
 
-// Daily auto-claim — tuned for faster throughput while staying RPC-friendly.
-const CLAIM_WAVE_SIZE = 10;
-const CLAIM_WAVE_GAP_MS = 1500;
+// Cap the gas price we are willing to pay. Public RPCs sometimes report wildly
+// inflated gas prices, which made wallets with plenty of balance (0.06–0.07
+// CELO) get wrongly marked as "out of gas" even though the claim would succeed.
+const MAX_GAS_PRICE_WEI: Record<GDNetwork, bigint> = {
+  celo: 30_000_000_000n, // 30 gwei
+  xdc: 1_000_000_000n, // 1 gwei
+};
+
+// Daily auto-claim — tuned for steady throughput while staying RPC-friendly.
+const CLAIM_WAVE_SIZE = 8;
+const CLAIM_WAVE_GAP_MS = 1800;
 const RECEIPT_TIMEOUT_MS = 90_000;
 const TIME_BUDGET_MS = 110_000;
+
 
 const WORKER_URL = `${SUPABASE_URL}/functions/v1/daily-claim-worker`;
 
@@ -100,7 +114,10 @@ async function claimOne(privateKey: string, network: GDNetwork): Promise<ClaimRe
     try {
       const feeData = await provider.getFeeData();
       const estimatedGas = BigInt(await (ubi as any).claim.estimateGas());
-      const gasUnitPrice = feeData.gasPrice ?? feeData.maxFeePerGas;
+      const reported = feeData.gasPrice ?? feeData.maxFeePerGas ?? null;
+      const cap = MAX_GAS_PRICE_WEI[network];
+      const gasUnitPrice = reported && reported > 0n ? (reported > cap ? cap : reported) : null;
+      const gasLimit = (estimatedGas * 120n) / 100n;
       if (gasUnitPrice) {
         const balance = await provider.getBalance(addr);
         const required = estimatedGas * gasUnitPrice;
@@ -110,10 +127,11 @@ async function claimOne(privateKey: string, network: GDNetwork): Promise<ClaimRe
         }
       }
       tx = await (ubi as any).claim({
-        gasLimit: (estimatedGas * 120n) / 100n,
-        ...(feeData.gasPrice ? { gasPrice: feeData.gasPrice } : {}),
+        gasLimit,
+        ...(gasUnitPrice ? { gasPrice: gasUnitPrice } : {}),
       });
     } catch (e: any) {
+
       const cls = classifyError(e);
       const msg = (e?.shortMessage || e?.reason || e?.message || "claim revert").slice(0, 240);
       if (cls === "gas") return { status: "failed_gas", error: msg };

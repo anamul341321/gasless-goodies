@@ -43,8 +43,12 @@ type Group = {
   start_hour_bd: number; start_minute_bd: number;
   retry_wait_minutes: number; enabled: boolean;
   wallet_count: number;
-  run: Run | null; items: RunItem[]; failed_keys: FailedKey[];
+  run: Run | null;
+  failed_key_count: number;
 };
+
+type GroupDetail = { items: RunItem[]; failed_keys: FailedKey[] };
+
 
 function shortAddr(a: string) {
   return a.slice(0, 6) + "…" + a.slice(-4);
@@ -117,10 +121,16 @@ export default function DailyClaim() {
   const [pasteText, setPasteText] = useState("");
   const [pasteGroupId, setPasteGroupId] = useState<string>("");
   const [adding, setAdding] = useState(false);
+  const [addProgress, setAddProgress] = useState<{ done: number; total: number } | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [walletsLoading, setWalletsLoading] = useState(false);
+  const [walletSearch, setWalletSearch] = useState("");
+  const [walletLimit, setWalletLimit] = useState(100);
   const [shownKeys, setShownKeys] = useState<Record<string, boolean>>({});
   const [openGroupRuns, setOpenGroupRuns] = useState<Record<string, boolean>>({});
   const [openGroupFailed, setOpenGroupFailed] = useState<Record<string, boolean>>({});
+  const [detailByGroup, setDetailByGroup] = useState<Record<string, GroupDetail>>({});
+  const [detailLoading, setDetailLoading] = useState<Record<string, boolean>>({});
   const [openGroupHistory, setOpenGroupHistory] = useState<Record<string, boolean>>({});
   const [historyByGroup, setHistoryByGroup] = useState<Record<string, any[]>>({});
   const [historyLoading, setHistoryLoading] = useState<Record<string, boolean>>({});
@@ -130,39 +140,82 @@ export default function DailyClaim() {
   const [showNewGroup, setShowNewGroup] = useState(false);
   const [newGroup, setNewGroup] = useState({ name: "", hour: 0, minute: 0, waitMin: 30 });
   const pollRef = useRef<number | null>(null);
+  const pasteRef = useRef<HTMLTextAreaElement | null>(null);
+
 
   useEffect(() => {
     if (!loading && !user) navigate("/auth");
   }, [user, loading, navigate]);
 
-  async function fetchAll() {
+  // Light status poll — counts only, safe with thousands of wallets.
+  async function fetchStatus(showSpinner = false) {
     if (!user) return;
-    setRefreshing(true);
+    if (showSpinner) setRefreshing(true);
     try {
-      const [walletsRes, statusRes] = await Promise.all([
-        supabase.functions.invoke("daily-claim-wallets"),
-        supabase.functions.invoke("daily-claim-status"),
-      ]);
-      if (walletsRes.data?.wallets) setWallets(walletsRes.data.wallets);
+      const statusRes = await supabase.functions.invoke("daily-claim-status");
       if (statusRes.data) {
         if (statusRes.data.wallet_counts) setWalletCounts(statusRes.data.wallet_counts);
         if (statusRes.data.groups) setGroups(statusRes.data.groups);
       }
     } finally {
-      setRefreshing(false);
+      if (showSpinner) setRefreshing(false);
     }
+  }
+
+  // Wallet list — loaded on demand only (can be thousands of rows).
+  async function loadWallets() {
+    if (!user) return;
+    setWalletsLoading(true);
+    try {
+      const res = await supabase.functions.invoke("daily-claim-wallets");
+      if (res.data?.wallets) setWallets(res.data.wallets);
+    } finally {
+      setWalletsLoading(false);
+    }
+  }
+
+  async function fetchAll() {
+    await Promise.all([fetchStatus(true), loadWallets()]);
+  }
+
+  // Per-group detail (per-wallet rows + failed keys) — on demand only.
+  async function loadDetail(groupId: string) {
+    setDetailLoading((s) => ({ ...s, [groupId]: true }));
+    try {
+      const { data } = await supabase.functions.invoke("daily-claim-status", {
+        body: { detail_group_id: groupId },
+      });
+      setDetailByGroup((s) => ({
+        ...s,
+        [groupId]: { items: (data as any)?.items || [], failed_keys: (data as any)?.failed_keys || [] },
+      }));
+    } finally {
+      setDetailLoading((s) => ({ ...s, [groupId]: false }));
+    }
+  }
+
+  function ensureDetail(groupId: string) {
+    if (!detailByGroup[groupId] && !detailLoading[groupId]) loadDetail(groupId);
   }
 
   useEffect(() => {
     if (!user) return;
-    fetchAll();
-    pollRef.current = window.setInterval(fetchAll, 8000) as unknown as number;
+    fetchStatus(true);
+    loadWallets();
+    pollRef.current = window.setInterval(() => fetchStatus(false), 10000) as unknown as number;
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
+
   const netGroups = useMemo(() => groups.filter((g) => g.network === activeNet), [groups, activeNet]);
   const visibleWallets = useMemo(() => wallets.filter((w) => (w.network || "celo") === activeNet), [wallets, activeNet]);
+  const filteredWallets = useMemo(() => {
+    const q = walletSearch.trim().toLowerCase();
+    if (!q) return visibleWallets;
+    return visibleWallets.filter((w) => w.wallet_address.toLowerCase().includes(q));
+  }, [visibleWallets, walletSearch]);
+
 
   // Default selected group for the paste box
   useEffect(() => {
@@ -251,16 +304,27 @@ export default function DailyClaim() {
     const lines = pasteText.split(/\s+/).map((l) => l.trim()).filter(Boolean);
     if (lines.length === 0) { toast({ title: "অন্তত একটি কী পেস্ট করুন" }); return; }
     if (netGroups.length === 0) { toast({ title: "আগে একটি গ্রুপ তৈরি করুন" }); return; }
+    const targetGroup = pasteGroupId || netGroups[0].id;
+    const CHUNK = 200;
     setAdding(true);
+    setAddProgress({ done: 0, total: lines.length });
+    let added = 0;
+    let invalid = 0;
     try {
-      const { data, error } = await supabase.functions.invoke("daily-claim-wallets?action=add", {
-        body: { private_keys: lines, network: activeNet, group_id: pasteGroupId || netGroups[0].id },
-      });
-      if (error) throw error;
-      const groupName = netGroups.find((g) => g.id === pasteGroupId)?.name || netGroups[0].name;
+      for (let i = 0; i < lines.length; i += CHUNK) {
+        const slice = lines.slice(i, i + CHUNK);
+        const { data, error } = await supabase.functions.invoke("daily-claim-wallets?action=add", {
+          body: { private_keys: slice, network: activeNet, group_id: targetGroup },
+        });
+        if (error) throw error;
+        added += (data as any)?.added ?? 0;
+        invalid += (data as any)?.invalid ?? 0;
+        setAddProgress({ done: Math.min(i + CHUNK, lines.length), total: lines.length });
+      }
+      const groupName = netGroups.find((g) => g.id === targetGroup)?.name || netGroups[0].name;
       toast({
-        title: `${data?.added ?? 0} টি ওয়ালেট "${groupName}" গ্রুপে যোগ হয়েছে`,
-        description: data?.invalid ? `${data.invalid} টি অবৈধ কী বাদ` : undefined,
+        title: `${added} টি ওয়ালেট "${groupName}" গ্রুপে যোগ হয়েছে`,
+        description: invalid ? `${invalid} টি অবৈধ কী বাদ` : undefined,
       });
       setPasteText("");
       fetchAll();
@@ -268,8 +332,10 @@ export default function DailyClaim() {
       toast({ title: "ব্যর্থ", description: e?.message || String(e), variant: "destructive" });
     } finally {
       setAdding(false);
+      setAddProgress(null);
     }
   }
+
 
   async function assignWalletGroup(walletId: string, groupId: string | null) {
     await supabase.functions.invoke("daily-claim-wallets?action=assign_group", {
@@ -315,9 +381,11 @@ export default function DailyClaim() {
   }
 
   function copyFailed(g: Group) {
-    if (g.failed_keys.length === 0) return;
-    copy(g.failed_keys.map((k) => k.private_key).join("\n"), `${g.failed_keys.length} টি ব্যর্থ কী কপি`);
+    const keys = detailByGroup[g.id]?.failed_keys || [];
+    if (keys.length === 0) return;
+    copy(keys.map((k) => k.private_key).join("\n"), `${keys.length} টি ব্যর্থ কী কপি`);
   }
+
 
   function waitRemainingFor(g: Group) {
     const run = g.run;
@@ -468,7 +536,15 @@ export default function DailyClaim() {
                                 <>
                                   <span className="text-muted-foreground">শুরু: <b className="text-foreground">{fmt12(hr, mn)} BD</b></span>
                                   <span className="text-muted-foreground">অপেক্ষা: <b className="text-foreground">{wt} মিনিট</b></span>
-                                  <Button size="sm" variant="outline" className="ml-auto" onClick={() => { setEditingGroup(g.id); setEditDraft({ enabled: g.enabled }); }}>এডিট</Button>
+                                  <Button size="sm" variant="secondary" className="ml-auto" onClick={() => {
+                                    setPasteGroupId(g.id);
+                                    pasteRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+                                    setTimeout(() => pasteRef.current?.focus(), 400);
+                                  }}>
+                                    <Plus className="w-4 h-4 mr-1" /> কী যোগ করুন
+                                  </Button>
+                                  <Button size="sm" variant="outline" onClick={() => { setEditingGroup(g.id); setEditDraft({ enabled: g.enabled }); }}>এডিট</Button>
+
                                   <Button size="sm" variant="ghost" onClick={() => deleteGroup(g)}>
                                     <Trash2 className="w-4 h-4 text-rose-400" />
                                   </Button>
@@ -536,11 +612,15 @@ export default function DailyClaim() {
                                     <div className="font-mono font-black text-amber-400 text-3xl tabular-nums">{wr}</div>
                                   </div>
                                 )}
-                                {g.failed_keys.length > 0 && (
+                                {g.failed_key_count > 0 && (
                                   <div className="rounded-md border border-border">
                                     <button className="w-full px-3 py-2 flex items-center justify-between text-sm"
-                                      onClick={() => setOpenGroupFailed((s) => ({ ...s, [g.id]: !s[g.id] }))}>
-                                      <span>ব্যর্থ কী ({g.failed_keys.length})</span>
+                                      onClick={() => {
+                                        const willOpen = !openGroupFailed[g.id];
+                                        setOpenGroupFailed((s) => ({ ...s, [g.id]: willOpen }));
+                                        if (willOpen) ensureDetail(g.id);
+                                      }}>
+                                      <span>ব্যর্থ কী ({g.failed_key_count})</span>
                                       <div className="flex items-center gap-2">
                                         <Button size="sm" variant="ghost" onClick={(e) => { e.stopPropagation(); copyFailed(g); }}>
                                           <Copy className="w-4 h-4" />
@@ -550,7 +630,8 @@ export default function DailyClaim() {
                                     </button>
                                     {openGroupFailed[g.id] && (
                                       <div className="px-3 pb-3 space-y-1 max-h-72 overflow-y-auto">
-                                        {g.failed_keys.map((k) => (
+                                        {detailLoading[g.id] && <p className="text-xs text-muted-foreground py-2 text-center">লোড হচ্ছে…</p>}
+                                        {(detailByGroup[g.id]?.failed_keys || []).map((k) => (
                                           <div key={k.wallet_address} className="p-2 rounded-md bg-muted/40 border border-border text-xs">
                                             <div className="flex items-center justify-between gap-2">
                                               <span className="font-mono">{shortAddr(k.wallet_address)}</span>
@@ -575,19 +656,28 @@ export default function DailyClaim() {
                                   </div>
                                 )}
                                 <button className="w-full text-xs text-muted-foreground hover:text-foreground flex items-center justify-center gap-1"
-                                  onClick={() => setOpenGroupRuns((s) => ({ ...s, [g.id]: !s[g.id] }))}>
+                                  onClick={() => {
+                                    const willOpen = !openGroupRuns[g.id];
+                                    setOpenGroupRuns((s) => ({ ...s, [g.id]: willOpen }));
+                                    if (willOpen) ensureDetail(g.id);
+                                  }}>
                                   {openGroupRuns[g.id] ? <>লুকান <ChevronUp className="w-3 h-3" /></> : <>প্রতিটি ওয়ালেটের অবস্থা <ChevronDown className="w-3 h-3" /></>}
                                 </button>
                                 {openGroupRuns[g.id] && (
                                   <div className="space-y-1 max-h-72 overflow-y-auto text-xs">
-                                    {g.items.map((it) => (
+                                    {detailLoading[g.id] && <p className="text-muted-foreground py-2 text-center">লোড হচ্ছে…</p>}
+                                    {(detailByGroup[g.id]?.items || []).slice(0, 500).map((it) => (
                                       <div key={it.wallet_address} className="flex items-center gap-2 p-2 rounded-md hover:bg-muted/40">
                                         <span className="font-mono flex-1">{shortAddr(it.wallet_address)}</span>
                                         <Badge variant="outline" className={statusColor(it.final_status)}>{it.final_status}</Badge>
                                       </div>
                                     ))}
+                                    {(detailByGroup[g.id]?.items.length || 0) > 500 && (
+                                      <p className="text-center text-muted-foreground py-1">প্রথম ৫০০টি দেখানো হচ্ছে (মোট {detailByGroup[g.id]!.items.length})</p>
+                                    )}
                                   </div>
                                 )}
+
                               </div>
                             )}
 
@@ -711,18 +801,31 @@ export default function DailyClaim() {
 
               {/* Saved wallets — add + list with group selector */}
               {net === activeNet && (
-                <Card>
+                <Card className="border-primary/20 shadow-[0_0_50px_-20px_hsl(var(--primary)/0.4)]">
                   <CardHeader className="pb-3">
-                    <CardTitle>সেভ করা {net.toUpperCase()} ওয়ালেট ({visibleWallets.length})</CardTitle>
+                    <CardTitle className="flex items-center justify-between gap-2 flex-wrap">
+                      <span>সেভ করা {net.toUpperCase()} ওয়ালেট ({walletCounts[net] ?? 0})</span>
+                      <Button size="sm" variant="outline" onClick={loadWallets} disabled={walletsLoading}>
+                        <RefreshCw className={`w-4 h-4 mr-2 ${walletsLoading ? "animate-spin" : ""}`} /> তালিকা রিফ্রেশ
+                      </Button>
+                    </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-4">
-                    <div className="space-y-2">
+                    <div className="space-y-2 rounded-xl border border-border/70 bg-gradient-to-br from-card to-background p-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <label className="text-xs uppercase tracking-[0.2em] text-muted-foreground font-semibold">প্রাইভেট কী যোগ করুন</label>
+                        <span className="text-xs text-muted-foreground">
+                          {pasteText.split(/\s+/).filter(Boolean).length} টি লাইন
+                        </span>
+                      </div>
                       <Textarea
-                        rows={5}
-                        placeholder={`প্রতি লাইনে একটি প্রাইভেট কী পেস্ট করুন — ${net.toUpperCase()} নেটওয়ার্কে যোগ হবে`}
+                        ref={pasteRef}
+                        rows={16}
+                        placeholder={`প্রতি লাইনে একটি প্রাইভেট কী পেস্ট করুন — ${net.toUpperCase()} নেটওয়ার্কে যোগ হবে।\nযেকোনো সময় পুরনো গ্রুপেও নতুন কী যোগ করা যাবে, ডুপ্লিকেট বাদ পড়বে।`}
                         value={pasteText}
                         onChange={(e) => setPasteText(e.target.value)}
-                        className="font-mono text-xs"
+                        className="font-mono text-xs min-h-[320px] resize-y"
+                        spellCheck={false}
                       />
                       <div className="flex items-center gap-2 flex-wrap">
                         <label className="text-xs text-muted-foreground">কোন গ্রুপে যোগ হবে:</label>
@@ -735,7 +838,9 @@ export default function DailyClaim() {
                           </SelectContent>
                         </Select>
                         <Button onClick={addKeys} disabled={adding || netGroups.length === 0}>
-                          {adding ? "যোগ হচ্ছে…" : `যোগ করুন`}
+                          {adding
+                            ? `যোগ হচ্ছে… ${addProgress ? `${addProgress.done}/${addProgress.total}` : ""}`
+                            : "যোগ করুন"}
                         </Button>
                       </div>
                       {netGroups.length === 0 && (
@@ -743,11 +848,25 @@ export default function DailyClaim() {
                       )}
                     </div>
 
-                    {visibleWallets.length === 0 ? (
-                      <p className="text-sm text-muted-foreground text-center py-4">এখনো কোনো ওয়ালেট নেই।</p>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <Input
+                        value={walletSearch}
+                        onChange={(e) => { setWalletSearch(e.target.value); setWalletLimit(100); }}
+                        placeholder="ঠিকানা দিয়ে খুঁজুন…"
+                        className="h-9 max-w-xs font-mono text-xs"
+                      />
+                      <span className="text-xs text-muted-foreground">
+                        {filteredWallets.length} টি মিলেছে · {Math.min(walletLimit, filteredWallets.length)} টি দেখানো হচ্ছে
+                      </span>
+                    </div>
+
+                    {walletsLoading && wallets.length === 0 ? (
+                      <p className="text-sm text-muted-foreground text-center py-4">লোড হচ্ছে…</p>
+                    ) : filteredWallets.length === 0 ? (
+                      <p className="text-sm text-muted-foreground text-center py-4">কোনো ওয়ালেট পাওয়া যায়নি।</p>
                     ) : (
                       <div className="space-y-1 max-h-96 overflow-y-auto">
-                        {visibleWallets.map((w) => (
+                        {filteredWallets.slice(0, walletLimit).map((w) => (
                           <div key={w.id} className="flex items-center gap-2 p-2 rounded-md hover:bg-muted/40">
                             <span className="font-mono text-xs flex-1 min-w-0 truncate">{shortAddr(w.wallet_address)}</span>
                             <Select value={w.group_id || "__none__"} onValueChange={(v) => assignWalletGroup(w.id, v === "__none__" ? null : v)}>
@@ -765,11 +884,18 @@ export default function DailyClaim() {
                             </Button>
                           </div>
                         ))}
+                        {filteredWallets.length > walletLimit && (
+                          <Button variant="outline" size="sm" className="w-full mt-2"
+                            onClick={() => setWalletLimit((n) => n + 200)}>
+                            আরও ২০০টি দেখুন
+                          </Button>
+                        )}
                       </div>
                     )}
                   </CardContent>
                 </Card>
               )}
+
             </TabsContent>
           ))}
         </Tabs>

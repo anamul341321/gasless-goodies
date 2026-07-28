@@ -1,5 +1,10 @@
-// Returns the user's groups (each with its schedule, wallet count, today's run,
-// items, and failed-key reveals), plus aggregate wallet counts per network.
+// Returns the user's groups (schedule, wallet count, today's run summary).
+//
+// Two modes:
+//  - light (default): counts only — safe to poll every few seconds even with
+//    thousands of wallets. No per-item rows, no key decryption.
+//  - detail: pass { detail_group_id } to get the per-wallet rows and the
+//    decrypted failed keys for a SINGLE group (loaded on demand by the UI).
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { decryptKey } from "../_shared/dailyCrypto.ts";
@@ -35,13 +40,33 @@ function json(b: any, s = 200) {
   });
 }
 
-async function summarizeRun(runId: string) {
-  const { data: rows } = await admin
+async function countFailedKeys(runId: string) {
+  const { count } = await admin
     .from("daily_claim_run_items")
-    .select("wallet_address, phase1_status, phase1_error, gas_request_status, phase2_status, phase2_error, final_status, encrypted_key")
+    .select("id", { count: "exact", head: true })
     .eq("run_id", runId)
-    .order("wallet_address", { ascending: true });
-  const items = rows || [];
+    .not("encrypted_key", "is", null)
+    .not("final_status", "in", "(success,pending)");
+  return count || 0;
+}
+
+async function detailForRun(runId: string) {
+  const items: any[] = [];
+  const PAGE = 1000;
+  let from = 0;
+  while (true) {
+    const { data: rows } = await admin
+      .from("daily_claim_run_items")
+      .select("wallet_address, phase1_status, phase1_error, gas_request_status, phase2_status, phase2_error, final_status, encrypted_key")
+      .eq("run_id", runId)
+      .order("wallet_address", { ascending: true })
+      .range(from, from + PAGE - 1);
+    const page = rows || [];
+    items.push(...page);
+    if (page.length < PAGE) break;
+    from += PAGE;
+  }
+
   const failedKeys: { wallet_address: string; private_key: string; status: string; error?: string }[] = [];
   const failed = items.filter((r: any) =>
     r.encrypted_key && r.final_status !== "success" && r.final_status !== "pending"
@@ -66,8 +91,33 @@ Deno.serve(async (req) => {
   const user = await getUser(req);
   if (!user) return json({ error: "unauthorized" }, 401);
 
+  const body = await req.json().catch(() => ({}));
+  const detailGroupId: string | null = body?.detail_group_id || null;
+
   try {
-    // Wallets (for counts and per-group counts) — page through to avoid 1000-row default cap
+    // ---- Detail mode: one group only ----
+    if (detailGroupId) {
+      const { data: g } = await admin
+        .from("daily_claim_groups")
+        .select("id")
+        .eq("id", detailGroupId)
+        .eq("owner_user_id", user.id)
+        .maybeSingle();
+      if (!g) return json({ error: "group not found" }, 404);
+      const { data: run } = await admin
+        .from("daily_claim_runs")
+        .select("id")
+        .eq("group_id", detailGroupId)
+        .order("run_date", { ascending: false })
+        .order("started_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (!run) return json({ items: [], failed_keys: [] });
+      const d = await detailForRun(run.id);
+      return json(d);
+    }
+
+    // ---- Light mode ----
     const walletCounts: Record<string, number> = { celo: 0, xdc: 0 };
     const perGroupCount = new Map<string, number>();
     const PAGE = 1000;
@@ -90,14 +140,12 @@ Deno.serve(async (req) => {
       from += PAGE;
     }
 
-    // Groups
     const { data: groups } = await admin
       .from("daily_claim_groups")
       .select("id, name, network, start_hour_bd, start_minute_bd, retry_wait_minutes, enabled, created_at")
       .eq("owner_user_id", user.id)
       .order("created_at", { ascending: true });
 
-    // Latest run per group (today or most recent)
     const groupIds = (groups || []).map((g: any) => g.id);
     const runByGroup = new Map<string, any>();
     if (groupIds.length > 0) {
@@ -117,17 +165,11 @@ Deno.serve(async (req) => {
     const groupResults = [];
     for (const g of groups || []) {
       const run = runByGroup.get(g.id) || null;
-      let items: any[] = [];
-      let failed_keys: any[] = [];
-      if (run) {
-        const s = await summarizeRun(run.id);
-        items = s.items;
-        failed_keys = s.failed_keys;
-      }
       groupResults.push({
         ...g,
         wallet_count: perGroupCount.get(g.id) || 0,
-        run, items, failed_keys,
+        run,
+        failed_key_count: run ? await countFailedKeys(run.id) : 0,
       });
     }
 
