@@ -114,7 +114,10 @@ async function claimOne(privateKey: string, network: GDNetwork): Promise<ClaimRe
     try {
       const feeData = await provider.getFeeData();
       const estimatedGas = BigInt(await (ubi as any).claim.estimateGas());
-      const gasUnitPrice = feeData.gasPrice ?? feeData.maxFeePerGas;
+      const reported = feeData.gasPrice ?? feeData.maxFeePerGas ?? null;
+      const cap = MAX_GAS_PRICE_WEI[network];
+      const gasUnitPrice = reported && reported > 0n ? (reported > cap ? cap : reported) : null;
+      const gasLimit = (estimatedGas * 120n) / 100n;
       if (gasUnitPrice) {
         const balance = await provider.getBalance(addr);
         const required = estimatedGas * gasUnitPrice;
@@ -124,10 +127,11 @@ async function claimOne(privateKey: string, network: GDNetwork): Promise<ClaimRe
         }
       }
       tx = await (ubi as any).claim({
-        gasLimit: (estimatedGas * 120n) / 100n,
-        ...(feeData.gasPrice ? { gasPrice: feeData.gasPrice } : {}),
+        gasLimit,
+        ...(gasUnitPrice ? { gasPrice: gasUnitPrice } : {}),
       });
     } catch (e: any) {
+
       const cls = classifyError(e);
       const msg = (e?.shortMessage || e?.reason || e?.message || "claim revert").slice(0, 240);
       if (cls === "gas") return { status: "failed_gas", error: msg };
