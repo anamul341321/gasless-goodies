@@ -375,9 +375,11 @@ export default function DailyClaim() {
   }
 
   function copyFailed(g: Group) {
-    if (g.failed_keys.length === 0) return;
-    copy(g.failed_keys.map((k) => k.private_key).join("\n"), `${g.failed_keys.length} টি ব্যর্থ কী কপি`);
+    const keys = detailByGroup[g.id]?.failed_keys || [];
+    if (keys.length === 0) return;
+    copy(keys.map((k) => k.private_key).join("\n"), `${keys.length} টি ব্যর্থ কী কপি`);
   }
+
 
   function waitRemainingFor(g: Group) {
     const run = g.run;
