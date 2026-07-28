@@ -28,6 +28,8 @@ export default function Admin() {
   const [noticeMessage, setNoticeMessage] = useState("");
   const [gasLoaderEnabled, setGasLoaderEnabled] = useState(true);
   const [mobileRechargeEnabled, setMobileRechargeEnabled] = useState(true);
+  const [allToolsEnabled, setAllToolsEnabled] = useState(true);
+  const [togglingAll, setTogglingAll] = useState(false);
   const [secretToolsPassword, setSecretToolsPassword] = useState("");
   const [savingSecretPw, setSavingSecretPw] = useState(false);
   const [dailyClaimPassword, setDailyClaimPassword] = useState("");
