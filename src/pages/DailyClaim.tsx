@@ -698,7 +698,7 @@ export default function DailyClaim() {
                                           <div key={k.wallet_address} className="p-2 rounded-md bg-muted/40 border border-border text-xs">
                                             <div className="flex items-center justify-between gap-2">
                                               <span className="font-mono">{shortAddr(k.wallet_address)}</span>
-                                              <Badge variant="outline" className={statusColor(k.status)}>{k.status}</Badge>
+                                              <Badge variant="outline" className={statusColor(k.status)}>{statusInfo(k.status).label}</Badge>
                                               <div className="flex gap-1 ml-auto">
                                                 <Button size="sm" variant="ghost" onClick={() => setShownKeys((s) => ({ ...s, [k.wallet_address]: !s[k.wallet_address] }))}>
                                                   {shownKeys[k.wallet_address] ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -711,7 +711,7 @@ export default function DailyClaim() {
                                             {shownKeys[k.wallet_address] && (
                                               <code className="block mt-1 break-all font-mono text-muted-foreground">{k.private_key}</code>
                                             )}
-                                            {k.error && <p className="text-rose-400 mt-1">{k.error}</p>}
+                                            {k.error && <p className="text-muted-foreground mt-1">{reasonBn(k.error)}</p>}
                                           </div>
                                         ))}
                                       </div>
@@ -732,7 +732,7 @@ export default function DailyClaim() {
                                     {(detailByGroup[g.id]?.items || []).slice(0, 500).map((it) => (
                                       <div key={it.wallet_address} className="flex items-center gap-2 p-2 rounded-md hover:bg-muted/40">
                                         <span className="font-mono flex-1">{shortAddr(it.wallet_address)}</span>
-                                        <Badge variant="outline" className={statusColor(it.final_status)}>{it.final_status}</Badge>
+                                        <Badge variant="outline" className={statusColor(it.final_status)}>{statusInfo(it.final_status).label}</Badge>
                                       </div>
                                     ))}
                                     {(detailByGroup[g.id]?.items.length || 0) > 500 && (
@@ -819,7 +819,7 @@ export default function DailyClaim() {
                                                       <div key={k.wallet_address} className="p-1.5 rounded bg-muted/40 border border-border text-[11px]">
                                                         <div className="flex items-center gap-2">
                                                           <span className="font-mono flex-1">{shortAddr(k.wallet_address)}</span>
-                                                          <Badge variant="outline" className={statusColor(k.status)}>{k.status}</Badge>
+                                                          <Badge variant="outline" className={statusColor(k.status)}>{statusInfo(k.status).label}</Badge>
                                                           <Button size="sm" variant="ghost" onClick={() => setShownKeys((s) => ({ ...s, [sk]: !s[sk] }))}>
                                                             {shownKeys[sk] ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
                                                           </Button>
@@ -841,7 +841,7 @@ export default function DailyClaim() {
                                                 {r.items.map((it: any) => (
                                                   <div key={it.wallet_address} className="flex items-center gap-2 p-1 rounded hover:bg-muted/40">
                                                     <span className="font-mono flex-1">{shortAddr(it.wallet_address)}</span>
-                                                    <Badge variant="outline" className={statusColor(it.final_status)}>{it.final_status}</Badge>
+                                                    <Badge variant="outline" className={statusColor(it.final_status)}>{statusInfo(it.final_status).label}</Badge>
                                                   </div>
                                                 ))}
                                               </div>
