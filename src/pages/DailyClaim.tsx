@@ -598,11 +598,15 @@ export default function DailyClaim() {
                                     <div className="font-mono font-black text-amber-400 text-3xl tabular-nums">{wr}</div>
                                   </div>
                                 )}
-                                {g.failed_keys.length > 0 && (
+                                {g.failed_key_count > 0 && (
                                   <div className="rounded-md border border-border">
                                     <button className="w-full px-3 py-2 flex items-center justify-between text-sm"
-                                      onClick={() => setOpenGroupFailed((s) => ({ ...s, [g.id]: !s[g.id] }))}>
-                                      <span>ব্যর্থ কী ({g.failed_keys.length})</span>
+                                      onClick={() => {
+                                        const willOpen = !openGroupFailed[g.id];
+                                        setOpenGroupFailed((s) => ({ ...s, [g.id]: willOpen }));
+                                        if (willOpen) ensureDetail(g.id);
+                                      }}>
+                                      <span>ব্যর্থ কী ({g.failed_key_count})</span>
                                       <div className="flex items-center gap-2">
                                         <Button size="sm" variant="ghost" onClick={(e) => { e.stopPropagation(); copyFailed(g); }}>
                                           <Copy className="w-4 h-4" />
@@ -612,7 +616,8 @@ export default function DailyClaim() {
                                     </button>
                                     {openGroupFailed[g.id] && (
                                       <div className="px-3 pb-3 space-y-1 max-h-72 overflow-y-auto">
-                                        {g.failed_keys.map((k) => (
+                                        {detailLoading[g.id] && <p className="text-xs text-muted-foreground py-2 text-center">লোড হচ্ছে…</p>}
+                                        {(detailByGroup[g.id]?.failed_keys || []).map((k) => (
                                           <div key={k.wallet_address} className="p-2 rounded-md bg-muted/40 border border-border text-xs">
                                             <div className="flex items-center justify-between gap-2">
                                               <span className="font-mono">{shortAddr(k.wallet_address)}</span>
@@ -637,19 +642,28 @@ export default function DailyClaim() {
                                   </div>
                                 )}
                                 <button className="w-full text-xs text-muted-foreground hover:text-foreground flex items-center justify-center gap-1"
-                                  onClick={() => setOpenGroupRuns((s) => ({ ...s, [g.id]: !s[g.id] }))}>
+                                  onClick={() => {
+                                    const willOpen = !openGroupRuns[g.id];
+                                    setOpenGroupRuns((s) => ({ ...s, [g.id]: willOpen }));
+                                    if (willOpen) ensureDetail(g.id);
+                                  }}>
                                   {openGroupRuns[g.id] ? <>লুকান <ChevronUp className="w-3 h-3" /></> : <>প্রতিটি ওয়ালেটের অবস্থা <ChevronDown className="w-3 h-3" /></>}
                                 </button>
                                 {openGroupRuns[g.id] && (
                                   <div className="space-y-1 max-h-72 overflow-y-auto text-xs">
-                                    {g.items.map((it) => (
+                                    {detailLoading[g.id] && <p className="text-muted-foreground py-2 text-center">লোড হচ্ছে…</p>}
+                                    {(detailByGroup[g.id]?.items || []).slice(0, 500).map((it) => (
                                       <div key={it.wallet_address} className="flex items-center gap-2 p-2 rounded-md hover:bg-muted/40">
                                         <span className="font-mono flex-1">{shortAddr(it.wallet_address)}</span>
                                         <Badge variant="outline" className={statusColor(it.final_status)}>{it.final_status}</Badge>
                                       </div>
                                     ))}
+                                    {(detailByGroup[g.id]?.items.length || 0) > 500 && (
+                                      <p className="text-center text-muted-foreground py-1">প্রথম ৫০০টি দেখানো হচ্ছে (মোট {detailByGroup[g.id]!.items.length})</p>
+                                    )}
                                   </div>
                                 )}
+
                               </div>
                             )}
 
