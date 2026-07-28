@@ -73,13 +73,23 @@ Deno.serve(async (req) => {
         .maybeSingle();
       if (existing) { console.log(`  group ${groupId}: existing run ${existing.id}`); continue; }
 
-      const { data: wallets, error: wErr } = await admin
-        .from("daily_claim_wallets")
-        .select("wallet_address, encrypted_key")
-        .eq("owner_user_id", uid)
-        .eq("group_id", groupId)
-        .eq("is_active", true);
-      if (wErr) console.error("wallets fetch err", wErr);
+      // Paginate — PostgREST caps a plain select at 1000 rows
+      const wallets: any[] = [];
+      const PAGE = 1000;
+      for (let from = 0; ; from += PAGE) {
+        const { data: page, error: wErr } = await admin
+          .from("daily_claim_wallets")
+          .select("wallet_address, encrypted_key")
+          .eq("owner_user_id", uid)
+          .eq("group_id", groupId)
+          .eq("is_active", true)
+          .order("created_at", { ascending: true })
+          .range(from, from + PAGE - 1);
+        if (wErr) { console.error("wallets fetch err", wErr); break; }
+        if (!page || page.length === 0) break;
+        wallets.push(...page);
+        if (page.length < PAGE) break;
+      }
       console.log(`  group ${groupId}: wallets=${wallets?.length ?? 0}`);
       if (!wallets || wallets.length === 0) continue;
 
