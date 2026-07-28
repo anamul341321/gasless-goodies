@@ -7,7 +7,10 @@ export type GDNetworkConfig = {
   label: string;
   chainId: number;
   rpc: string;
+  /** Fallback RPC list (first entry is the primary `rpc`). */
+  rpcs: string[];
   identityAddress: string;
+
   ubiSchemeAddress: string;
   gdTokenAddress: string;
   explorerTxBase: string; // append tx hash
