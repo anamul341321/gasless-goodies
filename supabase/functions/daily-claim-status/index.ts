@@ -206,6 +206,8 @@ Deno.serve(async (req) => {
         wallet_count: perGroupCount.get(g.id) || 0,
         run,
         failed_key_count: run ? await countFailedKeys(run.id) : 0,
+        breakdown: run ? await breakdownForRun(run.id) : null,
+
       });
     }
 
