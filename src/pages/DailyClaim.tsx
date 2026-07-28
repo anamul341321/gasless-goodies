@@ -43,8 +43,12 @@ type Group = {
   start_hour_bd: number; start_minute_bd: number;
   retry_wait_minutes: number; enabled: boolean;
   wallet_count: number;
-  run: Run | null; items: RunItem[]; failed_keys: FailedKey[];
+  run: Run | null;
+  failed_key_count: number;
 };
+
+type GroupDetail = { items: RunItem[]; failed_keys: FailedKey[] };
+
 
 function shortAddr(a: string) {
   return a.slice(0, 6) + "…" + a.slice(-4);
