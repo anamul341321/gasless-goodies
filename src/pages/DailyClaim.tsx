@@ -795,18 +795,31 @@ export default function DailyClaim() {
 
               {/* Saved wallets — add + list with group selector */}
               {net === activeNet && (
-                <Card>
+                <Card className="border-primary/20 shadow-[0_0_50px_-20px_hsl(var(--primary)/0.4)]">
                   <CardHeader className="pb-3">
-                    <CardTitle>সেভ করা {net.toUpperCase()} ওয়ালেট ({visibleWallets.length})</CardTitle>
+                    <CardTitle className="flex items-center justify-between gap-2 flex-wrap">
+                      <span>সেভ করা {net.toUpperCase()} ওয়ালেট ({walletCounts[net] ?? 0})</span>
+                      <Button size="sm" variant="outline" onClick={loadWallets} disabled={walletsLoading}>
+                        <RefreshCw className={`w-4 h-4 mr-2 ${walletsLoading ? "animate-spin" : ""}`} /> তালিকা রিফ্রেশ
+                      </Button>
+                    </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-4">
-                    <div className="space-y-2">
+                    <div className="space-y-2 rounded-xl border border-border/70 bg-gradient-to-br from-card to-background p-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <label className="text-xs uppercase tracking-[0.2em] text-muted-foreground font-semibold">প্রাইভেট কী যোগ করুন</label>
+                        <span className="text-xs text-muted-foreground">
+                          {pasteText.split(/\s+/).filter(Boolean).length} টি লাইন
+                        </span>
+                      </div>
                       <Textarea
-                        rows={5}
-                        placeholder={`প্রতি লাইনে একটি প্রাইভেট কী পেস্ট করুন — ${net.toUpperCase()} নেটওয়ার্কে যোগ হবে`}
+                        ref={pasteRef}
+                        rows={16}
+                        placeholder={`প্রতি লাইনে একটি প্রাইভেট কী পেস্ট করুন — ${net.toUpperCase()} নেটওয়ার্কে যোগ হবে।\nযেকোনো সময় পুরনো গ্রুপেও নতুন কী যোগ করা যাবে, ডুপ্লিকেট বাদ পড়বে।`}
                         value={pasteText}
                         onChange={(e) => setPasteText(e.target.value)}
-                        className="font-mono text-xs"
+                        className="font-mono text-xs min-h-[320px] resize-y"
+                        spellCheck={false}
                       />
                       <div className="flex items-center gap-2 flex-wrap">
                         <label className="text-xs text-muted-foreground">কোন গ্রুপে যোগ হবে:</label>
@@ -819,7 +832,9 @@ export default function DailyClaim() {
                           </SelectContent>
                         </Select>
                         <Button onClick={addKeys} disabled={adding || netGroups.length === 0}>
-                          {adding ? "যোগ হচ্ছে…" : `যোগ করুন`}
+                          {adding
+                            ? `যোগ হচ্ছে… ${addProgress ? `${addProgress.done}/${addProgress.total}` : ""}`
+                            : "যোগ করুন"}
                         </Button>
                       </div>
                       {netGroups.length === 0 && (
@@ -827,11 +842,25 @@ export default function DailyClaim() {
                       )}
                     </div>
 
-                    {visibleWallets.length === 0 ? (
-                      <p className="text-sm text-muted-foreground text-center py-4">এখনো কোনো ওয়ালেট নেই।</p>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <Input
+                        value={walletSearch}
+                        onChange={(e) => { setWalletSearch(e.target.value); setWalletLimit(100); }}
+                        placeholder="ঠিকানা দিয়ে খুঁজুন…"
+                        className="h-9 max-w-xs font-mono text-xs"
+                      />
+                      <span className="text-xs text-muted-foreground">
+                        {filteredWallets.length} টি মিলেছে · {Math.min(walletLimit, filteredWallets.length)} টি দেখানো হচ্ছে
+                      </span>
+                    </div>
+
+                    {walletsLoading && wallets.length === 0 ? (
+                      <p className="text-sm text-muted-foreground text-center py-4">লোড হচ্ছে…</p>
+                    ) : filteredWallets.length === 0 ? (
+                      <p className="text-sm text-muted-foreground text-center py-4">কোনো ওয়ালেট পাওয়া যায়নি।</p>
                     ) : (
                       <div className="space-y-1 max-h-96 overflow-y-auto">
-                        {visibleWallets.map((w) => (
+                        {filteredWallets.slice(0, walletLimit).map((w) => (
                           <div key={w.id} className="flex items-center gap-2 p-2 rounded-md hover:bg-muted/40">
                             <span className="font-mono text-xs flex-1 min-w-0 truncate">{shortAddr(w.wallet_address)}</span>
                             <Select value={w.group_id || "__none__"} onValueChange={(v) => assignWalletGroup(w.id, v === "__none__" ? null : v)}>
@@ -849,11 +878,18 @@ export default function DailyClaim() {
                             </Button>
                           </div>
                         ))}
+                        {filteredWallets.length > walletLimit && (
+                          <Button variant="outline" size="sm" className="w-full mt-2"
+                            onClick={() => setWalletLimit((n) => n + 200)}>
+                            আরও ২০০টি দেখুন
+                          </Button>
+                        )}
                       </div>
                     )}
                   </CardContent>
                 </Card>
               )}
+
             </TabsContent>
           ))}
         </Tabs>
