@@ -55,11 +55,54 @@ const CLAIM_WAVE_SIZE = 8;
 const CLAIM_WAVE_GAP_MS = 1800;
 const RECEIPT_TIMEOUT_MS = 90_000;
 const TIME_BUDGET_MS = 110_000;
+// Hard ceiling per wallet so one hanging RPC cannot block an entire wave.
+const WALLET_TIMEOUT_MS = 100_000;
 
+// Public RPC nodes regularly return 500/400/"could not coalesce error". Those
+// escaped as unhandled rejections from ethers' internal polling and killed the
+// whole isolate mid-wave, which stalled the run. Swallow them here — every
+// meaningful error is already handled inside claimOne().
+addEventListener("unhandledrejection", (e: any) => {
+  try { e.preventDefault(); } catch { /* ignore */ }
+  console.log("suppressed unhandled rejection:", String(e?.reason?.message || e?.reason || e));
+});
+addEventListener("error", (e: any) => {
+  try { e.preventDefault(); } catch { /* ignore */ }
+  console.log("suppressed error:", String(e?.message || e));
+});
 
 const WORKER_URL = `${SUPABASE_URL}/functions/v1/daily-claim-worker`;
 
 const inFlight = new Set<string>();
+
+// Transient node/network failures must NOT burn a wallet's attempt — they are
+// retried on a different RPC endpoint instead of being recorded as failures.
+function isTransient(msg: string) {
+  const m = (msg || "").toLowerCase();
+  return (
+    m.includes("could not coalesce") ||
+    m.includes("server response 5") ||
+    m.includes("server response 4") ||
+    m.includes("timeout") ||
+    m.includes("timed out") ||
+    m.includes("rate limit") ||
+    m.includes("too many requests") ||
+    m.includes("network error") ||
+    m.includes("connection") ||
+    m.includes("fetch failed") ||
+    m.includes("bad request") ||
+    m.includes("econn") ||
+    m.includes("socket")
+  );
+}
+
+function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error(`${label} timeout`)), ms);
+    p.then((v) => { clearTimeout(t); resolve(v); }, (e) => { clearTimeout(t); reject(e); });
+  });
+}
+
 
 function classifyError(err: any): "gas" | "kyc" | "already" | "other" {
   const raw = (err?.message || err?.shortMessage || err?.reason || String(err) || "").toLowerCase();
@@ -161,8 +204,28 @@ async function claimOne(privateKey: string, network: GDNetwork): Promise<ClaimRe
   }
 }
 
+// Claim with automatic retry across different RPC endpoints. A wallet is only
+// recorded as failed once a real (non-transient) outcome is known.
+async function claimWithRetry(privateKey: string, network: GDNetwork): Promise<ClaimResult> {
+  let last: ClaimResult = { status: "failed_other", error: "unknown" };
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      last = await withTimeout(claimOne(privateKey, network), WALLET_TIMEOUT_MS, "wallet");
+    } catch (e: any) {
+      last = { status: "failed_other", error: (e?.message || String(e)).slice(0, 240) };
+    }
+    if (last.status !== "failed_other") return last;
+    if (!isTransient(last.error || "")) return last;
+    rpcCursor++; // move to another endpoint
+    await new Promise((r) => setTimeout(r, 1200 * (attempt + 1)));
+  }
+  return last;
+}
+
+
+
 function selfKick(runId: string, phase: string) {
-  fetch(WORKER_URL, {
+  const p = fetch(WORKER_URL, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${SERVICE_KEY}`,
@@ -171,7 +234,11 @@ function selfKick(runId: string, phase: string) {
     },
     body: JSON.stringify({ run_id: runId, phase }),
   }).catch(() => {});
+  // Keep the isolate alive until the hand-off request has actually been sent,
+  // otherwise the chain can silently break and the run stalls.
+  try { (globalThis as any).EdgeRuntime?.waitUntil?.(p); } catch { /* ignore */ }
 }
+
 
 async function refreshCounters(runId: string) {
   const { data: items } = await admin
@@ -211,7 +278,7 @@ async function runPhase1(runId: string, network: GDNetwork, deadline: number) {
   while (Date.now() < deadline) {
     const { data: rows } = await admin
       .from("daily_claim_run_items")
-      .select("id, wallet_address, encrypted_key")
+      .select("id, wallet_address, encrypted_key, attempts")
       .eq("run_id", runId)
       .eq("phase1_status", "pending")
       .limit(CLAIM_WAVE_SIZE);
@@ -222,28 +289,48 @@ async function runPhase1(runId: string, network: GDNetwork, deadline: number) {
     await admin.from("daily_claim_run_items").update({ phase1_status: "claiming" }).in("id", ids);
 
     await Promise.all(rows.map(async (r: any) => {
+      const tries = (r.attempts || 0) + 1;
       try {
         const pk = await decryptKey(r.encrypted_key);
-        const res = await claimOne(pk, network);
+        const res = await claimWithRetry(pk, network);
+        // Still a transient node failure after retries → keep the wallet in the
+        // queue instead of burning it as a permanent failure.
+        if (res.status === "failed_other" && isTransient(res.error || "") && tries < 5) {
+          await admin.from("daily_claim_run_items").update({
+            phase1_status: "pending",
+            phase1_error: (res.error || "").slice(0, 240),
+            attempts: tries,
+          }).eq("id", r.id);
+          return;
+        }
         const patch: any = {
           phase1_status: res.status,
           phase1_tx: res.txHash || null,
           phase1_error: res.error || null,
-          attempts: 1,
+          attempts: tries,
         };
         if (res.status === "success" || res.status === "already_claimed" || res.status === "failed_kyc") {
           patch.final_status = res.status;
           if (res.status === "success") patch.encrypted_key = null;
         }
+
         await admin.from("daily_claim_run_items").update(patch).eq("id", r.id);
       } catch (e: any) {
+        const msg = (e?.message || String(e)).slice(0, 240);
+        if (isTransient(msg) && tries < 5) {
+          await admin.from("daily_claim_run_items").update({
+            phase1_status: "pending", phase1_error: msg, attempts: tries,
+          }).eq("id", r.id);
+          return;
+        }
         await admin.from("daily_claim_run_items").update({
           phase1_status: "failed_other",
-          phase1_error: (e?.message || String(e)).slice(0, 240),
+          phase1_error: msg,
           final_status: "failed_other",
-          attempts: 1,
+          attempts: tries,
         }).eq("id", r.id);
       }
+
     }));
 
     await refreshCounters(runId);
@@ -406,7 +493,7 @@ async function runRetrying(runId: string, network: GDNetwork, deadline: number) 
     await Promise.all(rows.map(async (r: any) => {
       try {
         const pk = await decryptKey(r.encrypted_key);
-        const res = await claimOne(pk, network);
+        const res = await claimWithRetry(pk, network);
         const patch: any = {
           phase2_status: res.status,
           phase2_tx: res.txHash || null,
