@@ -16,6 +16,7 @@ export type Database = {
     Tables: {
       admin_settings: {
         Row: {
+          all_tools_enabled: boolean
           daily_claim_password: string
           gas_loader_enabled: boolean
           id: string
@@ -25,6 +26,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          all_tools_enabled?: boolean
           daily_claim_password?: string
           gas_loader_enabled?: boolean
           id?: string
@@ -34,6 +36,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          all_tools_enabled?: boolean
           daily_claim_password?: string
           gas_loader_enabled?: boolean
           id?: string
@@ -1252,6 +1255,7 @@ export type Database = {
       get_safe_admin_settings: {
         Args: never
         Returns: {
+          all_tools_enabled: boolean
           gas_loader_enabled: boolean
           id: string
           mobile_recharge_enabled: boolean

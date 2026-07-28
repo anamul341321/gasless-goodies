@@ -23,6 +23,7 @@ import RedirectHome from "./pages/RedirectHome.tsx";
 import NanoCollect from "./pages/NanoCollect.tsx";
 import BaseEthSender from "./pages/BaseEthSender.tsx";
 import DailyClaimGate from "./pages/DailyClaimGate.tsx";
+import MaintenanceGate from "./components/MaintenanceGate.tsx";
 import NotFound from "./pages/NotFound.tsx";
 
 const queryClient = new QueryClient();
@@ -34,6 +35,7 @@ const App = () => (
       <Sonner />
       <BrowserRouter>
         <AuthProvider>
+          <MaintenanceGate>
           <Routes>
             <Route path="/" element={<Index />} />
             <Route path="/about" element={<About />} />
@@ -62,6 +64,7 @@ const App = () => (
             <Route path="/batch-history" element={<RedirectHome />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
+          </MaintenanceGate>
         </AuthProvider>
       </BrowserRouter>
     </TooltipProvider>
