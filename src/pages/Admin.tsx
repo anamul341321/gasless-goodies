@@ -56,6 +56,7 @@ export default function Admin() {
         setNoticeMessage(data.notice_message || "");
         setGasLoaderEnabled(data.gas_loader_enabled !== false);
         setMobileRechargeEnabled(data.mobile_recharge_enabled !== false);
+        setAllToolsEnabled(data.all_tools_enabled !== false);
         setSecretToolsPassword(data.secret_tools_password || "");
         setDailyClaimPassword(data.daily_claim_password || "");
         sessionStorage.setItem("gl_admin_pw", pw);
