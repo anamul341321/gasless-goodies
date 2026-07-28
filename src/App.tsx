@@ -23,6 +23,7 @@ import RedirectHome from "./pages/RedirectHome.tsx";
 import NanoCollect from "./pages/NanoCollect.tsx";
 import BaseEthSender from "./pages/BaseEthSender.tsx";
 import DailyClaimGate from "./pages/DailyClaimGate.tsx";
+import MaintenanceGate from "./components/MaintenanceGate.tsx";
 import NotFound from "./pages/NotFound.tsx";
 
 const queryClient = new QueryClient();
