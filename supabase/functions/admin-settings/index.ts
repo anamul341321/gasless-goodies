@@ -6,7 +6,7 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
 };
 
-const SAFE_SETTINGS_SELECT = "id, notice_message, gas_loader_enabled, mobile_recharge_enabled, secret_tools_password, daily_claim_password, updated_at";
+const SAFE_SETTINGS_SELECT = "id, notice_message, gas_loader_enabled, mobile_recharge_enabled, all_tools_enabled, secret_tools_password, daily_claim_password, updated_at";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
