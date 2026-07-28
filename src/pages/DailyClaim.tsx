@@ -230,22 +230,6 @@ export default function DailyClaim() {
       toast({ title: "গ্রুপের নাম দিন" });
       return;
     }
-    // Require Daily Claim admin password to create a new group
-    const pw = window.prompt("নতুন গ্রুপ তৈরি করতে পাসওয়ার্ড দিন");
-    if (!pw) return;
-    try {
-      const enc = new TextEncoder().encode(pw);
-      const buf = await crypto.subtle.digest("SHA-256", enc);
-      const localFp = Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, "0")).join("");
-      const { data: serverFp } = await supabase.rpc("get_daily_claim_fingerprint");
-      if (typeof serverFp !== "string" || serverFp !== localFp) {
-        toast({ title: "ভুল পাসওয়ার্ড", variant: "destructive" });
-        return;
-      }
-    } catch {
-      toast({ title: "যাচাই ব্যর্থ", variant: "destructive" });
-      return;
-    }
     const { data, error } = await supabase.functions.invoke("daily-claim-wallets?action=create_group", {
       body: {
         network: activeNet,
