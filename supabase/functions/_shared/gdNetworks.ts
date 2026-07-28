@@ -27,7 +27,7 @@ export const GD_NETWORKS: Record<GDNetwork, GDNetworkConfig> = {
       "https://rpc.ankr.com/celo",
       "https://celo.drpc.org",
       "https://1rpc.io/celo",
-represent    ],
+    ],
 
     identityAddress: "0xC361A6E67822a0EDc17D899227dd9FC50BD62F42",
     ubiSchemeAddress: "0x43d72Ff17701B2DA814620735C39C620Ce0ea4A1",
