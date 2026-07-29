@@ -730,7 +730,10 @@ export default function DailyClaim() {
                                     </button>
                                     {openGroupSuccess[g.id] && (
                                       <div className="px-3 pb-3 space-y-1 max-h-72 overflow-y-auto">
-                                        {detailLoading[g.id] && <p className="text-xs text-muted-foreground py-2 text-center">লোড হচ্ছে…</p>}
+                                        {detailLoading[`${g.id}:success`] && <p className="text-xs text-muted-foreground py-2 text-center">কী লোড হচ্ছে…</p>}
+                                        {!detailLoading[`${g.id}:success`] && (detailByGroup[g.id]?.success_keys || []).length === 0 && (
+                                          <p className="text-xs text-muted-foreground py-2 text-center">কোনো কী পাওয়া যায়নি</p>
+                                        )}
                                         {(detailByGroup[g.id]?.success_keys || []).map((k) => {
                                           const sk = `s:${g.id}:${k.wallet_address}`;
                                           return (
