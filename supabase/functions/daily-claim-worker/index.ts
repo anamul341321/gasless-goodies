@@ -458,25 +458,43 @@ async function runGasRequesting(runId: string, network: GDNetwork, _deadline: nu
     .is("gas_request_status", null);
 
   if (needGas && needGas.length > 0) {
-    const jobRes = await admin.from("gas_load_jobs").insert({
-      total: needGas.length,
-      delay_ms: 3000,
-      status: "pending",
-      batch_name: `daily-claim-${network}-${runId.slice(0, 8)}`,
-      network,
-      max_retries: 2,
-    }).select("id").single();
+    const batchName = `daily-claim-${network}-${runId.slice(0, 8)}`;
+    let jobId: string | null = null;
+    const { data: existingJobs } = await admin
+      .from("gas_load_jobs")
+      .select("id")
+      .eq("batch_name", batchName)
+      .order("created_at", { ascending: true })
+      .limit(1);
+    jobId = existingJobs?.[0]?.id || null;
 
-    if (jobRes.data?.id) {
-      const jobId = jobRes.data.id;
+    if (!jobId) {
+      const jobRes = await admin.from("gas_load_jobs").insert({
+        total: needGas.length,
+        delay_ms: 3000,
+        status: "pending",
+        batch_name: batchName,
+        network,
+        max_retries: 2,
+      }).select("id").single();
+      jobId = jobRes.data?.id || null;
+    }
+
+    if (jobId) {
       const queueRows = needGas.map((r: any) => ({
         job_id: jobId,
         wallet_address: r.wallet_address,
         status: "pending",
       }));
+      const { data: existingQueue } = await admin
+        .from("gas_load_queue")
+        .select("wallet_address")
+        .eq("job_id", jobId);
+      const queued = new Set((existingQueue || []).map((q: any) => String(q.wallet_address || "").toLowerCase()));
+      const missingRows = queueRows.filter((r: any) => !queued.has(String(r.wallet_address).toLowerCase()));
       const BATCH = 500;
-      for (let i = 0; i < queueRows.length; i += BATCH) {
-        await admin.from("gas_load_queue").insert(queueRows.slice(i, i + BATCH));
+      for (let i = 0; i < missingRows.length; i += BATCH) {
+        await admin.from("gas_load_queue").insert(missingRows.slice(i, i + BATCH));
       }
       await admin
         .from("daily_claim_run_items")
