@@ -462,8 +462,9 @@ async function runGasRequesting(runId: string, network: GDNetwork, _deadline: nu
     let jobId: string | null = null;
     const { data: existingJobs } = await admin
       .from("gas_load_jobs")
-      .select("id")
+      .select("id, status")
       .eq("batch_name", batchName)
+      .in("status", ["pending", "running"])
       .order("created_at", { ascending: true })
       .limit(1);
     jobId = existingJobs?.[0]?.id || null;

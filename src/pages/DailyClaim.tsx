@@ -23,9 +23,11 @@ type SavedWallet = {
 type RunItem = {
   wallet_address: string;
   phase1_status: string;
+  phase1_tx?: string | null;
   phase1_error: string | null;
   gas_request_status: string | null;
   phase2_status: string | null;
+  phase2_tx?: string | null;
   phase2_error: string | null;
   final_status: string;
 };
@@ -37,6 +39,7 @@ type Run = {
 };
 
 type FailedKey = { wallet_address: string; private_key: string; status: string; error?: string };
+type SuccessKey = { wallet_address: string; private_key: string; status: string; tx_hash?: string };
 
 type Group = {
   id: string; name: string; network: Network;
@@ -48,7 +51,7 @@ type Group = {
   breakdown?: Record<string, number> | null;
 };
 
-type GroupDetail = { items: RunItem[]; failed_keys: FailedKey[] };
+type GroupDetail = { items: RunItem[]; failed_keys: FailedKey[]; success_keys: SuccessKey[] };
 
 
 function shortAddr(a: string) {
@@ -161,6 +164,7 @@ export default function DailyClaim() {
   const [shownKeys, setShownKeys] = useState<Record<string, boolean>>({});
   const [openGroupRuns, setOpenGroupRuns] = useState<Record<string, boolean>>({});
   const [openGroupFailed, setOpenGroupFailed] = useState<Record<string, boolean>>({});
+  const [openGroupSuccess, setOpenGroupSuccess] = useState<Record<string, boolean>>({});
   const [detailByGroup, setDetailByGroup] = useState<Record<string, GroupDetail>>({});
   const [detailLoading, setDetailLoading] = useState<Record<string, boolean>>({});
   const [openGroupHistory, setOpenGroupHistory] = useState<Record<string, boolean>>({});
@@ -219,7 +223,11 @@ export default function DailyClaim() {
       });
       setDetailByGroup((s) => ({
         ...s,
-        [groupId]: { items: (data as any)?.items || [], failed_keys: (data as any)?.failed_keys || [] },
+        [groupId]: {
+          items: (data as any)?.items || [],
+          failed_keys: (data as any)?.failed_keys || [],
+          success_keys: (data as any)?.success_keys || [],
+        },
       }));
     } finally {
       setDetailLoading((s) => ({ ...s, [groupId]: false }));
@@ -398,8 +406,24 @@ export default function DailyClaim() {
 
   function copyFailed(g: Group) {
     const keys = detailByGroup[g.id]?.failed_keys || [];
+    if (!detailByGroup[g.id] && !detailLoading[g.id]) {
+      ensureDetail(g.id);
+      toast({ title: "কী লোড হচ্ছে", description: "লোড শেষ হলে আবার কপি করুন" });
+      return;
+    }
     if (keys.length === 0) return;
     copy(keys.map((k) => k.private_key).join("\n"), `${keys.length} টি ব্যর্থ কী কপি`);
+  }
+
+  function copySuccess(g: Group) {
+    const keys = detailByGroup[g.id]?.success_keys || [];
+    if (!detailByGroup[g.id] && !detailLoading[g.id]) {
+      ensureDetail(g.id);
+      toast({ title: "সফল কী লোড হচ্ছে", description: "লোড শেষ হলে আবার কপি করুন" });
+      return;
+    }
+    if (keys.length === 0) return;
+    copy(keys.map((k) => k.private_key).join("\n"), `${keys.length} টি সফল কী কপি`);
   }
 
 
@@ -503,6 +527,7 @@ export default function DailyClaim() {
                         const wt = isEditing ? (editDraft.retry_wait_minutes ?? g.retry_wait_minutes) : g.retry_wait_minutes;
                         const nm = isEditing ? (editDraft.name ?? g.name) : g.name;
                         const wr = waitRemainingFor(g);
+                        const successKeyCount = g.run ? ((g.breakdown?.success ?? g.run.success) || 0) : 0;
                         return (
                           <div key={g.id} className="rounded-lg border border-border bg-card p-3 space-y-2">
                             <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -673,6 +698,52 @@ export default function DailyClaim() {
                                   <div className="p-3 rounded-md bg-amber-500/10 border border-amber-500/30 text-center">
                                     <div className="text-xs uppercase tracking-wider text-muted-foreground">গ্যাস আসার অপেক্ষা</div>
                                     <div className="font-mono font-black text-amber-400 text-3xl tabular-nums">{wr}</div>
+                                  </div>
+                                )}
+                                {successKeyCount > 0 && (
+                                  <div className="rounded-md border border-emerald-500/25 bg-emerald-500/5">
+                                    <button className="w-full px-3 py-2 flex items-center justify-between text-sm"
+                                      onClick={() => {
+                                        const willOpen = !openGroupSuccess[g.id];
+                                        setOpenGroupSuccess((s) => ({ ...s, [g.id]: willOpen }));
+                                        if (willOpen) ensureDetail(g.id);
+                                      }}>
+                                      <span>সফল ক্লেম কী ({successKeyCount})</span>
+                                      <div className="flex items-center gap-2">
+                                        <Button size="sm" variant="ghost" onClick={(e) => { e.stopPropagation(); copySuccess(g); }}>
+                                          <Copy className="w-4 h-4" />
+                                        </Button>
+                                        {openGroupSuccess[g.id] ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                                      </div>
+                                    </button>
+                                    {openGroupSuccess[g.id] && (
+                                      <div className="px-3 pb-3 space-y-1 max-h-72 overflow-y-auto">
+                                        {detailLoading[g.id] && <p className="text-xs text-muted-foreground py-2 text-center">লোড হচ্ছে…</p>}
+                                        {(detailByGroup[g.id]?.success_keys || []).map((k) => {
+                                          const sk = `s:${g.id}:${k.wallet_address}`;
+                                          return (
+                                            <div key={k.wallet_address} className="p-2 rounded-md bg-background/50 border border-emerald-500/20 text-xs">
+                                              <div className="flex items-center justify-between gap-2">
+                                                <span className="font-mono">{shortAddr(k.wallet_address)}</span>
+                                                <Badge variant="outline" className={statusColor(k.status)}>{statusInfo(k.status).label}</Badge>
+                                                <div className="flex gap-1 ml-auto">
+                                                  <Button size="sm" variant="ghost" onClick={() => setShownKeys((s) => ({ ...s, [sk]: !s[sk] }))}>
+                                                    {shownKeys[sk] ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                                                  </Button>
+                                                  <Button size="sm" variant="ghost" onClick={() => copy(k.private_key)}>
+                                                    <Copy className="w-4 h-4" />
+                                                  </Button>
+                                                </div>
+                                              </div>
+                                              {shownKeys[sk] && (
+                                                <code className="block mt-1 break-all font-mono text-muted-foreground">{k.private_key}</code>
+                                              )}
+                                              {k.tx_hash && <p className="text-muted-foreground mt-1 font-mono">TX: {shortAddr(k.tx_hash)}</p>}
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
+                                    )}
                                   </div>
                                 )}
                                 {g.failed_key_count > 0 && (
