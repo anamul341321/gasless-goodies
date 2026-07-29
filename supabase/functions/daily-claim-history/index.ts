@@ -68,6 +68,12 @@ Deno.serve(async (req) => {
     const runIds = (runs || []).map((r: any) => r.id);
     const itemsByRun = new Map<string, any[]>();
     const gasJobIds = new Set<string>();
+    const gasBatchNames = new Set<string>();
+    const gasJobsByBatch = new Map<string, any[]>();
+    for (const r of runs || []) {
+      const network = r.network || g.network || "celo";
+      gasBatchNames.add(`daily-claim-${network}-${String(r.id).slice(0, 8)}`);
+    }
     if (runIds.length > 0) {
       const { data: items } = await admin.from("daily_claim_run_items")
         .select("run_id, wallet_address, phase1_status, phase1_error, gas_request_status, gas_tx, phase2_status, phase2_error, final_status, encrypted_key")
@@ -87,6 +93,17 @@ Deno.serve(async (req) => {
         .select("id, batch_name, total, done, failed, status, created_at, finished_at")
         .in("id", Array.from(gasJobIds));
       for (const j of gjobs || []) gasJobMap.set(j.id, j);
+    }
+    if (gasBatchNames.size > 0) {
+      const { data: gjobsByName } = await admin.from("gas_load_jobs")
+        .select("id, batch_name, total, done, failed, status, created_at, finished_at")
+        .in("batch_name", Array.from(gasBatchNames))
+        .order("created_at", { ascending: true });
+      for (const j of gjobsByName || []) {
+        const arr = gasJobsByBatch.get(j.batch_name) || [];
+        arr.push(j);
+        gasJobsByBatch.set(j.batch_name, arr);
+      }
     }
 
     const result = [];
@@ -114,7 +131,11 @@ Deno.serve(async (req) => {
           } catch { /* skip */ }
         }
       }
-      const gas_jobs = Array.from(runGasJobIds).map((id) => gasJobMap.get(id)).filter(Boolean);
+      const batchName = `daily-claim-${r.network || g.network || "celo"}-${String(r.id).slice(0, 8)}`;
+      const gas_jobs = [
+        ...Array.from(runGasJobIds).map((id) => gasJobMap.get(id)).filter(Boolean),
+        ...(gasJobsByBatch.get(batchName) || []),
+      ].filter((job, idx, arr) => job && arr.findIndex((x) => x.id === job.id) === idx);
       const safeItems = its.map(({ encrypted_key, ...rest }: any) => rest);
       result.push({
         ...r,

@@ -296,21 +296,23 @@ async function removeKycWalletsForRun(runId: string, network: GDNetwork) {
 
 
 async function refreshCounters(runId: string) {
-  const { data: items } = await admin
-    .from("daily_claim_run_items")
-    .select("phase1_status, final_status")
-    .eq("run_id", runId);
-  let success = 0, failed_gas = 0, failed_other = 0, final_failed = 0;
-  for (const r of items || []) {
-    const fs = r.final_status;
-    if (fs === "success") success++;
-    else if (fs === "failed_gas") { failed_gas++; final_failed++; }
-    else if (fs === "failed_kyc" || fs === "failed_other" || fs === "already_claimed") {
-      failed_other++;
-      if (fs !== "already_claimed") final_failed++;
-    }
-    if (r.phase1_status === "failed_gas" && fs === "pending") failed_gas++;
-  }
+  const count = async (apply: (q: any) => any) => {
+    const { count: c } = await apply(
+      admin.from("daily_claim_run_items").select("id", { count: "exact", head: true }).eq("run_id", runId),
+    );
+    return c || 0;
+  };
+  const [success, finalGas, finalKyc, finalOther, alreadyClaimed, pendingGas] = await Promise.all([
+    count((q) => q.eq("final_status", "success")),
+    count((q) => q.eq("final_status", "failed_gas")),
+    count((q) => q.eq("final_status", "failed_kyc")),
+    count((q) => q.eq("final_status", "failed_other")),
+    count((q) => q.eq("final_status", "already_claimed")),
+    count((q) => q.eq("final_status", "pending").eq("phase1_status", "failed_gas")),
+  ]);
+  const failed_gas = finalGas + pendingGas;
+  const failed_other = finalKyc + finalOther + alreadyClaimed;
+  const final_failed = finalGas + finalKyc + finalOther;
   await admin.from("daily_claim_runs").update({
     success, failed_gas, failed_other, final_failed,
     updated_at: new Date().toISOString(),

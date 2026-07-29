@@ -74,14 +74,42 @@ async function breakdownForRun(runId: string) {
     }),
   );
   // Wallets still pending but already known to be out of gas.
-  const { count: gasPending } = await admin
-    .from("daily_claim_run_items")
-    .select("id", { count: "exact", head: true })
-    .eq("run_id", runId)
-    .eq("final_status", "pending")
-    .eq("phase1_status", "failed_gas");
-  out.pending_gas = gasPending || 0;
-  out.pending_other = Math.max(0, (out.pending || 0) - (gasPending || 0));
+  const gasStates = await Promise.all([
+    admin
+      .from("daily_claim_run_items")
+      .select("id", { count: "exact", head: true })
+      .eq("run_id", runId)
+      .eq("final_status", "pending")
+      .eq("phase1_status", "failed_gas")
+      .is("gas_request_status", null),
+    admin
+      .from("daily_claim_run_items")
+      .select("id", { count: "exact", head: true })
+      .eq("run_id", runId)
+      .eq("final_status", "pending")
+      .eq("phase1_status", "failed_gas")
+      .eq("gas_request_status", "requested"),
+    admin
+      .from("daily_claim_run_items")
+      .select("id", { count: "exact", head: true })
+      .eq("run_id", runId)
+      .eq("final_status", "pending")
+      .eq("phase1_status", "failed_gas")
+      .eq("gas_request_status", "done"),
+    admin
+      .from("daily_claim_run_items")
+      .select("id", { count: "exact", head: true })
+      .eq("run_id", runId)
+      .eq("final_status", "pending")
+      .eq("phase1_status", "failed_gas")
+      .eq("gas_request_status", "error"),
+  ]);
+  out.pending_gas_need = gasStates[0].count || 0;
+  out.gas_requested = gasStates[1].count || 0;
+  out.gas_loaded = gasStates[2].count || 0;
+  out.gas_load_failed = gasStates[3].count || 0;
+  out.pending_gas = out.pending_gas_need + out.gas_requested + out.gas_loaded + out.gas_load_failed;
+  out.pending_other = Math.max(0, (out.pending || 0) - (out.pending_gas || 0));
   return out;
 }
 

@@ -26,7 +26,10 @@ const BALANCE_VERIFY_DELAY_MS = 4_000;
 // CELO, so a 0.06 skip caused "success" gas rows without any top-up tx and the
 // next claim still failed for gas. Keep a safety buffer and call the faucet
 // below this balance.
-const FAUCET_SKIP_THRESHOLD_WEI = 90_000_000_000_000_000n; // 0.09 native coin
+const FAUCET_SKIP_THRESHOLD_WEI: Record<Network, bigint> = {
+  celo: 90_000_000_000_000_000n, // 0.09 CELO
+  xdc: 3_500_000_000_000_000n,   // 0.0035 XDC
+};
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -208,7 +211,8 @@ async function callFaucet(
 
     // Pre-check: only wallets that are already claim-ready are marked success
     // without a faucet tx. Low-but-nonzero balances must still call faucet.
-    if (beforeBalance !== null && beforeBalance >= FAUCET_SKIP_THRESHOLD_WEI) {
+    const readyThreshold = FAUCET_SKIP_THRESHOLD_WEI[network];
+    if (beforeBalance !== null && beforeBalance >= readyThreshold) {
       return { ok: true, ip, error: undefined };
     }
 
@@ -271,7 +275,7 @@ async function callFaucet(
     // the claim-ready threshold.
     if (
       beforeBalance !== null &&
-      beforeBalance >= FAUCET_SKIP_THRESHOLD_WEI
+      beforeBalance >= readyThreshold
     ) {
       return {
         ok: true,
