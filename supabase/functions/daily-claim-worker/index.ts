@@ -336,6 +336,8 @@ async function runPhase1(runId: string, network: GDNetwork, deadline: number) {
         if (res.status === "success" || res.status === "already_claimed" || res.status === "failed_kyc") {
           patch.final_status = res.status;
           if (res.status === "success") patch.encrypted_key = null;
+        } else if (res.status === "failed_other") {
+          patch.final_status = "failed_other";
         }
 
         await admin.from("daily_claim_run_items").update(patch).eq("id", r.id);
