@@ -24,8 +24,10 @@ const BALANCE_VERIFY_DELAY_MS = 4_000;
 // Only skip faucet when the wallet is genuinely ready for the expensive Celo
 // claim gas path. Previously this was 0.005 CELO, so wallets with ~0.048 CELO
 // were marked success without receiving any faucet tx, while daily claim still
-// needed ~0.064 CELO. Keep the threshold above the observed requirement.
-const FAUCET_SKIP_THRESHOLD_WEI = 70_000_000_000_000_000n; // 0.07 native coin
+// needed ~0.06 CELO. Match GoodDollar's current app behavior: ~0.06 native
+// coin is already enough, so don't mark those wallets failed just because the
+// faucet returns success without sending another tx.
+const FAUCET_SKIP_THRESHOLD_WEI = 60_000_000_000_000_000n; // 0.06 native coin
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
