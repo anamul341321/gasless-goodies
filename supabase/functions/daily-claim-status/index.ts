@@ -199,6 +199,9 @@ Deno.serve(async (req) => {
 
   const body = await req.json().catch(() => ({}));
   const detailGroupId: string | null = body?.detail_group_id || null;
+  const detailKind: string = body?.detail_kind === "success" || body?.detail_kind === "failed" || body?.detail_kind === "items"
+    ? body.detail_kind
+    : "all";
 
   try {
     // ---- Detail mode: one group only ----
@@ -218,10 +221,18 @@ Deno.serve(async (req) => {
         .order("started_at", { ascending: false })
         .limit(1)
         .maybeSingle();
-      if (!run) return json({ items: [], failed_keys: [] });
-      const d = await detailForRun(run.id);
-      return json(d);
+      if (!run) return json({ items: [], failed_keys: [], success_keys: [] });
+      if (detailKind === "success") return json(await successKeysForRun(run.id));
+      if (detailKind === "failed") return json(await failedKeysForRun(run.id));
+      if (detailKind === "items") return json(await itemsForRun(run.id));
+      const [a, b, c] = await Promise.all([
+        itemsForRun(run.id),
+        failedKeysForRun(run.id),
+        successKeysForRun(run.id),
+      ]);
+      return json({ ...a, ...b, ...c });
     }
+
 
     // ---- Light mode ----
     const walletCounts: Record<string, number> = { celo: 0, xdc: 0 };
