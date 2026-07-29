@@ -92,6 +92,9 @@ function isTransient(msg: string) {
     m.includes("connection") ||
     m.includes("fetch failed") ||
     m.includes("bad request") ||
+    m.includes("dns") ||
+    m.includes("temporary failure") ||
+    m.includes("failed to lookup") ||
     m.includes("econn") ||
     m.includes("socket")
   );
@@ -332,17 +335,16 @@ async function runPhase1(runId: string, network: GDNetwork, deadline: number) {
   // must keep processing them instead of completing with invisible leftovers.
   const { data: stranded } = await admin
     .from("daily_claim_run_items")
-    .select("id, phase1_error")
+    .select("id, phase1_error, final_status")
     .eq("run_id", runId)
     .eq("phase1_status", "failed_other")
-    .eq("final_status", "pending")
     .limit(1000);
   const retryableIds = (stranded || [])
-    .filter((r: any) => isTransient(r.phase1_error || ""))
+    .filter((r: any) => r.final_status === "pending" || isTransient(r.phase1_error || ""))
     .map((r: any) => r.id);
   if (retryableIds.length > 0) {
     await admin.from("daily_claim_run_items")
-      .update({ phase1_status: "pending" })
+      .update({ phase1_status: "pending", final_status: "pending" })
       .in("id", retryableIds);
   }
 
@@ -552,6 +554,22 @@ async function runGasRequesting(runId: string, network: GDNetwork, _deadline: nu
 }
 
 async function runRetrying(runId: string, network: GDNetwork, deadline: number) {
+  const { data: strandedRetry } = await admin
+    .from("daily_claim_run_items")
+    .select("id, phase2_error, final_status")
+    .eq("run_id", runId)
+    .eq("phase1_status", "failed_gas")
+    .eq("phase2_status", "failed_other")
+    .limit(1000);
+  const retryIds = (strandedRetry || [])
+    .filter((r: any) => r.final_status === "pending" || isTransient(r.phase2_error || ""))
+    .map((r: any) => r.id);
+  if (retryIds.length > 0) {
+    await admin.from("daily_claim_run_items")
+      .update({ phase2_status: "pending", final_status: "pending" })
+      .in("id", retryIds);
+  }
+
   while (Date.now() < deadline) {
     const { data: rows } = await admin
       .from("daily_claim_run_items")
@@ -570,6 +588,14 @@ async function runRetrying(runId: string, network: GDNetwork, deadline: number) 
       try {
         const pk = await decryptKey(r.encrypted_key);
         const res = await claimWithRetry(pk, network);
+        if (res.status === "failed_other" && isTransient(res.error || "")) {
+          await admin.from("daily_claim_run_items").update({
+            phase2_status: "pending",
+            phase2_error: (res.error || "").slice(0, 240),
+            final_status: "pending",
+          }).eq("id", r.id);
+          return;
+        }
         const patch: any = {
           phase2_status: res.status,
           phase2_tx: res.txHash || null,
