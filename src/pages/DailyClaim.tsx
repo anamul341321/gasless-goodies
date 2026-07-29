@@ -215,28 +215,38 @@ export default function DailyClaim() {
   }
 
   // Per-group detail (per-wallet rows + failed keys) — on demand only.
-  async function loadDetail(groupId: string) {
-    setDetailLoading((s) => ({ ...s, [groupId]: true }));
+  async function loadDetail(groupId: string, kind: "items" | "failed" | "success" | "all" = "all") {
+    const loadKey = `${groupId}:${kind}`;
+    setDetailLoading((s) => ({ ...s, [groupId]: true, [loadKey]: true }));
     try {
-      const { data } = await supabase.functions.invoke("daily-claim-status", {
-        body: { detail_group_id: groupId },
+      const { data, error } = await supabase.functions.invoke("daily-claim-status", {
+        body: { detail_group_id: groupId, detail_kind: kind },
       });
-      setDetailByGroup((s) => ({
-        ...s,
-        [groupId]: {
-          items: (data as any)?.items || [],
-          failed_keys: (data as any)?.failed_keys || [],
-          success_keys: (data as any)?.success_keys || [],
-        },
-      }));
+      if (error) throw error;
+      setDetailByGroup((s) => {
+        const prev = s[groupId] || { items: [], failed_keys: [], success_keys: [] };
+        return {
+          ...s,
+          [groupId]: {
+            items: (data as any)?.items ?? prev.items,
+            failed_keys: (data as any)?.failed_keys ?? prev.failed_keys,
+            success_keys: (data as any)?.success_keys ?? prev.success_keys,
+          },
+        };
+      });
+      setLoadedKinds((s) => ({ ...s, [loadKey]: true }));
+    } catch (e) {
+      toast({ title: "লোড করা যায়নি", description: (e as Error).message, variant: "destructive" });
     } finally {
-      setDetailLoading((s) => ({ ...s, [groupId]: false }));
+      setDetailLoading((s) => ({ ...s, [groupId]: false, [loadKey]: false }));
     }
   }
 
-  function ensureDetail(groupId: string) {
-    if (!detailByGroup[groupId] && !detailLoading[groupId]) loadDetail(groupId);
+  function ensureDetail(groupId: string, kind: "items" | "failed" | "success" | "all" = "all") {
+    const loadKey = `${groupId}:${kind}`;
+    if (!loadedKinds[loadKey] && !detailLoading[loadKey]) loadDetail(groupId, kind);
   }
+
 
   useEffect(() => {
     if (!user) return;
