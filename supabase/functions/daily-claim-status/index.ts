@@ -93,7 +93,7 @@ async function detailForRun(runId: string) {
   while (true) {
     const { data: rows } = await admin
       .from("daily_claim_run_items")
-      .select("wallet_address, phase1_status, phase1_error, gas_request_status, phase2_status, phase2_error, final_status, encrypted_key")
+      .select("owner_user_id, network, wallet_address, phase1_status, phase1_tx, phase1_error, gas_request_status, phase2_status, phase2_tx, phase2_error, final_status, encrypted_key")
       .eq("run_id", runId)
       .order("wallet_address", { ascending: true })
       .range(from, from + PAGE - 1);
@@ -104,6 +104,7 @@ async function detailForRun(runId: string) {
   }
 
   const failedKeys: { wallet_address: string; private_key: string; status: string; error?: string }[] = [];
+  const successKeys: { wallet_address: string; private_key: string; status: string; tx_hash?: string }[] = [];
   const failed = items.filter((r: any) =>
     r.encrypted_key && r.final_status !== "success" && r.final_status !== "pending"
   );
@@ -118,8 +119,48 @@ async function detailForRun(runId: string) {
       });
     } catch { /* skip */ }
   }
-  const safeItems = items.map(({ encrypted_key, ...rest }: any) => rest);
-  return { items: safeItems, failed_keys: failedKeys };
+  const successful = items.filter((r: any) => r.final_status === "success");
+  const savedKeyByWallet = new Map<string, string>();
+  const missingSaved = successful.filter((r: any) => !r.encrypted_key && r.owner_user_id && r.network);
+  const grouped = new Map<string, any[]>();
+  for (const r of missingSaved) {
+    const key = `${r.owner_user_id}:${r.network}`;
+    const list = grouped.get(key) || [];
+    list.push(r);
+    grouped.set(key, list);
+  }
+  for (const [key, rows] of grouped.entries()) {
+    const [ownerUserId, network] = key.split(":");
+    const wallets = rows.map((r: any) => r.wallet_address).filter(Boolean);
+    for (let i = 0; i < wallets.length; i += 500) {
+      const { data: saved } = await admin
+        .from("daily_claim_wallets")
+        .select("wallet_address, encrypted_key")
+        .eq("owner_user_id", ownerUserId)
+        .eq("network", network)
+        .in("wallet_address", wallets.slice(i, i + 500));
+      for (const s of saved || []) {
+        if (s.encrypted_key) savedKeyByWallet.set(String(s.wallet_address).toLowerCase(), s.encrypted_key);
+      }
+    }
+  }
+
+  for (const r of successful as any[]) {
+    const encrypted = r.encrypted_key || savedKeyByWallet.get(String(r.wallet_address || "").toLowerCase());
+    if (!encrypted) continue;
+    try {
+      const pk = await decryptKey(encrypted);
+      successKeys.push({
+        wallet_address: r.wallet_address,
+        private_key: pk,
+        status: "success",
+        tx_hash: r.phase2_tx || r.phase1_tx || undefined,
+      });
+    } catch { /* skip */ }
+  }
+
+  const safeItems = items.map(({ encrypted_key, owner_user_id, network, ...rest }: any) => rest);
+  return { items: safeItems, failed_keys: failedKeys, success_keys: successKeys };
 }
 
 Deno.serve(async (req) => {
