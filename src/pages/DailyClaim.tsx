@@ -419,7 +419,7 @@ export default function DailyClaim() {
   function copyFailed(g: Group) {
     const keys = detailByGroup[g.id]?.failed_keys || [];
     if (!detailByGroup[g.id] && !detailLoading[g.id]) {
-      ensureDetail(g.id);
+      ensureDetail(g.id, "failed");
       toast({ title: "কী লোড হচ্ছে", description: "লোড শেষ হলে আবার কপি করুন" });
       return;
     }
@@ -430,7 +430,7 @@ export default function DailyClaim() {
   function copySuccess(g: Group) {
     const keys = detailByGroup[g.id]?.success_keys || [];
     if (!detailByGroup[g.id] && !detailLoading[g.id]) {
-      ensureDetail(g.id);
+      ensureDetail(g.id, "success");
       toast({ title: "সফল কী লোড হচ্ছে", description: "লোড শেষ হলে আবার কপি করুন" });
       return;
     }
@@ -718,7 +718,7 @@ export default function DailyClaim() {
                                       onClick={() => {
                                         const willOpen = !openGroupSuccess[g.id];
                                         setOpenGroupSuccess((s) => ({ ...s, [g.id]: willOpen }));
-                                        if (willOpen) ensureDetail(g.id);
+                                        if (willOpen) ensureDetail(g.id, "success");
                                       }}>
                                       <span>সফল ক্লেম কী ({successKeyCount})</span>
                                       <div className="flex items-center gap-2">
@@ -764,7 +764,7 @@ export default function DailyClaim() {
                                       onClick={() => {
                                         const willOpen = !openGroupFailed[g.id];
                                         setOpenGroupFailed((s) => ({ ...s, [g.id]: willOpen }));
-                                        if (willOpen) ensureDetail(g.id);
+                                        if (willOpen) ensureDetail(g.id, "failed");
                                       }}>
                                       <span>ব্যর্থ কী ({g.failed_key_count})</span>
                                       <div className="flex items-center gap-2">
@@ -805,7 +805,7 @@ export default function DailyClaim() {
                                   onClick={() => {
                                     const willOpen = !openGroupRuns[g.id];
                                     setOpenGroupRuns((s) => ({ ...s, [g.id]: willOpen }));
-                                    if (willOpen) ensureDetail(g.id);
+                                    if (willOpen) ensureDetail(g.id, "items");
                                   }}>
                                   {openGroupRuns[g.id] ? <>লুকান <ChevronUp className="w-3 h-3" /></> : <>প্রতিটি ওয়ালেটের অবস্থা <ChevronDown className="w-3 h-3" /></>}
                                 </button>
