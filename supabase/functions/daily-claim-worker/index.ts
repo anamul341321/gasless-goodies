@@ -81,8 +81,13 @@ function isTransient(msg: string) {
   const m = (msg || "").toLowerCase();
   return (
     m.includes("could not coalesce") ||
+    m.includes("missing response") ||
     m.includes("server response 5") ||
     m.includes("server response 4") ||
+    m.includes("nonce has already been used") ||
+    m.includes("replacement fee too low") ||
+    m.includes("nonce too low") ||
+    m.includes("transaction underpriced") ||
     m.includes("timeout") ||
     m.includes("timed out") ||
     m.includes("rate limit") ||
@@ -275,6 +280,25 @@ async function runPhase1(runId: string, network: GDNetwork, deadline: number) {
     .eq("final_status", "pending")
     .lt("updated_at", staleCutoff);
 
+  // Recover retryable RPC/nonce rows that were left as failed_other + pending
+  // by an older invocation. These rows are not terminal outcomes, so the run
+  // must keep processing them instead of completing with invisible leftovers.
+  const { data: stranded } = await admin
+    .from("daily_claim_run_items")
+    .select("id, phase1_error")
+    .eq("run_id", runId)
+    .eq("phase1_status", "failed_other")
+    .eq("final_status", "pending")
+    .limit(1000);
+  const retryableIds = (stranded || [])
+    .filter((r: any) => isTransient(r.phase1_error || ""))
+    .map((r: any) => r.id);
+  if (retryableIds.length > 0) {
+    await admin.from("daily_claim_run_items")
+      .update({ phase1_status: "pending" })
+      .in("id", retryableIds);
+  }
+
   while (Date.now() < deadline) {
     const { data: rows } = await admin
       .from("daily_claim_run_items")
@@ -295,7 +319,7 @@ async function runPhase1(runId: string, network: GDNetwork, deadline: number) {
         const res = await claimWithRetry(pk, network);
         // Still a transient node failure after retries → keep the wallet in the
         // queue instead of burning it as a permanent failure.
-        if (res.status === "failed_other" && isTransient(res.error || "") && tries < 5) {
+        if (res.status === "failed_other" && isTransient(res.error || "")) {
           await admin.from("daily_claim_run_items").update({
             phase1_status: "pending",
             phase1_error: (res.error || "").slice(0, 240),
@@ -317,7 +341,7 @@ async function runPhase1(runId: string, network: GDNetwork, deadline: number) {
         await admin.from("daily_claim_run_items").update(patch).eq("id", r.id);
       } catch (e: any) {
         const msg = (e?.message || String(e)).slice(0, 240);
-        if (isTransient(msg) && tries < 5) {
+        if (isTransient(msg)) {
           await admin.from("daily_claim_run_items").update({
             phase1_status: "pending", phase1_error: msg, attempts: tries,
           }).eq("id", r.id);
@@ -345,7 +369,7 @@ async function runPhase1(runId: string, network: GDNetwork, deadline: number) {
     .select("id", { count: "exact", head: true })
     .eq("run_id", runId)
     .eq("final_status", "pending")
-    .in("phase1_status", ["pending", "claiming"]);
+    .in("phase1_status", ["pending", "claiming", "failed_other"]);
   if ((pendingLeft || 0) > 0) {
     selfKick(runId, "claiming");
     return false;
