@@ -418,7 +418,8 @@ export default function DailyClaim() {
 
   function copyFailed(g: Group) {
     const keys = detailByGroup[g.id]?.failed_keys || [];
-    if (!detailByGroup[g.id] && !detailLoading[g.id]) {
+    const loadKey = `${g.id}:failed`;
+    if (!loadedKinds[loadKey] && !detailLoading[loadKey]) {
       ensureDetail(g.id, "failed");
       toast({ title: "কী লোড হচ্ছে", description: "লোড শেষ হলে আবার কপি করুন" });
       return;
@@ -429,7 +430,8 @@ export default function DailyClaim() {
 
   function copySuccess(g: Group) {
     const keys = detailByGroup[g.id]?.success_keys || [];
-    if (!detailByGroup[g.id] && !detailLoading[g.id]) {
+    const loadKey = `${g.id}:success`;
+    if (!loadedKinds[loadKey] && !detailLoading[loadKey]) {
       ensureDetail(g.id, "success");
       toast({ title: "সফল কী লোড হচ্ছে", description: "লোড শেষ হলে আবার কপি করুন" });
       return;
@@ -658,7 +660,11 @@ export default function DailyClaim() {
                                   const ok = (b.success ?? g.run.success) || 0;
                                   const already = b.already_claimed || 0;
                                   const kyc = b.failed_kyc || 0;
-                                  const gas = (b.failed_gas || 0) + (b.pending_gas || 0);
+                                  const gasNeed = b.pending_gas_need || 0;
+                                  const gasRequested = b.gas_requested || 0;
+                                  const gasLoaded = b.gas_loaded || 0;
+                                  const gasLoadFailed = b.gas_load_failed || 0;
+                                  const gas = (b.failed_gas || 0) + gasNeed + gasRequested + gasLoaded + gasLoadFailed;
                                   const other = b.failed_other || 0;
                                   const waiting = b.pending_other ?? Math.max(0, total - ok - already - kyc - gas - other);
                                   const done = ok + already;
@@ -702,6 +708,25 @@ export default function DailyClaim() {
                                           </div>
                                         ))}
                                       </div>
+                                      {(gasRequested + gasLoaded + gasLoadFailed) > 0 && (
+                                        <div className="rounded-xl border border-amber-500/25 bg-amber-500/5 p-3 space-y-2">
+                                          <div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground font-semibold">Gas load status</div>
+                                          <div className="grid grid-cols-3 gap-2 text-center">
+                                            <div className="rounded-lg border border-sky-500/25 bg-sky-500/10 p-2">
+                                              <div className="text-lg font-black tabular-nums text-sky-500">{gasRequested}</div>
+                                              <div className="text-[10px] text-muted-foreground">In progress</div>
+                                            </div>
+                                            <div className="rounded-lg border border-emerald-500/25 bg-emerald-500/10 p-2">
+                                              <div className="text-lg font-black tabular-nums text-emerald-500">{gasLoaded}</div>
+                                              <div className="text-[10px] text-muted-foreground">Gas received</div>
+                                            </div>
+                                            <div className="rounded-lg border border-rose-500/25 bg-rose-500/10 p-2">
+                                              <div className="text-lg font-black tabular-nums text-rose-500">{gasLoadFailed}</div>
+                                              <div className="text-[10px] text-muted-foreground">Not received</div>
+                                            </div>
+                                          </div>
+                                        </div>
+                                      )}
                                     </>
                                   );
                                 })()}
@@ -779,7 +804,10 @@ export default function DailyClaim() {
                                     </button>
                                     {openGroupFailed[g.id] && (
                                       <div className="px-3 pb-3 space-y-1 max-h-72 overflow-y-auto">
-                                        {detailLoading[g.id] && <p className="text-xs text-muted-foreground py-2 text-center">লোড হচ্ছে…</p>}
+                                        {detailLoading[`${g.id}:failed`] && <p className="text-xs text-muted-foreground py-2 text-center">কী লোড হচ্ছে…</p>}
+                                        {!detailLoading[`${g.id}:failed`] && loadedKinds[`${g.id}:failed`] && (detailByGroup[g.id]?.failed_keys || []).length === 0 && (
+                                          <p className="text-xs text-muted-foreground py-2 text-center">No failed keys found</p>
+                                        )}
                                         {(detailByGroup[g.id]?.failed_keys || []).map((k) => (
                                           <div key={k.wallet_address} className="p-2 rounded-md bg-muted/40 border border-border text-xs">
                                             <div className="flex items-center justify-between gap-2">
