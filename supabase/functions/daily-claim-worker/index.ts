@@ -42,13 +42,9 @@ function providerFor(net: GDNetwork) {
   return pool[rpcCursor++ % pool.length];
 }
 
-// Cap the gas price we are willing to pay. Public RPCs sometimes report wildly
-// inflated gas prices, which made wallets with plenty of balance (0.06–0.07
-// CELO) get wrongly marked as "out of gas" even though the claim would succeed.
-const MAX_GAS_PRICE_WEI: Record<GDNetwork, bigint> = {
-  celo: 30_000_000_000n, // 30 gwei
-  xdc: 1_000_000_000n, // 1 gwei
-};
+// Use the live network gas price when sending claim txs. Celo currently rejects
+// underpriced txs, so forcing a low cap can make wallets with 0.06–0.07 CELO
+// fail even though they have enough gas.
 
 // Daily auto-claim — tuned for steady throughput while staying RPC-friendly.
 const CLAIM_WAVE_SIZE = 8;
@@ -163,12 +159,11 @@ async function claimOne(privateKey: string, network: GDNetwork): Promise<ClaimRe
       const feeData = await provider.getFeeData();
       const estimatedGas = BigInt(await (ubi as any).claim.estimateGas());
       const reported = feeData.gasPrice ?? feeData.maxFeePerGas ?? null;
-      const cap = MAX_GAS_PRICE_WEI[network];
-      const gasUnitPrice = reported && reported > 0n ? (reported > cap ? cap : reported) : null;
+      const gasUnitPrice = reported && reported > 0n ? reported : null;
       const gasLimit = (estimatedGas * 120n) / 100n;
       if (gasUnitPrice) {
         const balance = await provider.getBalance(addr);
-        const required = estimatedGas * gasUnitPrice;
+        const required = gasLimit * gasUnitPrice;
         if (balance < required) {
           const nativeLabel = network === "xdc" ? "XDC" : "CELO";
           return { status: "failed_gas", error: `insufficient ${nativeLabel} for gas: has ${fmt(balance)}, needs ~${fmt(required)}` };
@@ -245,6 +240,58 @@ function selfKick(runId: string, phase: string) {
 }
 
 
+async function removeSavedKycWallet(ownerUserId: string | null | undefined, walletAddress: string, network: GDNetwork) {
+  if (!ownerUserId || !walletAddress) return;
+  try {
+    await admin
+      .from("daily_claim_wallets")
+      .delete()
+      .eq("owner_user_id", ownerUserId)
+      .eq("network", network)
+      .eq("wallet_address", walletAddress);
+  } catch (e) {
+    console.warn("kyc wallet auto-remove failed", String((e as any)?.message || e));
+  }
+}
+
+async function removeKycWalletsForRun(runId: string, network: GDNetwork) {
+  const PAGE = 1000;
+  for (let from = 0; ; from += PAGE) {
+    const { data: rows } = await admin
+      .from("daily_claim_run_items")
+      .select("owner_user_id, wallet_address")
+      .eq("run_id", runId)
+      .eq("final_status", "failed_kyc")
+      .range(from, from + PAGE - 1);
+    const page = rows || [];
+    if (page.length === 0) break;
+
+    const byOwner = new Map<string, string[]>();
+    for (const r of page as any[]) {
+      const owner = String(r.owner_user_id || "");
+      const wallet = String(r.wallet_address || "");
+      if (!owner || !wallet) continue;
+      const list = byOwner.get(owner) || [];
+      list.push(wallet);
+      byOwner.set(owner, list);
+    }
+
+    for (const [owner, wallets] of byOwner.entries()) {
+      for (let i = 0; i < wallets.length; i += 500) {
+        await admin
+          .from("daily_claim_wallets")
+          .delete()
+          .eq("owner_user_id", owner)
+          .eq("network", network)
+          .in("wallet_address", wallets.slice(i, i + 500));
+      }
+    }
+
+    if (page.length < PAGE) break;
+  }
+}
+
+
 async function refreshCounters(runId: string) {
   const { data: items } = await admin
     .from("daily_claim_run_items")
@@ -302,7 +349,7 @@ async function runPhase1(runId: string, network: GDNetwork, deadline: number) {
   while (Date.now() < deadline) {
     const { data: rows } = await admin
       .from("daily_claim_run_items")
-      .select("id, wallet_address, encrypted_key, attempts")
+      .select("id, owner_user_id, wallet_address, encrypted_key, attempts")
       .eq("run_id", runId)
       .eq("phase1_status", "pending")
       .limit(CLAIM_WAVE_SIZE);
@@ -336,6 +383,7 @@ async function runPhase1(runId: string, network: GDNetwork, deadline: number) {
         if (res.status === "success" || res.status === "already_claimed" || res.status === "failed_kyc") {
           patch.final_status = res.status;
           if (res.status === "success") patch.encrypted_key = null;
+          if (res.status === "failed_kyc") await removeSavedKycWallet(r.owner_user_id, r.wallet_address, network);
         } else if (res.status === "failed_other") {
           patch.final_status = "failed_other";
         }
@@ -358,6 +406,8 @@ async function runPhase1(runId: string, network: GDNetwork, deadline: number) {
       }
 
     }));
+
+    await removeKycWalletsForRun(runId, network);
 
     await refreshCounters(runId);
     await new Promise((r) => setTimeout(r, CLAIM_WAVE_GAP_MS));
@@ -505,7 +555,7 @@ async function runRetrying(runId: string, network: GDNetwork, deadline: number) 
   while (Date.now() < deadline) {
     const { data: rows } = await admin
       .from("daily_claim_run_items")
-      .select("id, wallet_address, encrypted_key")
+      .select("id, owner_user_id, wallet_address, encrypted_key")
       .eq("run_id", runId)
       .eq("phase1_status", "failed_gas")
       .eq("final_status", "pending")
@@ -528,6 +578,7 @@ async function runRetrying(runId: string, network: GDNetwork, deadline: number) 
           attempts: 2,
         };
         if (res.status === "success") patch.encrypted_key = null;
+        if (res.status === "failed_kyc") await removeSavedKycWallet(r.owner_user_id, r.wallet_address, network);
         await admin.from("daily_claim_run_items").update(patch).eq("id", r.id);
       } catch (e: any) {
         await admin.from("daily_claim_run_items").update({
@@ -555,6 +606,7 @@ async function runRetrying(runId: string, network: GDNetwork, deadline: number) 
   }
 
   await refreshCounters(runId);
+  await removeKycWalletsForRun(runId, network);
   await admin.from("daily_claim_runs").update({
     phase: "completed",
     finished_at: new Date().toISOString(),
