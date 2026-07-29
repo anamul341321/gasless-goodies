@@ -167,6 +167,8 @@ export default function DailyClaim() {
   const [openGroupSuccess, setOpenGroupSuccess] = useState<Record<string, boolean>>({});
   const [detailByGroup, setDetailByGroup] = useState<Record<string, GroupDetail>>({});
   const [detailLoading, setDetailLoading] = useState<Record<string, boolean>>({});
+  const [loadedKinds, setLoadedKinds] = useState<Record<string, boolean>>({});
+
   const [openGroupHistory, setOpenGroupHistory] = useState<Record<string, boolean>>({});
   const [historyByGroup, setHistoryByGroup] = useState<Record<string, any[]>>({});
   const [historyLoading, setHistoryLoading] = useState<Record<string, boolean>>({});
@@ -215,28 +217,38 @@ export default function DailyClaim() {
   }
 
   // Per-group detail (per-wallet rows + failed keys) — on demand only.
-  async function loadDetail(groupId: string) {
-    setDetailLoading((s) => ({ ...s, [groupId]: true }));
+  async function loadDetail(groupId: string, kind: "items" | "failed" | "success" | "all" = "all") {
+    const loadKey = `${groupId}:${kind}`;
+    setDetailLoading((s) => ({ ...s, [groupId]: true, [loadKey]: true }));
     try {
-      const { data } = await supabase.functions.invoke("daily-claim-status", {
-        body: { detail_group_id: groupId },
+      const { data, error } = await supabase.functions.invoke("daily-claim-status", {
+        body: { detail_group_id: groupId, detail_kind: kind },
       });
-      setDetailByGroup((s) => ({
-        ...s,
-        [groupId]: {
-          items: (data as any)?.items || [],
-          failed_keys: (data as any)?.failed_keys || [],
-          success_keys: (data as any)?.success_keys || [],
-        },
-      }));
+      if (error) throw error;
+      setDetailByGroup((s) => {
+        const prev = s[groupId] || { items: [], failed_keys: [], success_keys: [] };
+        return {
+          ...s,
+          [groupId]: {
+            items: (data as any)?.items ?? prev.items,
+            failed_keys: (data as any)?.failed_keys ?? prev.failed_keys,
+            success_keys: (data as any)?.success_keys ?? prev.success_keys,
+          },
+        };
+      });
+      setLoadedKinds((s) => ({ ...s, [loadKey]: true }));
+    } catch (e) {
+      toast({ title: "লোড করা যায়নি", description: (e as Error).message, variant: "destructive" });
     } finally {
-      setDetailLoading((s) => ({ ...s, [groupId]: false }));
+      setDetailLoading((s) => ({ ...s, [groupId]: false, [loadKey]: false }));
     }
   }
 
-  function ensureDetail(groupId: string) {
-    if (!detailByGroup[groupId] && !detailLoading[groupId]) loadDetail(groupId);
+  function ensureDetail(groupId: string, kind: "items" | "failed" | "success" | "all" = "all") {
+    const loadKey = `${groupId}:${kind}`;
+    if (!loadedKinds[loadKey] && !detailLoading[loadKey]) loadDetail(groupId, kind);
   }
+
 
   useEffect(() => {
     if (!user) return;
@@ -407,7 +419,7 @@ export default function DailyClaim() {
   function copyFailed(g: Group) {
     const keys = detailByGroup[g.id]?.failed_keys || [];
     if (!detailByGroup[g.id] && !detailLoading[g.id]) {
-      ensureDetail(g.id);
+      ensureDetail(g.id, "failed");
       toast({ title: "কী লোড হচ্ছে", description: "লোড শেষ হলে আবার কপি করুন" });
       return;
     }
@@ -418,7 +430,7 @@ export default function DailyClaim() {
   function copySuccess(g: Group) {
     const keys = detailByGroup[g.id]?.success_keys || [];
     if (!detailByGroup[g.id] && !detailLoading[g.id]) {
-      ensureDetail(g.id);
+      ensureDetail(g.id, "success");
       toast({ title: "সফল কী লোড হচ্ছে", description: "লোড শেষ হলে আবার কপি করুন" });
       return;
     }
@@ -706,7 +718,7 @@ export default function DailyClaim() {
                                       onClick={() => {
                                         const willOpen = !openGroupSuccess[g.id];
                                         setOpenGroupSuccess((s) => ({ ...s, [g.id]: willOpen }));
-                                        if (willOpen) ensureDetail(g.id);
+                                        if (willOpen) ensureDetail(g.id, "success");
                                       }}>
                                       <span>সফল ক্লেম কী ({successKeyCount})</span>
                                       <div className="flex items-center gap-2">
@@ -718,7 +730,10 @@ export default function DailyClaim() {
                                     </button>
                                     {openGroupSuccess[g.id] && (
                                       <div className="px-3 pb-3 space-y-1 max-h-72 overflow-y-auto">
-                                        {detailLoading[g.id] && <p className="text-xs text-muted-foreground py-2 text-center">লোড হচ্ছে…</p>}
+                                        {detailLoading[`${g.id}:success`] && <p className="text-xs text-muted-foreground py-2 text-center">কী লোড হচ্ছে…</p>}
+                                        {!detailLoading[`${g.id}:success`] && (detailByGroup[g.id]?.success_keys || []).length === 0 && (
+                                          <p className="text-xs text-muted-foreground py-2 text-center">কোনো কী পাওয়া যায়নি</p>
+                                        )}
                                         {(detailByGroup[g.id]?.success_keys || []).map((k) => {
                                           const sk = `s:${g.id}:${k.wallet_address}`;
                                           return (
@@ -752,7 +767,7 @@ export default function DailyClaim() {
                                       onClick={() => {
                                         const willOpen = !openGroupFailed[g.id];
                                         setOpenGroupFailed((s) => ({ ...s, [g.id]: willOpen }));
-                                        if (willOpen) ensureDetail(g.id);
+                                        if (willOpen) ensureDetail(g.id, "failed");
                                       }}>
                                       <span>ব্যর্থ কী ({g.failed_key_count})</span>
                                       <div className="flex items-center gap-2">
@@ -793,7 +808,7 @@ export default function DailyClaim() {
                                   onClick={() => {
                                     const willOpen = !openGroupRuns[g.id];
                                     setOpenGroupRuns((s) => ({ ...s, [g.id]: willOpen }));
-                                    if (willOpen) ensureDetail(g.id);
+                                    if (willOpen) ensureDetail(g.id, "items");
                                   }}>
                                   {openGroupRuns[g.id] ? <>লুকান <ChevronUp className="w-3 h-3" /></> : <>প্রতিটি ওয়ালেটের অবস্থা <ChevronDown className="w-3 h-3" /></>}
                                 </button>

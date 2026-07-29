@@ -86,82 +86,111 @@ async function breakdownForRun(runId: string) {
 }
 
 
-async function detailForRun(runId: string) {
-  const items: any[] = [];
+async function pagedItems(runId: string, select: string, apply?: (q: any) => any) {
+  const out: any[] = [];
   const PAGE = 1000;
   let from = 0;
   while (true) {
-    const { data: rows } = await admin
+    let q = admin
       .from("daily_claim_run_items")
-      .select("owner_user_id, network, wallet_address, phase1_status, phase1_tx, phase1_error, gas_request_status, phase2_status, phase2_tx, phase2_error, final_status, encrypted_key")
+      .select(select)
       .eq("run_id", runId)
       .order("wallet_address", { ascending: true })
       .range(from, from + PAGE - 1);
-    const page = rows || [];
-    items.push(...page);
+    if (apply) q = apply(q);
+    const { data: rows, error } = await q;
+    if (error) throw error;
+    const page = (rows || []) as any[];
+    out.push(...page);
     if (page.length < PAGE) break;
     from += PAGE;
+    if (from > 20000) break;
   }
+  return out;
+}
 
-  const failedKeys: { wallet_address: string; private_key: string; status: string; error?: string }[] = [];
-  const successKeys: { wallet_address: string; private_key: string; status: string; tx_hash?: string }[] = [];
-  const failed = items.filter((r: any) =>
-    r.encrypted_key && r.final_status !== "success" && r.final_status !== "pending"
+async function itemsForRun(runId: string) {
+  const items = await pagedItems(
+    runId,
+    "wallet_address, phase1_status, phase1_tx, phase1_error, gas_request_status, phase2_status, phase2_tx, phase2_error, final_status",
   );
-  for (const r of failed as any[]) {
+  return { items };
+}
+
+async function failedKeysForRun(runId: string) {
+  const rows = await pagedItems(
+    runId,
+    "wallet_address, final_status, phase1_error, phase2_error, encrypted_key",
+    (q) => q.not("encrypted_key", "is", null).not("final_status", "in", "(success,pending)"),
+  );
+  const failed_keys: any[] = [];
+  for (const r of rows) {
     try {
-      const pk = await decryptKey(r.encrypted_key);
-      failedKeys.push({
+      failed_keys.push({
         wallet_address: r.wallet_address,
-        private_key: pk,
+        private_key: await decryptKey(r.encrypted_key),
         status: r.final_status,
         error: r.phase2_error || r.phase1_error || undefined,
       });
     } catch { /* skip */ }
   }
-  const successful = items.filter((r: any) => r.final_status === "success");
+  return { failed_keys };
+}
+
+async function successKeysForRun(runId: string) {
+  const rows = await pagedItems(
+    runId,
+    "owner_user_id, network, wallet_address, phase1_tx, phase2_tx, encrypted_key",
+    (q) => q.eq("final_status", "success"),
+  );
+
+  // Keys are wiped from run items after a successful claim — fall back to the
+  // saved wallet vault (matched case-insensitively).
+  const needsLookup = rows.filter((r) => !r.encrypted_key);
   const savedKeyByWallet = new Map<string, string>();
-  const missingSaved = successful.filter((r: any) => !r.encrypted_key && r.owner_user_id && r.network);
   const grouped = new Map<string, any[]>();
-  for (const r of missingSaved) {
-    const key = `${r.owner_user_id}:${r.network}`;
-    const list = grouped.get(key) || [];
-    list.push(r);
-    grouped.set(key, list);
+  for (const r of needsLookup) {
+    if (!r.owner_user_id) continue;
+    const key = `${r.owner_user_id}:${r.network || "celo"}`;
+    grouped.set(key, [...(grouped.get(key) || []), r]);
   }
-  for (const [key, rows] of grouped.entries()) {
+  for (const [key] of grouped.entries()) {
     const [ownerUserId, network] = key.split(":");
-    const wallets = rows.map((r: any) => r.wallet_address).filter(Boolean);
-    for (let i = 0; i < wallets.length; i += 500) {
+    const PAGE = 1000;
+    let from = 0;
+    while (true) {
       const { data: saved } = await admin
         .from("daily_claim_wallets")
         .select("wallet_address, encrypted_key")
         .eq("owner_user_id", ownerUserId)
         .eq("network", network)
-        .in("wallet_address", wallets.slice(i, i + 500));
-      for (const s of saved || []) {
+        .range(from, from + PAGE - 1);
+      const page = saved || [];
+      for (const s of page) {
         if (s.encrypted_key) savedKeyByWallet.set(String(s.wallet_address).toLowerCase(), s.encrypted_key);
       }
+      if (page.length < PAGE) break;
+      from += PAGE;
+      if (from > 20000) break;
     }
   }
 
-  for (const r of successful as any[]) {
+  const success_keys: any[] = [];
+  for (const r of rows) {
     const encrypted = r.encrypted_key || savedKeyByWallet.get(String(r.wallet_address || "").toLowerCase());
     if (!encrypted) continue;
     try {
-      const pk = await decryptKey(encrypted);
-      successKeys.push({
+      success_keys.push({
         wallet_address: r.wallet_address,
-        private_key: pk,
+        private_key: await decryptKey(encrypted),
         status: "success",
         tx_hash: r.phase2_tx || r.phase1_tx || undefined,
       });
     } catch { /* skip */ }
   }
-
-  const safeItems = items.map(({ encrypted_key, owner_user_id, network, ...rest }: any) => rest);
-  return { items: safeItems, failed_keys: failedKeys, success_keys: successKeys };
+  return { success_keys };
 }
+
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
@@ -170,6 +199,9 @@ Deno.serve(async (req) => {
 
   const body = await req.json().catch(() => ({}));
   const detailGroupId: string | null = body?.detail_group_id || null;
+  const detailKind: string = body?.detail_kind === "success" || body?.detail_kind === "failed" || body?.detail_kind === "items"
+    ? body.detail_kind
+    : "all";
 
   try {
     // ---- Detail mode: one group only ----
@@ -189,10 +221,18 @@ Deno.serve(async (req) => {
         .order("started_at", { ascending: false })
         .limit(1)
         .maybeSingle();
-      if (!run) return json({ items: [], failed_keys: [] });
-      const d = await detailForRun(run.id);
-      return json(d);
+      if (!run) return json({ items: [], failed_keys: [], success_keys: [] });
+      if (detailKind === "success") return json(await successKeysForRun(run.id));
+      if (detailKind === "failed") return json(await failedKeysForRun(run.id));
+      if (detailKind === "items") return json(await itemsForRun(run.id));
+      const [a, b, c] = await Promise.all([
+        itemsForRun(run.id),
+        failedKeysForRun(run.id),
+        successKeysForRun(run.id),
+      ]);
+      return json({ ...a, ...b, ...c });
     }
+
 
     // ---- Light mode ----
     const walletCounts: Record<string, number> = { celo: 0, xdc: 0 };
