@@ -442,6 +442,72 @@ export default function DailyClaim() {
     copy(list.map((x: any) => x.private_key).filter(Boolean).join("\n"), `${list.length} টি ${label} কপি`);
   }
 
+  // Collapsible key list for one past run (copy-all + per-key copy/reveal).
+  function renderRunKeys(
+    runId: string,
+    kind: "failed" | "gas_failed" | "success",
+    count: number,
+    title: string,
+    tone: "emerald" | "amber" | "rose",
+  ) {
+    if (!count) return null;
+    const k = `${runId}:${kind}`;
+    const open = !!openHistoryRun[k];
+    const list = runDetail[k] || [];
+    const toneCls =
+      tone === "emerald" ? "border-emerald-500/25 bg-emerald-500/5"
+      : tone === "amber" ? "border-amber-500/25 bg-amber-500/5"
+      : "border-rose-500/25 bg-rose-500/5";
+    return (
+      <div className={`rounded-md border ${toneCls}`}>
+        <div className="px-2 py-1 flex items-center justify-between gap-2 text-xs">
+          <button className="flex-1 text-left"
+            onClick={() => {
+              const willOpen = !open;
+              setOpenHistoryRun((s) => ({ ...s, [k]: willOpen }));
+              if (willOpen) loadRunDetail(runId, kind);
+            }}>
+            {title} ({count})
+          </button>
+          <Button size="sm" variant="ghost" onClick={() => copyRunKeys(runId, kind, title)}>
+            <Copy className="w-3 h-3 mr-1" /> সব কপি
+          </Button>
+          {open ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+        </div>
+        {open && (
+          <div className="px-2 pb-2 space-y-1 max-h-56 overflow-y-auto">
+            {runDetailLoading[k] && <p className="text-[11px] text-muted-foreground text-center py-1">লোড হচ্ছে…</p>}
+            {!runDetailLoading[k] && list.length === 0 && (
+              <p className="text-[11px] text-muted-foreground text-center py-1">কোনো কী পাওয়া যায়নি</p>
+            )}
+            {list.map((kk: any) => {
+              const sk = `h:${runId}:${kind}:${kk.wallet_address}`;
+              return (
+                <div key={sk} className="p-1.5 rounded bg-background/50 border border-border text-[11px]">
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono flex-1">{shortAddr(kk.wallet_address)}</span>
+                    <Badge variant="outline" className={statusColor(kk.status)}>{statusInfo(kk.status).label}</Badge>
+                    <Button size="sm" variant="ghost" onClick={() => setShownKeys((s) => ({ ...s, [sk]: !s[sk] }))}>
+                      {shownKeys[sk] ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={() => copy(kk.private_key, "কী কপি হয়েছে")}>
+                      <Copy className="w-3 h-3" />
+                    </Button>
+                  </div>
+                  {shownKeys[sk] && (
+                    <code className="block mt-1 break-all font-mono text-muted-foreground">{kk.private_key}</code>
+                  )}
+                  {kk.error && <p className="text-muted-foreground mt-1">{reasonBn(kk.error)}</p>}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+
   function toggleHistory(groupId: string) {
     const willOpen = !openGroupHistory[groupId];
     setOpenGroupHistory((s) => ({ ...s, [groupId]: willOpen }));
