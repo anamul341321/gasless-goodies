@@ -188,12 +188,23 @@ async function claimOne(privateKey: string, network: GDNetwork): Promise<ClaimRe
     try {
       const receipt = await tx.wait(1, RECEIPT_TIMEOUT_MS);
       if (receipt && receipt.status === 1) {
+        // Strict verification: the tx only counts as a real claim when the G$
+        // token emitted Transfer(to = wallet) with a non-zero amount. A mined
+        // tx alone is NOT proof — GoodDollar's claim() can be a silent no-op.
         const logs = (receipt.logs || []) as any[];
-        const touched = logs.some((l) => (l.topics || []).some((t: string) => typeof t === "string" && t.toLowerCase().endsWith(addr.slice(2))));
-        if (touched) return { status: "success", txHash: tx.hash };
-        return { status: "already_claimed", txHash: tx.hash, error: "claim no-op" };
+        const padded = "0x" + "0".repeat(24) + addr.slice(2).toLowerCase();
+        const received = logs.some((l) => {
+          const topics: string[] = (l.topics || []).map((t: string) => String(t).toLowerCase());
+          if (String(l.address || "").toLowerCase() !== cfg.gdTokenAddress.toLowerCase()) return false;
+          if (topics[0] !== TRANSFER_TOPIC) return false;
+          if (topics[2] !== padded) return false;
+          try { return BigInt(l.data || "0x0") > 0n; } catch { return false; }
+        });
+        if (received) return { status: "success", txHash: tx.hash };
+        return { status: "already_claimed", txHash: tx.hash, error: "claim no-op (no G$ received)" };
       }
       return { status: "failed_other", txHash: tx.hash, error: "tx reverted" };
+
     } catch (e: any) {
       return { status: "failed_other", txHash: tx?.hash, error: (e?.message || String(e)).slice(0, 240) };
     }
