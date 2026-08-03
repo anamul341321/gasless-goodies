@@ -26,6 +26,9 @@ const UBI_ABI = [
   "function checkEntitlement() view returns (uint256)",
 ];
 const IDENTITY_ABI = ["function isWhitelisted(address account) view returns (bool)"];
+// keccak256("Transfer(address,address,uint256)")
+const TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
+
 
 // Round-robin over several RPC endpoints so one flaky/rate-limited node cannot
 // stall a whole wave.
