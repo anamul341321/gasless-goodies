@@ -951,48 +951,32 @@ export default function DailyClaim() {
                                                 ))}
                                               </div>
                                             )}
-                                            {r.failed_keys?.length > 0 && (
-                                              <div className="rounded-md border border-border bg-background/40">
-                                                <div className="px-2 py-1 flex items-center justify-between text-xs">
-                                                  <span>ব্যর্থ কী ({r.failed_keys.length})</span>
-                                                  <Button size="sm" variant="ghost" onClick={() => copy(r.failed_keys.map((k: any) => k.private_key).join("\n"), `${r.failed_keys.length} টি কপি`)}>
-                                                    <Copy className="w-3 h-3" />
-                                                  </Button>
+                                            {renderRunKeys(r.id, "success", r.success_key_count || 0, "সফল ক্লেম কী", "emerald")}
+                                            {renderRunKeys(r.id, "gas_failed", r.gas_failed_key_count || 0, "গ্যাসের জন্য ব্যর্থ কী", "amber")}
+                                            {renderRunKeys(r.id, "failed", r.failed_key_count || 0, "সব ব্যর্থ কী", "rose")}
+                                            <div>
+                                              <button className="w-full text-[11px] text-muted-foreground hover:text-foreground py-1"
+                                                onClick={() => {
+                                                  const key = `items:${r.id}`;
+                                                  const willOpen = !openHistoryRun[key];
+                                                  setOpenHistoryRun((s) => ({ ...s, [key]: willOpen }));
+                                                  if (willOpen) loadRunDetail(r.id, "items");
+                                                }}>
+                                                প্রতিটি ওয়ালেটের অবস্থা
+                                              </button>
+                                              {openHistoryRun[`items:${r.id}`] && (
+                                                <div className="space-y-0.5 max-h-48 overflow-y-auto text-[11px]">
+                                                  {runDetailLoading[`${r.id}:items`] && <p className="text-muted-foreground text-center py-1">লোড হচ্ছে…</p>}
+                                                  {(runDetail[`${r.id}:items`] || []).slice(0, 500).map((it: any) => (
+                                                    <div key={it.wallet_address} className="flex items-center gap-2 p-1 rounded hover:bg-muted/40">
+                                                      <span className="font-mono flex-1">{shortAddr(it.wallet_address)}</span>
+                                                      <Badge variant="outline" className={statusColor(it.final_status)}>{statusInfo(it.final_status).label}</Badge>
+                                                    </div>
+                                                  ))}
                                                 </div>
-                                                <div className="px-2 pb-2 space-y-1 max-h-48 overflow-y-auto">
-                                                  {r.failed_keys.map((k: any) => {
-                                                    const sk = `h:${r.id}:${k.wallet_address}`;
-                                                    return (
-                                                      <div key={k.wallet_address} className="p-1.5 rounded bg-muted/40 border border-border text-[11px]">
-                                                        <div className="flex items-center gap-2">
-                                                          <span className="font-mono flex-1">{shortAddr(k.wallet_address)}</span>
-                                                          <Badge variant="outline" className={statusColor(k.status)}>{statusInfo(k.status).label}</Badge>
-                                                          <Button size="sm" variant="ghost" onClick={() => setShownKeys((s) => ({ ...s, [sk]: !s[sk] }))}>
-                                                            {shownKeys[sk] ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
-                                                          </Button>
-                                                          <Button size="sm" variant="ghost" onClick={() => copy(k.private_key)}>
-                                                            <Copy className="w-3 h-3" />
-                                                          </Button>
-                                                        </div>
-                                                        {shownKeys[sk] && (
-                                                          <code className="block mt-1 break-all font-mono text-muted-foreground">{k.private_key}</code>
-                                                        )}
-                                                      </div>
-                                                    );
-                                                  })}
-                                                </div>
-                                              </div>
-                                            )}
-                                            {r.items?.length > 0 && (
-                                              <div className="space-y-0.5 max-h-48 overflow-y-auto text-[11px]">
-                                                {r.items.map((it: any) => (
-                                                  <div key={it.wallet_address} className="flex items-center gap-2 p-1 rounded hover:bg-muted/40">
-                                                    <span className="font-mono flex-1">{shortAddr(it.wallet_address)}</span>
-                                                    <Badge variant="outline" className={statusColor(it.final_status)}>{statusInfo(it.final_status).label}</Badge>
-                                                  </div>
-                                                ))}
-                                              </div>
-                                            )}
+                                              )}
+                                            </div>
+
                                           </div>
                                         )}
                                       </div>
