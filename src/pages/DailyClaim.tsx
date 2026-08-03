@@ -173,6 +173,9 @@ export default function DailyClaim() {
   const [historyByGroup, setHistoryByGroup] = useState<Record<string, any[]>>({});
   const [historyLoading, setHistoryLoading] = useState<Record<string, boolean>>({});
   const [openHistoryRun, setOpenHistoryRun] = useState<Record<string, boolean>>({});
+  const [runDetail, setRunDetail] = useState<Record<string, any[]>>({});
+  const [runDetailLoading, setRunDetailLoading] = useState<Record<string, boolean>>({});
+
   const [editingGroup, setEditingGroup] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState<Partial<Group>>({});
   const [showNewGroup, setShowNewGroup] = useState(false);
