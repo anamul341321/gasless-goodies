@@ -410,11 +410,41 @@ export default function DailyClaim() {
     }
   }
 
+  // Per-run key/detail loading (kind = items | failed | gas_failed | success)
+  async function loadRunDetail(runId: string, kind: "items" | "failed" | "gas_failed" | "success") {
+    const k = `${runId}:${kind}`;
+    if (runDetail[k] || runDetailLoading[k]) return runDetail[k];
+    setRunDetailLoading((s) => ({ ...s, [k]: true }));
+    try {
+      const { data, error } = await supabase.functions.invoke("daily-claim-history", {
+        body: { run_id: runId, kind },
+      });
+      if (error || (data as any)?.error) {
+        toast({ title: "লোড ব্যর্থ", description: (data as any)?.error || error?.message, variant: "destructive" });
+        return undefined;
+      }
+      const d = data as any;
+      const list = d.items || d.failed_keys || d.gas_failed_keys || d.success_keys || [];
+      setRunDetail((s) => ({ ...s, [k]: list }));
+      return list;
+    } finally {
+      setRunDetailLoading((s) => ({ ...s, [k]: false }));
+    }
+  }
+
+  async function copyRunKeys(runId: string, kind: "failed" | "gas_failed" | "success", label: string) {
+    const k = `${runId}:${kind}`;
+    const list = runDetail[k] || (await loadRunDetail(runId, kind));
+    if (!list || list.length === 0) { toast({ title: "কোনো কী পাওয়া যায়নি" }); return; }
+    copy(list.map((x: any) => x.private_key).filter(Boolean).join("\n"), `${list.length} টি ${label} কপি`);
+  }
+
   function toggleHistory(groupId: string) {
     const willOpen = !openGroupHistory[groupId];
     setOpenGroupHistory((s) => ({ ...s, [groupId]: willOpen }));
-    if (willOpen && !historyByGroup[groupId]) loadHistory(groupId);
+    if (willOpen) loadHistory(groupId);
   }
+
 
   function copyFailed(g: Group) {
     const keys = detailByGroup[g.id]?.failed_keys || [];
