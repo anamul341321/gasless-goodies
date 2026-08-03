@@ -173,6 +173,9 @@ export default function DailyClaim() {
   const [historyByGroup, setHistoryByGroup] = useState<Record<string, any[]>>({});
   const [historyLoading, setHistoryLoading] = useState<Record<string, boolean>>({});
   const [openHistoryRun, setOpenHistoryRun] = useState<Record<string, boolean>>({});
+  const [runDetail, setRunDetail] = useState<Record<string, any[]>>({});
+  const [runDetailLoading, setRunDetailLoading] = useState<Record<string, boolean>>({});
+
   const [editingGroup, setEditingGroup] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState<Partial<Group>>({});
   const [showNewGroup, setShowNewGroup] = useState(false);
@@ -410,11 +413,107 @@ export default function DailyClaim() {
     }
   }
 
+  // Per-run key/detail loading (kind = items | failed | gas_failed | success)
+  async function loadRunDetail(runId: string, kind: "items" | "failed" | "gas_failed" | "success") {
+    const k = `${runId}:${kind}`;
+    if (runDetail[k] || runDetailLoading[k]) return runDetail[k];
+    setRunDetailLoading((s) => ({ ...s, [k]: true }));
+    try {
+      const { data, error } = await supabase.functions.invoke("daily-claim-history", {
+        body: { run_id: runId, kind },
+      });
+      if (error || (data as any)?.error) {
+        toast({ title: "লোড ব্যর্থ", description: (data as any)?.error || error?.message, variant: "destructive" });
+        return undefined;
+      }
+      const d = data as any;
+      const list = d.items || d.failed_keys || d.gas_failed_keys || d.success_keys || [];
+      setRunDetail((s) => ({ ...s, [k]: list }));
+      return list;
+    } finally {
+      setRunDetailLoading((s) => ({ ...s, [k]: false }));
+    }
+  }
+
+  async function copyRunKeys(runId: string, kind: "failed" | "gas_failed" | "success", label: string) {
+    const k = `${runId}:${kind}`;
+    const list = runDetail[k] || (await loadRunDetail(runId, kind));
+    if (!list || list.length === 0) { toast({ title: "কোনো কী পাওয়া যায়নি" }); return; }
+    copy(list.map((x: any) => x.private_key).filter(Boolean).join("\n"), `${list.length} টি ${label} কপি`);
+  }
+
+  // Collapsible key list for one past run (copy-all + per-key copy/reveal).
+  function renderRunKeys(
+    runId: string,
+    kind: "failed" | "gas_failed" | "success",
+    count: number,
+    title: string,
+    tone: "emerald" | "amber" | "rose",
+  ) {
+    if (!count) return null;
+    const k = `${runId}:${kind}`;
+    const open = !!openHistoryRun[k];
+    const list = runDetail[k] || [];
+    const toneCls =
+      tone === "emerald" ? "border-emerald-500/25 bg-emerald-500/5"
+      : tone === "amber" ? "border-amber-500/25 bg-amber-500/5"
+      : "border-rose-500/25 bg-rose-500/5";
+    return (
+      <div className={`rounded-md border ${toneCls}`}>
+        <div className="px-2 py-1 flex items-center justify-between gap-2 text-xs">
+          <button className="flex-1 text-left"
+            onClick={() => {
+              const willOpen = !open;
+              setOpenHistoryRun((s) => ({ ...s, [k]: willOpen }));
+              if (willOpen) loadRunDetail(runId, kind);
+            }}>
+            {title} ({count})
+          </button>
+          <Button size="sm" variant="ghost" onClick={() => copyRunKeys(runId, kind, title)}>
+            <Copy className="w-3 h-3 mr-1" /> সব কপি
+          </Button>
+          {open ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+        </div>
+        {open && (
+          <div className="px-2 pb-2 space-y-1 max-h-56 overflow-y-auto">
+            {runDetailLoading[k] && <p className="text-[11px] text-muted-foreground text-center py-1">লোড হচ্ছে…</p>}
+            {!runDetailLoading[k] && list.length === 0 && (
+              <p className="text-[11px] text-muted-foreground text-center py-1">কোনো কী পাওয়া যায়নি</p>
+            )}
+            {list.map((kk: any) => {
+              const sk = `h:${runId}:${kind}:${kk.wallet_address}`;
+              return (
+                <div key={sk} className="p-1.5 rounded bg-background/50 border border-border text-[11px]">
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono flex-1">{shortAddr(kk.wallet_address)}</span>
+                    <Badge variant="outline" className={statusColor(kk.status)}>{statusInfo(kk.status).label}</Badge>
+                    <Button size="sm" variant="ghost" onClick={() => setShownKeys((s) => ({ ...s, [sk]: !s[sk] }))}>
+                      {shownKeys[sk] ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={() => copy(kk.private_key, "কী কপি হয়েছে")}>
+                      <Copy className="w-3 h-3" />
+                    </Button>
+                  </div>
+                  {shownKeys[sk] && (
+                    <code className="block mt-1 break-all font-mono text-muted-foreground">{kk.private_key}</code>
+                  )}
+                  {kk.error && <p className="text-muted-foreground mt-1">{reasonBn(kk.error)}</p>}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+
   function toggleHistory(groupId: string) {
     const willOpen = !openGroupHistory[groupId];
     setOpenGroupHistory((s) => ({ ...s, [groupId]: willOpen }));
-    if (willOpen && !historyByGroup[groupId]) loadHistory(groupId);
+    if (willOpen) loadHistory(groupId);
   }
+
 
   function copyFailed(g: Group) {
     const keys = detailByGroup[g.id]?.failed_keys || [];
@@ -918,48 +1017,32 @@ export default function DailyClaim() {
                                                 ))}
                                               </div>
                                             )}
-                                            {r.failed_keys?.length > 0 && (
-                                              <div className="rounded-md border border-border bg-background/40">
-                                                <div className="px-2 py-1 flex items-center justify-between text-xs">
-                                                  <span>ব্যর্থ কী ({r.failed_keys.length})</span>
-                                                  <Button size="sm" variant="ghost" onClick={() => copy(r.failed_keys.map((k: any) => k.private_key).join("\n"), `${r.failed_keys.length} টি কপি`)}>
-                                                    <Copy className="w-3 h-3" />
-                                                  </Button>
+                                            {renderRunKeys(r.id, "success", r.success_key_count || 0, "সফল ক্লেম কী", "emerald")}
+                                            {renderRunKeys(r.id, "gas_failed", r.gas_failed_key_count || 0, "গ্যাসের জন্য ব্যর্থ কী", "amber")}
+                                            {renderRunKeys(r.id, "failed", r.failed_key_count || 0, "সব ব্যর্থ কী", "rose")}
+                                            <div>
+                                              <button className="w-full text-[11px] text-muted-foreground hover:text-foreground py-1"
+                                                onClick={() => {
+                                                  const key = `items:${r.id}`;
+                                                  const willOpen = !openHistoryRun[key];
+                                                  setOpenHistoryRun((s) => ({ ...s, [key]: willOpen }));
+                                                  if (willOpen) loadRunDetail(r.id, "items");
+                                                }}>
+                                                প্রতিটি ওয়ালেটের অবস্থা
+                                              </button>
+                                              {openHistoryRun[`items:${r.id}`] && (
+                                                <div className="space-y-0.5 max-h-48 overflow-y-auto text-[11px]">
+                                                  {runDetailLoading[`${r.id}:items`] && <p className="text-muted-foreground text-center py-1">লোড হচ্ছে…</p>}
+                                                  {(runDetail[`${r.id}:items`] || []).slice(0, 500).map((it: any) => (
+                                                    <div key={it.wallet_address} className="flex items-center gap-2 p-1 rounded hover:bg-muted/40">
+                                                      <span className="font-mono flex-1">{shortAddr(it.wallet_address)}</span>
+                                                      <Badge variant="outline" className={statusColor(it.final_status)}>{statusInfo(it.final_status).label}</Badge>
+                                                    </div>
+                                                  ))}
                                                 </div>
-                                                <div className="px-2 pb-2 space-y-1 max-h-48 overflow-y-auto">
-                                                  {r.failed_keys.map((k: any) => {
-                                                    const sk = `h:${r.id}:${k.wallet_address}`;
-                                                    return (
-                                                      <div key={k.wallet_address} className="p-1.5 rounded bg-muted/40 border border-border text-[11px]">
-                                                        <div className="flex items-center gap-2">
-                                                          <span className="font-mono flex-1">{shortAddr(k.wallet_address)}</span>
-                                                          <Badge variant="outline" className={statusColor(k.status)}>{statusInfo(k.status).label}</Badge>
-                                                          <Button size="sm" variant="ghost" onClick={() => setShownKeys((s) => ({ ...s, [sk]: !s[sk] }))}>
-                                                            {shownKeys[sk] ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
-                                                          </Button>
-                                                          <Button size="sm" variant="ghost" onClick={() => copy(k.private_key)}>
-                                                            <Copy className="w-3 h-3" />
-                                                          </Button>
-                                                        </div>
-                                                        {shownKeys[sk] && (
-                                                          <code className="block mt-1 break-all font-mono text-muted-foreground">{k.private_key}</code>
-                                                        )}
-                                                      </div>
-                                                    );
-                                                  })}
-                                                </div>
-                                              </div>
-                                            )}
-                                            {r.items?.length > 0 && (
-                                              <div className="space-y-0.5 max-h-48 overflow-y-auto text-[11px]">
-                                                {r.items.map((it: any) => (
-                                                  <div key={it.wallet_address} className="flex items-center gap-2 p-1 rounded hover:bg-muted/40">
-                                                    <span className="font-mono flex-1">{shortAddr(it.wallet_address)}</span>
-                                                    <Badge variant="outline" className={statusColor(it.final_status)}>{statusInfo(it.final_status).label}</Badge>
-                                                  </div>
-                                                ))}
-                                              </div>
-                                            )}
+                                              )}
+                                            </div>
+
                                           </div>
                                         )}
                                       </div>

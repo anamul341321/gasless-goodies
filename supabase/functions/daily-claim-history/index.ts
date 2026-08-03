@@ -1,5 +1,9 @@
-// Returns past runs for a single group (history). Each run includes summary
-// counts, per-wallet items, and decrypted failed keys for the owner.
+// Past runs for a group (history).
+//
+// Two modes — kept light so runs with thousands of wallets never time out:
+//  - list   : { group_id }            -> run summaries + gas jobs + key counts
+//  - detail : { run_id, kind }        -> paginated per-run detail
+//             kind = "items" | "failed" | "gas_failed" | "success"
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { decryptKey } from "../_shared/dailyCrypto.ts";
@@ -34,26 +38,132 @@ function json(b: any, s = 200) {
   });
 }
 
+const PAGE = 1000;
+
+async function pagedItems(runId: string, select: string, apply?: (q: any) => any) {
+  const out: any[] = [];
+  let from = 0;
+  while (true) {
+    let q = admin
+      .from("daily_claim_run_items")
+      .select(select)
+      .eq("run_id", runId)
+      .order("wallet_address", { ascending: true })
+      .range(from, from + PAGE - 1);
+    if (apply) q = apply(q);
+    const { data, error } = await q;
+    if (error) throw error;
+    const page = (data || []) as any[];
+    out.push(...page);
+    if (page.length < PAGE) break;
+    from += PAGE;
+    if (from > 30000) break;
+  }
+  return out;
+}
+
+async function countItems(runId: string, apply?: (q: any) => any) {
+  let q = admin
+    .from("daily_claim_run_items")
+    .select("id", { count: "exact", head: true })
+    .eq("run_id", runId);
+  if (apply) q = apply(q);
+  const { count } = await q;
+  return count || 0;
+}
+
+// A wallet is "gas-failed final" when it never claimed and the last known
+// blocker was gas (phase1 or phase2 out of gas).
+function applyGasFailed(q: any) {
+  return q
+    .not("final_status", "in", "(success,pending)")
+    .or("phase1_status.eq.failed_gas,phase2_status.eq.failed_gas,final_status.eq.failed_gas");
+}
+
+function applyFailed(q: any) {
+  return q.not("final_status", "in", "(success,pending)");
+}
+
+async function decryptRows(rows: any[]) {
+  const out: any[] = [];
+  for (const r of rows) {
+    if (!r.encrypted_key) continue;
+    try {
+      out.push({
+        wallet_address: r.wallet_address,
+        private_key: await decryptKey(r.encrypted_key),
+        status: r.final_status,
+        error: r.phase2_error || r.phase1_error || undefined,
+        tx_hash: r.phase2_tx || r.phase1_tx || undefined,
+      });
+    } catch { /* skip */ }
+  }
+  return out;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
   const user = await getUser(req);
   if (!user) return json({ error: "unauthorized" }, 401);
 
   try {
-    let groupId = "";
+    let groupId = "", runId = "", kind = "";
     let limit = 30;
     if (req.method === "POST") {
       const b = await req.json().catch(() => ({}));
       groupId = b?.group_id || "";
+      runId = b?.run_id || "";
+      kind = b?.kind || "";
       limit = Math.max(1, Math.min(100, Number(b?.limit) || 30));
     } else {
       const u = new URL(req.url);
       groupId = u.searchParams.get("group_id") || "";
+      runId = u.searchParams.get("run_id") || "";
+      kind = u.searchParams.get("kind") || "";
       limit = Math.max(1, Math.min(100, Number(u.searchParams.get("limit")) || 30));
     }
+
+    // ---------- Detail mode ----------
+    if (runId) {
+      const { data: run } = await admin.from("daily_claim_runs")
+        .select("id, owner_user_id").eq("id", runId).maybeSingle();
+      if (!run || run.owner_user_id !== user.id) return json({ error: "not found" }, 404);
+
+      if (kind === "items") {
+        const items = await pagedItems(
+          runId,
+          "wallet_address, phase1_status, phase1_tx, phase1_error, gas_request_status, phase2_status, phase2_tx, phase2_error, final_status",
+        );
+        return json({ items });
+      }
+      if (kind === "success") {
+        const rows = await pagedItems(
+          runId,
+          "wallet_address, final_status, phase1_tx, phase2_tx, phase1_error, phase2_error, encrypted_key",
+          (q) => q.eq("final_status", "success").not("encrypted_key", "is", null),
+        );
+        return json({ success_keys: await decryptRows(rows) });
+      }
+      if (kind === "gas_failed") {
+        const rows = await pagedItems(
+          runId,
+          "wallet_address, final_status, phase1_status, phase2_status, phase1_tx, phase2_tx, phase1_error, phase2_error, encrypted_key",
+          (q) => applyGasFailed(q.not("encrypted_key", "is", null)),
+        );
+        return json({ gas_failed_keys: await decryptRows(rows) });
+      }
+      // default: failed
+      const rows = await pagedItems(
+        runId,
+        "wallet_address, final_status, phase1_tx, phase2_tx, phase1_error, phase2_error, encrypted_key",
+        (q) => applyFailed(q.not("encrypted_key", "is", null)),
+      );
+      return json({ failed_keys: await decryptRows(rows) });
+    }
+
+    // ---------- List mode ----------
     if (!groupId) return json({ error: "group_id required" }, 400);
 
-    // Verify ownership
     const { data: g } = await admin.from("daily_claim_groups")
       .select("id, owner_user_id, name, network")
       .eq("id", groupId).maybeSingle();
@@ -65,86 +175,39 @@ Deno.serve(async (req) => {
       .order("started_at", { ascending: false })
       .limit(limit);
 
-    const runIds = (runs || []).map((r: any) => r.id);
-    const itemsByRun = new Map<string, any[]>();
-    const gasJobIds = new Set<string>();
-    const gasBatchNames = new Set<string>();
+    const batchNames = (runs || []).map((r: any) =>
+      `daily-claim-${r.network || g.network || "celo"}-${String(r.id).slice(0, 8)}`
+    );
     const gasJobsByBatch = new Map<string, any[]>();
-    for (const r of runs || []) {
-      const network = r.network || g.network || "celo";
-      gasBatchNames.add(`daily-claim-${network}-${String(r.id).slice(0, 8)}`);
-    }
-    if (runIds.length > 0) {
-      const { data: items } = await admin.from("daily_claim_run_items")
-        .select("run_id, wallet_address, phase1_status, phase1_error, gas_request_status, gas_tx, phase2_status, phase2_error, final_status, encrypted_key")
-        .in("run_id", runIds);
-      for (const it of items || []) {
-        const arr = itemsByRun.get(it.run_id) || [];
-        arr.push(it);
-        itemsByRun.set(it.run_id, arr);
-        if (it.gas_tx) gasJobIds.add(it.gas_tx);
-      }
-    }
-
-    // Fetch linked gas-loader jobs (one job per run typically)
-    const gasJobMap = new Map<string, any>();
-    if (gasJobIds.size > 0) {
+    if (batchNames.length > 0) {
       const { data: gjobs } = await admin.from("gas_load_jobs")
         .select("id, batch_name, total, done, failed, status, created_at, finished_at")
-        .in("id", Array.from(gasJobIds));
-      for (const j of gjobs || []) gasJobMap.set(j.id, j);
-    }
-    if (gasBatchNames.size > 0) {
-      const { data: gjobsByName } = await admin.from("gas_load_jobs")
-        .select("id, batch_name, total, done, failed, status, created_at, finished_at")
-        .in("batch_name", Array.from(gasBatchNames))
+        .in("batch_name", batchNames)
         .order("created_at", { ascending: true });
-      for (const j of gjobsByName || []) {
-        const arr = gasJobsByBatch.get(j.batch_name) || [];
-        arr.push(j);
-        gasJobsByBatch.set(j.batch_name, arr);
+      for (const j of gjobs || []) {
+        gasJobsByBatch.set(j.batch_name, [...(gasJobsByBatch.get(j.batch_name) || []), j]);
       }
     }
 
-    const result = [];
-    for (const r of runs || []) {
-      const its = itemsByRun.get(r.id) || [];
-      const failed_keys: any[] = [];
-      let gas_requested = 0, gas_done = 0, gas_error = 0;
-      const runGasJobIds = new Set<string>();
-      for (const it of its) {
-        if (it.gas_request_status === "requested") gas_requested++;
-        else if (it.gas_request_status === "done") gas_done++;
-        else if (it.gas_request_status === "error") gas_error++;
-        // gas_tx holds job_id while requested, tx_hash once done. Only treat UUID-shaped values as job ids.
-        if (it.gas_tx && /^[0-9a-f-]{36}$/i.test(it.gas_tx)) runGasJobIds.add(it.gas_tx);
-
-        if (it.encrypted_key && it.final_status !== "success" && it.final_status !== "pending") {
-          try {
-            const pk = await decryptKey(it.encrypted_key);
-            failed_keys.push({
-              wallet_address: it.wallet_address,
-              private_key: pk,
-              status: it.final_status,
-              error: it.phase2_error || it.phase1_error || undefined,
-            });
-          } catch { /* skip */ }
-        }
-      }
+    const result = await Promise.all((runs || []).map(async (r: any) => {
       const batchName = `daily-claim-${r.network || g.network || "celo"}-${String(r.id).slice(0, 8)}`;
-      const gas_jobs = [
-        ...Array.from(runGasJobIds).map((id) => gasJobMap.get(id)).filter(Boolean),
-        ...(gasJobsByBatch.get(batchName) || []),
-      ].filter((job, idx, arr) => job && arr.findIndex((x) => x.id === job.id) === idx);
-      const safeItems = its.map(({ encrypted_key, ...rest }: any) => rest);
-      result.push({
+      const [successCount, failedKeyCount, gasFailedKeyCount, gasDone, gasReq, gasErr] = await Promise.all([
+        countItems(r.id, (q) => q.eq("final_status", "success").not("encrypted_key", "is", null)),
+        countItems(r.id, (q) => applyFailed(q.not("encrypted_key", "is", null))),
+        countItems(r.id, (q) => applyGasFailed(q.not("encrypted_key", "is", null))),
+        countItems(r.id, (q) => q.eq("gas_request_status", "done")),
+        countItems(r.id, (q) => q.eq("gas_request_status", "requested")),
+        countItems(r.id, (q) => q.eq("gas_request_status", "error")),
+      ]);
+      return {
         ...r,
-        items: safeItems,
-        failed_keys,
-        gas_summary: { requested: gas_requested, done: gas_done, error: gas_error, total: gas_requested + gas_done + gas_error },
-        gas_jobs,
-      });
-    }
+        success_key_count: successCount,
+        failed_key_count: failedKeyCount,
+        gas_failed_key_count: gasFailedKeyCount,
+        gas_summary: { done: gasDone, requested: gasReq, error: gasErr, total: gasDone + gasReq + gasErr },
+        gas_jobs: gasJobsByBatch.get(batchName) || [],
+      };
+    }));
 
     return json({ group: { id: g.id, name: g.name, network: g.network }, runs: result });
   } catch (e: any) {
