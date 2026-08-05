@@ -50,13 +50,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     });
 
-    // Then read existing session
-    supabase.auth.getSession().then(({ data: { session: sess } }) => {
+    // Then read existing session — never let this hang the whole app.
+    let settled = false;
+    const finish = (sess: Session | null) => {
+      if (settled) return;
+      settled = true;
       setSession(sess);
       setUser(sess?.user ?? null);
       if (sess?.user) loadProfile(sess.user.id);
       setLoading(false);
-    });
+    };
+
+    const timer = window.setTimeout(() => {
+      if (!settled) {
+        console.warn("auth getSession timed out — continuing signed-out");
+        settled = true;
+        setLoading(false);
+      }
+    }, 5000);
+
+    supabase.auth
+      .getSession()
+      .then(({ data: { session: sess } }) => finish(sess))
+      .catch((e) => {
+        console.error("getSession failed", e);
+        finish(null);
+      })
+      .finally(() => window.clearTimeout(timer));
+
 
     return () => sub.subscription.unsubscribe();
   }, []);
