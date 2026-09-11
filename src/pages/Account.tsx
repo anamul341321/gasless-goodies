@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "@/lib/router-compat";
 import {
   ArrowLeft, Coins, Copy, ExternalLink, Loader2, LogOut, Trash2,
   Wallet as WalletIcon, AlertTriangle, ChevronDown, ChevronRight, RefreshCw,

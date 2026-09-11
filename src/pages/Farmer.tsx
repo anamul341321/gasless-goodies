@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, Navigate } from "react-router-dom";
+import { Link, Navigate } from "@/lib/router-compat";
 import {
   ArrowLeft, Loader2, Square, Sparkles, Send, ExternalLink, Search, Wallet as WalletIcon, Copy, Gift, Fuel,
 } from "lucide-react";

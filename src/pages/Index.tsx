@@ -4,7 +4,7 @@ import {
   CheckCircle2, Clock, Wallet, Lock, TrendingUp, User, LogIn, Send, Download,
   ShieldCheck, Volume2,
 } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link } from "@/lib/router-compat";
 import appLogo from "@/assets/logo.png";
 import ServicesDrawer from "@/components/ServicesDrawer";
 import VerifyGuide from "@/components/VerifyGuide";

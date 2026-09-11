@@ -1,4 +1,4 @@
-import { Link } from "react-router-dom";
+import { Link } from "@/lib/router-compat";
 import {
   ArrowLeft, AlertTriangle, Scale, ShieldCheck, UserCheck, Crown, Fuel,
   PiggyBank, Smartphone, FileText,

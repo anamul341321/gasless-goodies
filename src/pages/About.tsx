@@ -1,4 +1,4 @@
-import { Link } from "react-router-dom";
+import { Link } from "@/lib/router-compat";
 import {
   ArrowLeft, Crown, Fuel, PiggyBank, Smartphone, Shield, Zap, Sparkles,
   Wallet, Layers, Globe, Users,

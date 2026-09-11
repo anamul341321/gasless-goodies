@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, Navigate } from "react-router-dom";
+import { Link, Navigate } from "@/lib/router-compat";
 import { Wallet } from "ethers";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";

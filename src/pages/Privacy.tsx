@@ -1,4 +1,4 @@
-import { Link } from "react-router-dom";
+import { Link } from "@/lib/router-compat";
 import {
   ArrowLeft, Eye, Lock, Database, Trash2, Shield, Cookie, Globe, FileText,
 } from "lucide-react";
