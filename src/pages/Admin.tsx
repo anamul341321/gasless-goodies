@@ -244,10 +244,9 @@ export default function Admin() {
 
 
   useEffect(() => {
-    if (authenticated) {
-      const interval = setInterval(fetchRequests, 15000);
-      return () => clearInterval(interval);
-    }
+    if (!authenticated) return undefined;
+    const interval = setInterval(fetchRequests, 15000);
+    return () => clearInterval(interval);
   }, [authenticated]);
 
   const statusIcon = (status: string) => {
