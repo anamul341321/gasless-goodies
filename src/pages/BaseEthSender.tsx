@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "@/lib/router-compat";
 import { ethers } from "ethers";
 import { ArrowLeft, Send, Play, Loader2, CheckCircle2, XCircle, Clock, Wallet } from "lucide-react";
 import { Button } from "@/components/ui/button";

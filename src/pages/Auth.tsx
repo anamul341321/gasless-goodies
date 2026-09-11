@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { useNavigate, Link } from "@/lib/router-compat";
 import { ArrowLeft, Loader2, Mail, Wallet as WalletIcon } from "lucide-react";
 import { BrowserProvider } from "ethers";
 import { Button } from "@/components/ui/button";
