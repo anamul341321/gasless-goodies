@@ -13,6 +13,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as AccountRouteImport } from './routes/account'
 import { Route as AnamultoolsRouteImport } from './routes/anamultools'
+import { Route as ArafRouteImport } from './routes/araf'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as BaseMultisendRouteImport } from './routes/base-multisend'
 import { Route as BatchHistoryRouteImport } from './routes/batch-history'
@@ -50,6 +51,11 @@ const AccountRoute = AccountRouteImport.update({
 const AnamultoolsRoute = AnamultoolsRouteImport.update({
   id: '/anamultools',
   path: '/anamultools',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ArafRoute = ArafRouteImport.update({
+  id: '/araf',
+  path: '/araf',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthRoute = AuthRouteImport.update({
@@ -148,6 +154,7 @@ export interface FileRoutesByFullPath {
   '/about': typeof AboutRoute
   '/account': typeof AccountRoute
   '/anamultools': typeof AnamultoolsRoute
+  '/araf': typeof ArafRoute
   '/auth': typeof AuthRoute
   '/base-multisend': typeof BaseMultisendRoute
   '/batch-history': typeof BatchHistoryRoute
@@ -172,6 +179,7 @@ export interface FileRoutesByTo {
   '/about': typeof AboutRoute
   '/account': typeof AccountRoute
   '/anamultools': typeof AnamultoolsRoute
+  '/araf': typeof ArafRoute
   '/auth': typeof AuthRoute
   '/base-multisend': typeof BaseMultisendRoute
   '/batch-history': typeof BatchHistoryRoute
@@ -197,6 +205,7 @@ export interface FileRoutesById {
   '/about': typeof AboutRoute
   '/account': typeof AccountRoute
   '/anamultools': typeof AnamultoolsRoute
+  '/araf': typeof ArafRoute
   '/auth': typeof AuthRoute
   '/base-multisend': typeof BaseMultisendRoute
   '/batch-history': typeof BatchHistoryRoute
@@ -223,6 +232,7 @@ export interface FileRouteTypes {
     | '/about'
     | '/account'
     | '/anamultools'
+    | '/araf'
     | '/auth'
     | '/base-multisend'
     | '/batch-history'
@@ -247,6 +257,7 @@ export interface FileRouteTypes {
     | '/about'
     | '/account'
     | '/anamultools'
+    | '/araf'
     | '/auth'
     | '/base-multisend'
     | '/batch-history'
@@ -271,6 +282,7 @@ export interface FileRouteTypes {
     | '/about'
     | '/account'
     | '/anamultools'
+    | '/araf'
     | '/auth'
     | '/base-multisend'
     | '/batch-history'
@@ -296,6 +308,7 @@ export interface RootRouteChildren {
   AboutRoute: typeof AboutRoute
   AccountRoute: typeof AccountRoute
   AnamultoolsRoute: typeof AnamultoolsRoute
+  ArafRoute: typeof ArafRoute
   AuthRoute: typeof AuthRoute
   BaseMultisendRoute: typeof BaseMultisendRoute
   BatchHistoryRoute: typeof BatchHistoryRoute
@@ -344,6 +357,13 @@ declare module '@tanstack/react-router' {
       path: '/anamultools'
       fullPath: '/anamultools'
       preLoaderRoute: typeof AnamultoolsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/araf': {
+      id: '/araf'
+      path: '/araf'
+      fullPath: '/araf'
+      preLoaderRoute: typeof ArafRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/auth': {
@@ -480,6 +500,7 @@ const rootRouteChildren: RootRouteChildren = {
   AboutRoute: AboutRoute,
   AccountRoute: AccountRoute,
   AnamultoolsRoute: AnamultoolsRoute,
+  ArafRoute: ArafRoute,
   AuthRoute: AuthRoute,
   BaseMultisendRoute: BaseMultisendRoute,
   BatchHistoryRoute: BatchHistoryRoute,
