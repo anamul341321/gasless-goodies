@@ -141,74 +141,64 @@ export default function Auth() {
   };
 
   return (
-    <div className="min-h-screen aurora-bg">
-      <div className="container max-w-md mx-auto px-4 py-8">
-        <Link to="/" className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground mb-6">
+    <div className="min-h-screen aurora-bg relative overflow-hidden flex items-center">
+      <div className="pointer-events-none absolute -top-32 -left-24 w-80 h-80 rounded-full bg-primary/25 blur-3xl animate-pulse" />
+      <div className="pointer-events-none absolute -bottom-32 -right-24 w-96 h-96 rounded-full bg-accent/30 blur-3xl animate-pulse" />
+      <div className="container max-w-md mx-auto px-4 py-8 relative">
+        <Link to="/" className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground mb-6 hover:-translate-x-1 transition-transform">
           <ArrowLeft className="size-4" /> Back to home
         </Link>
 
-        <Card className="glass-card-elevated">
-          <CardHeader>
-            <CardTitle className="text-2xl">Sign in</CardTitle>
-            <p className="text-sm text-muted-foreground">
-              Access your batches and recover failed wallet keys anytime.
-            </p>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {/* Google */}
-            <Button
-              variant="outline"
-              className="w-full"
-              onClick={handleGoogle}
-              disabled={googleBusy}
-            >
-              {googleBusy ? <Loader2 className="size-4 animate-spin" /> : (
-                <svg className="size-4" viewBox="0 0 24 24"><path fill="currentColor" d="M21.35 11.1H12v3.2h5.35c-.23 1.45-1.7 4.25-5.35 4.25-3.22 0-5.85-2.66-5.85-5.95s2.63-5.95 5.85-5.95c1.84 0 3.07.78 3.78 1.45l2.58-2.5C16.7 3.95 14.55 3 12 3 6.93 3 2.85 7.08 2.85 12.15S6.93 21.3 12 21.3c6.93 0 9.5-4.85 9.5-7.85 0-.53-.05-.93-.15-1.35Z"/></svg>
-              )}
-              Continue with Google
-            </Button>
-
-            {/* Wallet */}
-            <Button
-              variant="outline"
-              className="w-full"
-              onClick={handleWallet}
-              disabled={walletBusy}
-            >
-              {walletBusy ? <Loader2 className="size-4 animate-spin" /> : <WalletIcon className="size-4" />}
-              Continue with Wallet
-            </Button>
-
-            <div className="relative my-2">
-              <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-border" /></div>
-              <div className="relative flex justify-center"><span className="bg-card px-3 text-xs text-muted-foreground">or</span></div>
+        <div className="animate-fade-up rounded-3xl p-[1.5px] bg-gradient-to-br from-primary via-accent to-primary shadow-2xl">
+          <div className="rounded-[calc(1.5rem-1.5px)] bg-card/95 backdrop-blur-xl p-6 sm:p-8 space-y-5">
+            <div className="text-center space-y-2">
+              <div className="mx-auto grid place-items-center w-16 h-16 rounded-2xl bg-gradient-to-br from-primary to-accent text-primary-foreground text-2xl font-black shadow-lg">G</div>
+              <h1 className="text-3xl font-black tracking-tight">Welcome</h1>
+              <p className="text-sm text-muted-foreground">Sign in to manage your batches and keys.</p>
             </div>
 
-            {/* Email */}
+            <button
+              onClick={handleGoogle}
+              disabled={googleBusy}
+              className="premium-btn w-full flex items-center justify-center gap-3 rounded-2xl bg-foreground text-background py-4 text-base font-bold shadow-lg hover:-translate-y-0.5 disabled:opacity-60"
+            >
+              {googleBusy ? <Loader2 className="size-5 animate-spin" /> : (
+                <svg className="size-5" viewBox="0 0 48 48"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="m6.3 14.7 6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/></svg>
+              )}
+              Continue with Google
+            </button>
+
+            <button
+              onClick={handleWallet}
+              disabled={walletBusy}
+              className="premium-btn w-full flex items-center justify-center gap-3 rounded-2xl border border-border bg-muted/40 py-3.5 font-semibold hover:-translate-y-0.5 disabled:opacity-60"
+            >
+              {walletBusy ? <Loader2 className="size-5 animate-spin" /> : <WalletIcon className="size-5" />}
+              Continue with Wallet
+            </button>
+
+            <div className="relative">
+              <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-border" /></div>
+              <div className="relative flex justify-center"><span className="bg-card px-3 text-xs uppercase tracking-widest text-muted-foreground">or email</span></div>
+            </div>
+
             <Tabs value={mode} onValueChange={(v) => setMode(v as "signin" | "signup")}>
-              <TabsList className="grid grid-cols-2 w-full">
-                <TabsTrigger value="signin">Sign in</TabsTrigger>
-                <TabsTrigger value="signup">Sign up</TabsTrigger>
+              <TabsList className="grid grid-cols-2 w-full rounded-full h-11">
+                <TabsTrigger value="signin" className="rounded-full">Sign in</TabsTrigger>
+                <TabsTrigger value="signup" className="rounded-full">Sign up</TabsTrigger>
               </TabsList>
-              <TabsContent value="signin" className="space-y-3 mt-3">
-                <Input type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} />
-                <Input type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} />
-                <Button onClick={handleEmail} disabled={busy} className="w-full">
+              <div className="space-y-3 mt-4 animate-fade-up" key={mode}>
+                <Input className="h-12 rounded-xl" type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} />
+                <Input className="h-12 rounded-xl" type="password" placeholder={mode === "signup" ? "Password (min 8 chars)" : "Password"} value={password} onChange={(e) => setPassword(e.target.value)} />
+                <Button onClick={handleEmail} disabled={busy} className="premium-btn w-full h-12 rounded-xl text-base font-bold">
                   {busy ? <Loader2 className="size-4 animate-spin" /> : <Mail className="size-4" />}
-                  Sign in with email
+                  {mode === "signup" ? "Create account" : "Sign in with email"}
                 </Button>
-              </TabsContent>
-              <TabsContent value="signup" className="space-y-3 mt-3">
-                <Input type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} />
-                <Input type="password" placeholder="Password (min 8 chars)" value={password} onChange={(e) => setPassword(e.target.value)} />
-                <Button onClick={handleEmail} disabled={busy} className="w-full">
-                  {busy ? <Loader2 className="size-4 animate-spin" /> : <Mail className="size-4" />}
-                  Create account
-                </Button>
-              </TabsContent>
+              </div>
+              <TabsContent value="signin" /><TabsContent value="signup" />
             </Tabs>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       </div>
     </div>
   );

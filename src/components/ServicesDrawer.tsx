@@ -1,4 +1,4 @@
-import { ChevronRight, Coins, History, Smartphone, User, Zap } from "lucide-react";
+import { ChevronRight, Coins, History, User, Zap } from "lucide-react";
 import { Link } from "@/lib/router-compat";
 import { useEffect, useState } from "react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
@@ -17,13 +17,6 @@ const services = [
     icon: History,
     label: "Claim History",
     desc: "Your past G$ claim batches",
-  },
-  {
-    to: "/recharge",
-    icon: Smartphone,
-    label: "Mobile Recharge",
-    desc: "GP, Robi, Banglalink, Airtel, Teletalk, Skitto",
-    badge: "Popular",
   },
   {
     to: "/account",
