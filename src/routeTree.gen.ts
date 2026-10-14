@@ -24,13 +24,16 @@ import { Route as DailyClaimRouteImport } from './routes/daily-claim'
 import { Route as FarmerRouteImport } from './routes/farmer'
 import { Route as GasLoaderRouteImport } from './routes/gas-loader'
 import { Route as GasLoaderToolRouteImport } from './routes/gas-loader-tool'
+import { Route as McpRouteImport } from './routes/mcp'
 import { Route as NanoCollectRouteImport } from './routes/nano-collect'
 import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as TermsRouteImport } from './routes/terms'
 import { Route as X7k9m2pToolsRouteImport } from './routes/x-7k9m2p-tools'
+import { Route as Char91DotwellKnownChar93OauthProtectedResourceRouteImport } from './routes/[.well-known]/oauth-protected-resource'
 import { Route as AdminIndexRouteImport } from './routes/admin/index'
 import { Route as AdminBatchHistoryRouteImport } from './routes/admin/batch-history'
 import { Route as AdminGasLoaderRouteImport } from './routes/admin/gas-loader'
+import { Route as DotlovableOauthConsentRouteImport } from './routes/[.]lovable.oauth.consent'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -107,6 +110,11 @@ const GasLoaderToolRoute = GasLoaderToolRouteImport.update({
   path: '/gas-loader-tool',
   getParentRoute: () => rootRouteImport,
 } as any)
+const McpRoute = McpRouteImport.update({
+  id: '/mcp',
+  path: '/mcp',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const NanoCollectRoute = NanoCollectRouteImport.update({
   id: '/nano-collect',
   path: '/nano-collect',
@@ -127,6 +135,12 @@ const X7k9m2pToolsRoute = X7k9m2pToolsRouteImport.update({
   path: '/x-7k9m2p-tools',
   getParentRoute: () => rootRouteImport,
 } as any)
+const Char91DotwellKnownChar93OauthProtectedResourceRoute =
+  Char91DotwellKnownChar93OauthProtectedResourceRouteImport.update({
+    id: '/.well-known/oauth-protected-resource',
+    path: '/.well-known/oauth-protected-resource',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const AdminIndexRoute = AdminIndexRouteImport.update({
   id: '/admin/',
   path: '/admin/',
@@ -140,6 +154,11 @@ const AdminBatchHistoryRoute = AdminBatchHistoryRouteImport.update({
 const AdminGasLoaderRoute = AdminGasLoaderRouteImport.update({
   id: '/admin/gas-loader',
   path: '/admin/gas-loader',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DotlovableOauthConsentRoute = DotlovableOauthConsentRouteImport.update({
+  id: '/.lovable/oauth/consent',
+  path: '/.lovable/oauth/consent',
   getParentRoute: () => rootRouteImport,
 } as any)
 
@@ -159,13 +178,16 @@ export interface FileRoutesByFullPath {
   '/farmer': typeof FarmerRoute
   '/gas-loader': typeof GasLoaderRoute
   '/gas-loader-tool': typeof GasLoaderToolRoute
+  '/mcp': typeof McpRoute
   '/nano-collect': typeof NanoCollectRoute
   '/privacy': typeof PrivacyRoute
   '/terms': typeof TermsRoute
   '/x-7k9m2p-tools': typeof X7k9m2pToolsRoute
+  '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
   '/admin/batch-history': typeof AdminBatchHistoryRoute
   '/admin/gas-loader': typeof AdminGasLoaderRoute
   '/admin/': typeof AdminIndexRoute
+  '/.lovable/oauth/consent': typeof DotlovableOauthConsentRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -183,13 +205,16 @@ export interface FileRoutesByTo {
   '/farmer': typeof FarmerRoute
   '/gas-loader': typeof GasLoaderRoute
   '/gas-loader-tool': typeof GasLoaderToolRoute
+  '/mcp': typeof McpRoute
   '/nano-collect': typeof NanoCollectRoute
   '/privacy': typeof PrivacyRoute
   '/terms': typeof TermsRoute
   '/x-7k9m2p-tools': typeof X7k9m2pToolsRoute
+  '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
   '/admin/batch-history': typeof AdminBatchHistoryRoute
   '/admin/gas-loader': typeof AdminGasLoaderRoute
   '/admin': typeof AdminIndexRoute
+  '/.lovable/oauth/consent': typeof DotlovableOauthConsentRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -208,13 +233,16 @@ export interface FileRoutesById {
   '/farmer': typeof FarmerRoute
   '/gas-loader': typeof GasLoaderRoute
   '/gas-loader-tool': typeof GasLoaderToolRoute
+  '/mcp': typeof McpRoute
   '/nano-collect': typeof NanoCollectRoute
   '/privacy': typeof PrivacyRoute
   '/terms': typeof TermsRoute
   '/x-7k9m2p-tools': typeof X7k9m2pToolsRoute
+  '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
   '/admin/batch-history': typeof AdminBatchHistoryRoute
   '/admin/gas-loader': typeof AdminGasLoaderRoute
   '/admin/': typeof AdminIndexRoute
+  '/.lovable/oauth/consent': typeof DotlovableOauthConsentRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -234,13 +262,16 @@ export interface FileRouteTypes {
     | '/farmer'
     | '/gas-loader'
     | '/gas-loader-tool'
+    | '/mcp'
     | '/nano-collect'
     | '/privacy'
     | '/terms'
     | '/x-7k9m2p-tools'
+    | '/.well-known/oauth-protected-resource'
     | '/admin/batch-history'
     | '/admin/gas-loader'
     | '/admin/'
+    | '/.lovable/oauth/consent'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -258,13 +289,16 @@ export interface FileRouteTypes {
     | '/farmer'
     | '/gas-loader'
     | '/gas-loader-tool'
+    | '/mcp'
     | '/nano-collect'
     | '/privacy'
     | '/terms'
     | '/x-7k9m2p-tools'
+    | '/.well-known/oauth-protected-resource'
     | '/admin/batch-history'
     | '/admin/gas-loader'
     | '/admin'
+    | '/.lovable/oauth/consent'
   id:
     | '__root__'
     | '/'
@@ -282,13 +316,16 @@ export interface FileRouteTypes {
     | '/farmer'
     | '/gas-loader'
     | '/gas-loader-tool'
+    | '/mcp'
     | '/nano-collect'
     | '/privacy'
     | '/terms'
     | '/x-7k9m2p-tools'
+    | '/.well-known/oauth-protected-resource'
     | '/admin/batch-history'
     | '/admin/gas-loader'
     | '/admin/'
+    | '/.lovable/oauth/consent'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -307,13 +344,16 @@ export interface RootRouteChildren {
   FarmerRoute: typeof FarmerRoute
   GasLoaderRoute: typeof GasLoaderRoute
   GasLoaderToolRoute: typeof GasLoaderToolRoute
+  McpRoute: typeof McpRoute
   NanoCollectRoute: typeof NanoCollectRoute
   PrivacyRoute: typeof PrivacyRoute
   TermsRoute: typeof TermsRoute
   X7k9m2pToolsRoute: typeof X7k9m2pToolsRoute
+  Char91DotwellKnownChar93OauthProtectedResourceRoute: typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
   AdminBatchHistoryRoute: typeof AdminBatchHistoryRoute
   AdminGasLoaderRoute: typeof AdminGasLoaderRoute
   AdminIndexRoute: typeof AdminIndexRoute
+  DotlovableOauthConsentRoute: typeof DotlovableOauthConsentRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -423,6 +463,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof GasLoaderToolRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/mcp': {
+      id: '/mcp'
+      path: '/mcp'
+      fullPath: '/mcp'
+      preLoaderRoute: typeof McpRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/nano-collect': {
       id: '/nano-collect'
       path: '/nano-collect'
@@ -451,6 +498,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof X7k9m2pToolsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/.well-known/oauth-protected-resource': {
+      id: '/.well-known/oauth-protected-resource'
+      path: '/.well-known/oauth-protected-resource'
+      fullPath: '/.well-known/oauth-protected-resource'
+      preLoaderRoute: typeof Char91DotwellKnownChar93OauthProtectedResourceRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/admin/': {
       id: '/admin/'
       path: '/admin'
@@ -472,6 +526,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminGasLoaderRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/.lovable/oauth/consent': {
+      id: '/.lovable/oauth/consent'
+      path: '/.lovable/oauth/consent'
+      fullPath: '/.lovable/oauth/consent'
+      preLoaderRoute: typeof DotlovableOauthConsentRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -491,13 +552,17 @@ const rootRouteChildren: RootRouteChildren = {
   FarmerRoute: FarmerRoute,
   GasLoaderRoute: GasLoaderRoute,
   GasLoaderToolRoute: GasLoaderToolRoute,
+  McpRoute: McpRoute,
   NanoCollectRoute: NanoCollectRoute,
   PrivacyRoute: PrivacyRoute,
   TermsRoute: TermsRoute,
   X7k9m2pToolsRoute: X7k9m2pToolsRoute,
+  Char91DotwellKnownChar93OauthProtectedResourceRoute:
+    Char91DotwellKnownChar93OauthProtectedResourceRoute,
   AdminBatchHistoryRoute: AdminBatchHistoryRoute,
   AdminGasLoaderRoute: AdminGasLoaderRoute,
   AdminIndexRoute: AdminIndexRoute,
+  DotlovableOauthConsentRoute: DotlovableOauthConsentRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
