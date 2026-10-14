@@ -26,7 +26,6 @@ import { Route as GasLoaderRouteImport } from './routes/gas-loader'
 import { Route as GasLoaderToolRouteImport } from './routes/gas-loader-tool'
 import { Route as NanoCollectRouteImport } from './routes/nano-collect'
 import { Route as PrivacyRouteImport } from './routes/privacy'
-import { Route as RechargeRouteImport } from './routes/recharge'
 import { Route as TermsRouteImport } from './routes/terms'
 import { Route as X7k9m2pToolsRouteImport } from './routes/x-7k9m2p-tools'
 import { Route as AdminIndexRouteImport } from './routes/admin/index'
@@ -118,11 +117,6 @@ const PrivacyRoute = PrivacyRouteImport.update({
   path: '/privacy',
   getParentRoute: () => rootRouteImport,
 } as any)
-const RechargeRoute = RechargeRouteImport.update({
-  id: '/recharge',
-  path: '/recharge',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const TermsRoute = TermsRouteImport.update({
   id: '/terms',
   path: '/terms',
@@ -167,7 +161,6 @@ export interface FileRoutesByFullPath {
   '/gas-loader-tool': typeof GasLoaderToolRoute
   '/nano-collect': typeof NanoCollectRoute
   '/privacy': typeof PrivacyRoute
-  '/recharge': typeof RechargeRoute
   '/terms': typeof TermsRoute
   '/x-7k9m2p-tools': typeof X7k9m2pToolsRoute
   '/admin/batch-history': typeof AdminBatchHistoryRoute
@@ -192,7 +185,6 @@ export interface FileRoutesByTo {
   '/gas-loader-tool': typeof GasLoaderToolRoute
   '/nano-collect': typeof NanoCollectRoute
   '/privacy': typeof PrivacyRoute
-  '/recharge': typeof RechargeRoute
   '/terms': typeof TermsRoute
   '/x-7k9m2p-tools': typeof X7k9m2pToolsRoute
   '/admin/batch-history': typeof AdminBatchHistoryRoute
@@ -218,7 +210,6 @@ export interface FileRoutesById {
   '/gas-loader-tool': typeof GasLoaderToolRoute
   '/nano-collect': typeof NanoCollectRoute
   '/privacy': typeof PrivacyRoute
-  '/recharge': typeof RechargeRoute
   '/terms': typeof TermsRoute
   '/x-7k9m2p-tools': typeof X7k9m2pToolsRoute
   '/admin/batch-history': typeof AdminBatchHistoryRoute
@@ -245,7 +236,6 @@ export interface FileRouteTypes {
     | '/gas-loader-tool'
     | '/nano-collect'
     | '/privacy'
-    | '/recharge'
     | '/terms'
     | '/x-7k9m2p-tools'
     | '/admin/batch-history'
@@ -270,7 +260,6 @@ export interface FileRouteTypes {
     | '/gas-loader-tool'
     | '/nano-collect'
     | '/privacy'
-    | '/recharge'
     | '/terms'
     | '/x-7k9m2p-tools'
     | '/admin/batch-history'
@@ -295,7 +284,6 @@ export interface FileRouteTypes {
     | '/gas-loader-tool'
     | '/nano-collect'
     | '/privacy'
-    | '/recharge'
     | '/terms'
     | '/x-7k9m2p-tools'
     | '/admin/batch-history'
@@ -321,7 +309,6 @@ export interface RootRouteChildren {
   GasLoaderToolRoute: typeof GasLoaderToolRoute
   NanoCollectRoute: typeof NanoCollectRoute
   PrivacyRoute: typeof PrivacyRoute
-  RechargeRoute: typeof RechargeRoute
   TermsRoute: typeof TermsRoute
   X7k9m2pToolsRoute: typeof X7k9m2pToolsRoute
   AdminBatchHistoryRoute: typeof AdminBatchHistoryRoute
@@ -450,13 +437,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PrivacyRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/recharge': {
-      id: '/recharge'
-      path: '/recharge'
-      fullPath: '/recharge'
-      preLoaderRoute: typeof RechargeRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/terms': {
       id: '/terms'
       path: '/terms'
@@ -513,7 +493,6 @@ const rootRouteChildren: RootRouteChildren = {
   GasLoaderToolRoute: GasLoaderToolRoute,
   NanoCollectRoute: NanoCollectRoute,
   PrivacyRoute: PrivacyRoute,
-  RechargeRoute: RechargeRoute,
   TermsRoute: TermsRoute,
   X7k9m2pToolsRoute: X7k9m2pToolsRoute,
   AdminBatchHistoryRoute: AdminBatchHistoryRoute,
