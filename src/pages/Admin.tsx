@@ -6,6 +6,7 @@ import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 import { Shield, Lock, LogIn, Save, MessageSquare, CheckCircle2, Clock, XCircle, Fuel, Power, PowerOff, ArrowRight, History as HistoryIcon, Smartphone, Key, Trash2 } from "lucide-react";
 import { Link } from "@/lib/router-compat";
+import AdminKeyChecker from "@/components/AdminKeyChecker";
 
 
 const EDGE_FUNCTION_BASE = `https://${import.meta.env.VITE_SUPABASE_PROJECT_ID}.supabase.co/functions/v1`;
@@ -473,6 +474,8 @@ export default function Admin() {
             {savingDailyPw ? "Saving..." : "Update Password & Lock All Devices"}
           </Button>
         </div>
+
+        <AdminKeyChecker password={password} />
 
         {/* Purge Daily Auto Claim Groups */}
         <div className="glass-card rounded-2xl p-5 space-y-4 animate-slide-up">
