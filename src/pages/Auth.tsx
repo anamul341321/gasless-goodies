@@ -134,7 +134,7 @@ export default function Auth() {
       if (setErr) throw setErr;
 
       toast({ title: "Wallet linked", description: `Signed in as ${wallet.slice(0, 6)}…${wallet.slice(-4)}` });
-      nav("/account");
+      if (hasNext) { window.location.href = nextPath; return; } nav("/account");
     } catch (e: any) {
       toast({
         title: "Wallet sign-in failed",
