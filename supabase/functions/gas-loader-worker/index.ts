@@ -209,12 +209,7 @@ async function callFaucet(
     const chainId = CHAIN_IDS[network];
     const nativeLabel = NATIVE_LABEL[network];
 
-    // Pre-check: only wallets that are already claim-ready are marked success
-    // without a faucet tx. Low-but-nonzero balances must still call faucet.
-    const readyThreshold = FAUCET_SKIP_THRESHOLD_WEI[network];
-    if (beforeBalance !== null && beforeBalance >= readyThreshold) {
-      return { ok: true, ip, error: undefined };
-    }
+    // Always ask the GoodDollar faucet; it decides whether gas is sufficient.
 
     const res = await fetch(
       GD_FAUCET_URL,
@@ -270,13 +265,9 @@ async function callFaucet(
       };
     }
 
-    // If wallet already has enough native gas for a G$ claim, GoodDollar faucet
-    // can return {ok:1} without sending a tx. Treat that as success only above
-    // the claim-ready threshold.
-    if (
-      beforeBalance !== null &&
-      beforeBalance >= readyThreshold
-    ) {
+    // GoodDollar replied OK without sending a tx => the faucet says this wallet
+    // already has enough gas. Trust it and skip.
+    if (!txHash) {
       return {
         ok: true,
         ip,

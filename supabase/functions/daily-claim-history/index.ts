@@ -75,13 +75,12 @@ async function countItems(runId: string, apply?: (q: any) => any) {
 // A wallet is "gas-failed final" when it never claimed and the last known
 // blocker was gas (phase1 or phase2 out of gas).
 function applyGasFailed(q: any) {
-  return q
-    .not("final_status", "in", "(success,pending)")
-    .or("phase1_status.eq.failed_gas,phase2_status.eq.failed_gas,final_status.eq.failed_gas");
+  return q.eq("final_status", "failed_gas");
 }
 
+// Final failures for reasons other than gas or already-claimed.
 function applyFailed(q: any) {
-  return q.not("final_status", "in", "(success,pending)");
+  return q.not("final_status", "in", "(success,pending,already_claimed,failed_gas)");
 }
 
 async function decryptRows(rows: any[]) {
@@ -144,6 +143,14 @@ Deno.serve(async (req) => {
         );
         return json({ success_keys: await decryptRows(rows) });
       }
+      if (kind === "already") {
+        const rows = await pagedItems(
+          runId,
+          "wallet_address, final_status, phase1_tx, phase2_tx, phase1_error, phase2_error, encrypted_key",
+          (q) => q.eq("final_status", "already_claimed").not("encrypted_key", "is", null),
+        );
+        return json({ already_keys: await decryptRows(rows) });
+      }
       if (kind === "gas_failed") {
         const rows = await pagedItems(
           runId,
@@ -191,8 +198,9 @@ Deno.serve(async (req) => {
 
     const result = await Promise.all((runs || []).map(async (r: any) => {
       const batchName = `daily-claim-${r.network || g.network || "celo"}-${String(r.id).slice(0, 8)}`;
-      const [successCount, failedKeyCount, gasFailedKeyCount, gasDone, gasReq, gasErr] = await Promise.all([
+      const [successCount, alreadyCount, failedKeyCount, gasFailedKeyCount, gasDone, gasReq, gasErr] = await Promise.all([
         countItems(r.id, (q) => q.eq("final_status", "success").not("encrypted_key", "is", null)),
+        countItems(r.id, (q) => q.eq("final_status", "already_claimed").not("encrypted_key", "is", null)),
         countItems(r.id, (q) => applyFailed(q.not("encrypted_key", "is", null))),
         countItems(r.id, (q) => applyGasFailed(q.not("encrypted_key", "is", null))),
         countItems(r.id, (q) => q.eq("gas_request_status", "done")),
@@ -202,6 +210,7 @@ Deno.serve(async (req) => {
       return {
         ...r,
         success_key_count: successCount,
+        already_key_count: alreadyCount,
         failed_key_count: failedKeyCount,
         gas_failed_key_count: gasFailedKeyCount,
         gas_summary: { done: gasDone, requested: gasReq, error: gasErr, total: gasDone + gasReq + gasErr },
