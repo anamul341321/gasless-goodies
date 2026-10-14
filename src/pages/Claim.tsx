@@ -579,11 +579,9 @@ const Claim = () => {
                 <Button size="sm" variant="ghost" onClick={() => jobId && fetchStatus(jobId)}>
                   <RefreshCw className="w-3.5 h-3.5 mr-1" /> Refresh
                 </Button>
-                {isJobDone && (
-                  <Button size="sm" variant="outline" onClick={handleNewBatch}>
-                    Start new batch
-                  </Button>
-                )}
+                <Button size="sm" variant={isJobDone ? "default" : "outline"} onClick={handleNewBatch}>
+                  {isJobDone ? "Start new batch" : "New batch / switch network"}
+                </Button>
               </div>
               {isJobActive && (
                 <p className="text-[11px] text-muted-foreground text-center">

@@ -19,13 +19,6 @@ const services = [
     desc: "Your past G$ claim batches",
   },
   {
-    to: "/recharge",
-    icon: Smartphone,
-    label: "Mobile Recharge",
-    desc: "GP, Robi, Banglalink, Airtel, Teletalk, Skitto",
-    badge: "Popular",
-  },
-  {
     to: "/account",
     icon: User,
     label: "My Account",
