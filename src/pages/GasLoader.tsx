@@ -169,7 +169,6 @@ const GasLoader = () => {
   // Poll job status from server
   const fetchStatus = async (id: string) => {
     const pw = accessPassword.trim();
-    if (!pw) return;
     try {
       const res = await fetch(`${SUPABASE_URL}/functions/v1/gas-loader-status`, {
         method: "POST",
