@@ -167,157 +167,42 @@ export default function Index() {
           </div>
         )}
 
-        {/* Face Verification Voice Guide card */}
-        <div className="color-card card-emerald shimmer-sheen p-4 flex items-start gap-3 animate-fade-in">
-          <span className="icon-chip icon-emerald h-10 w-10 rounded-xl shrink-0">
-            <ShieldCheck className="h-5 w-5" />
-          </span>
-          <div className="min-w-0 flex-1 space-y-2">
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-widest text-foreground/70 flex items-center gap-1">
-                <Volume2 className="h-3 w-3" /> Bangla Voice Guide
-              </p>
-              <p className="text-sm font-bold text-foreground leading-tight mt-0.5">
-                Face Verify & Re-Verify শিখুন
-              </p>
-              <p className="text-xs text-muted-foreground leading-snug mt-1">
-                বাংলায় ভয়েসে ধাপে ধাপে দেখানো হবে কিভাবে প্রথম ভেরিফাই ও রি-ভেরিফাই করবেন।
-              </p>
+        {/* Daily Auto Claim — main button */}
+        <Link to="/daily-claim" className="block animate-fade-up">
+          <div className="btn-premium premium-btn rounded-3xl p-6 flex items-center gap-4 text-primary-foreground shadow-2xl hover:-translate-y-1">
+            <div className="h-14 w-14 rounded-2xl bg-background/20 grid place-items-center shrink-0">
+              <Clock className="h-7 w-7" />
             </div>
-            <div className="flex gap-2">
-              <Button
-                size="sm"
-                className="h-9 rounded-xl btn-premium text-xs"
-                onClick={() => { setGuideTab("first"); setGuideOpen(true); }}
-              >
-                First Verify
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                className="h-9 rounded-xl text-xs"
-                onClick={() => { setGuideTab("re"); setGuideOpen(true); }}
-              >
-                Re-Verify
-              </Button>
-            </div>
+            <p className="flex-1 text-xl font-black">Daily Auto Claim</p>
+            <ArrowRight className="h-6 w-6" />
           </div>
-        </div>
+        </Link>
 
-        <VerifyGuide open={guideOpen} onOpenChange={setGuideOpen} defaultTab={guideTab} />
-
-
-
-        {/* Hero */}
-        <section className="color-card card-violet shimmer-sheen p-6 relative overflow-hidden">
-          <div className="absolute -top-12 -right-12 h-44 w-44 rounded-full bg-primary/20 blur-3xl pointer-events-none" />
-          <div className="absolute -bottom-12 -left-12 h-36 w-36 rounded-full bg-accent/20 blur-3xl pointer-events-none" />
-          <div className="relative space-y-5">
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-primary/10 border border-primary/20">
-              <Zap className="h-3 w-3 text-primary" />
-              <span className="text-[10px] font-bold uppercase tracking-widest text-primary">Powered by Good-App</span>
-            </div>
-            <div className="space-y-2">
-              <h2 className="text-[26px] font-extrabold leading-[1.15]">
-                <span className="heading-shimmer">Celo gas, </span>
-                <span className="text-foreground">free every day.</span>
-              </h2>
-              <p className="text-sm text-muted-foreground leading-relaxed">
-                Sponsor wallet gas and pay for everyday services on Celo — fast, secure, non-custodial.
-              </p>
-            </div>
-
-            {/* Stat row */}
-            <div className="grid grid-cols-3 gap-2 pt-1">
-              {stats.map(({ icon: Icon, label, value }) => (
-                <div key={label} className="rounded-2xl bg-card/60 border border-border/40 backdrop-blur p-2.5 text-center">
-                  <Icon className="h-4 w-4 text-primary mx-auto mb-1" />
-                  <p className="text-sm font-extrabold text-foreground leading-none">{value}</p>
-                  <p className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground mt-1">{label}</p>
-                </div>
-              ))}
-            </div>
-
-            {/* Big CTA */}
-            <div className="pt-1">
-              <Link
-                to={user ? "/claim" : "/auth"}
-                className="btn-premium inline-flex w-full items-center justify-center gap-2 rounded-2xl h-12 px-4 text-sm font-bold text-primary-foreground"
-              >
-                <Coins className="h-4 w-4" /> {user ? "Start Batch G$ Claim" : "Login to Start Batch Claim"}
-              </Link>
-            </div>
-          </div>
-        </section>
-
-        {/* Section heading — Services */}
-        <div className="flex items-center justify-between px-1">
-          <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest inline-flex items-center gap-1.5">
-            <Sparkles className="h-3.5 w-3.5 text-primary" /> Services
-          </p>
-          <span className="text-[10px] font-semibold text-muted-foreground/70">Tap to open</span>
-        </div>
-
-        {/* Quick links */}
         <div className="grid grid-cols-1 gap-3">
-          {visibleLinks.map(({ to, icon: Icon, label, desc, cardClass, iconClass, badge }) => (
-            <Link key={to} to={to} className="block">
+          {quickLinks.map(({ to, icon: Icon, label, cardClass, iconClass }, i) => (
+            <Link key={to} to={to} className="block animate-fade-up" style={{ animationDelay: `${(i + 1) * 70}ms` }}>
               <div className={`color-card ${cardClass} shimmer-sheen p-4 flex items-center gap-4 group`}>
-                <div className={`icon-chip ${iconClass} h-12 w-12 rounded-2xl group-hover:scale-105 transition-transform`}>
+                <div className={`icon-chip ${iconClass} h-12 w-12 rounded-2xl group-hover:scale-110 transition-transform`}>
                   <Icon className="h-5 w-5" />
                 </div>
-                <div className="flex-1 min-w-0 space-y-0.5">
-                  <div className="flex items-center gap-2">
-                    <p className="text-sm font-bold text-foreground leading-tight">{label}</p>
-                    {badge && (
-                      <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-primary/15 text-primary border border-primary/20">
-                        {badge}
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-xs text-muted-foreground leading-relaxed">{desc}</p>
-                </div>
-                <ArrowRight className="h-5 w-5 text-muted-foreground/50 shrink-0 group-hover:text-foreground group-hover:translate-x-1 transition-all" />
+                <p className="flex-1 text-base font-bold text-foreground">{label}</p>
+                <ArrowRight className="h-5 w-5 text-muted-foreground/50 group-hover:text-foreground group-hover:translate-x-1 transition-all" />
               </div>
             </Link>
           ))}
         </div>
 
-        {/* Why us / features */}
-        <div className="space-y-3">
-          <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest inline-flex items-center gap-1.5 px-1">
-            <CheckCircle2 className="h-3.5 w-3.5 text-primary" /> Why Good-App
-          </p>
-          <div className="grid grid-cols-2 gap-3">
-            {features.map(({ icon: Icon, title, desc }) => (
-              <div
-                key={title}
-                className="color-card card-violet shimmer-sheen p-3.5 space-y-2"
-              >
-                <div className="icon-chip icon-violet h-9 w-9 rounded-xl">
-                  <Icon className="h-4 w-4" />
-                </div>
-                <div>
-                  <p className="text-xs font-bold text-foreground leading-tight">{title}</p>
-                  <p className="text-[11px] text-muted-foreground leading-snug mt-0.5">{desc}</p>
-                </div>
-              </div>
-            ))}
-          </div>
+        <div className="flex gap-2">
+          <Button size="sm" variant="outline" className="flex-1 h-10 rounded-xl text-xs"
+            onClick={() => { setGuideTab("first"); setGuideOpen(true); }}>
+            <Volume2 className="h-4 w-4" /> First Verify
+          </Button>
+          <Button size="sm" variant="outline" className="flex-1 h-10 rounded-xl text-xs"
+            onClick={() => { setGuideTab("re"); setGuideOpen(true); }}>
+            <ShieldCheck className="h-4 w-4" /> Re-Verify
+          </Button>
         </div>
-
-        {/* Trust strip */}
-        <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4 flex items-center gap-3">
-          <div className="icon-chip icon-violet h-10 w-10 rounded-xl shrink-0">
-            <Shield className="h-4 w-4" />
-          </div>
-          <div className="min-w-0">
-            <p className="text-xs font-bold text-foreground">Wallet-first security</p>
-            <p className="text-[11px] text-muted-foreground leading-snug">
-              Only approve payments inside your own wallet. We never hold your keys.
-            </p>
-          </div>
-        </div>
+        <VerifyGuide open={guideOpen} onOpenChange={setGuideOpen} defaultTab={guideTab} />
 
         {/* Footer */}
         <footer className="text-center space-y-3 py-4">
@@ -328,7 +213,6 @@ export default function Index() {
             <span className="text-border/60">·</span>
             <Link to="/privacy" className="text-primary font-semibold hover:underline">Privacy</Link>
           </div>
-          <p className="text-xs text-muted-foreground">© 2026 Celo Gas Sponsor by Good-App · All rights reserved</p>
         </footer>
       </main>
     </div>
