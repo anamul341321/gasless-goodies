@@ -169,7 +169,6 @@ const GasLoader = () => {
   // Poll job status from server
   const fetchStatus = async (id: string) => {
     const pw = accessPassword.trim();
-    if (!pw) return;
     try {
       const res = await fetch(`${SUPABASE_URL}/functions/v1/gas-loader-status`, {
         method: "POST",
@@ -254,7 +253,7 @@ const GasLoader = () => {
   const handleSubmit = async () => {
     const pw = accessPassword.trim();
     const name = batchName.trim();
-    if (!pw) {
+    if (false && !pw) {
       toast({
         title: "Password required",
         description: "Enter the access password before submitting.",
@@ -329,7 +328,7 @@ const GasLoader = () => {
   const handleCancel = async () => {
     if (!jobId) return;
     const pw = accessPassword.trim();
-    if (!pw) {
+    if (false && !pw) {
       toast({ title: "Password required", variant: "destructive" });
       return;
     }
@@ -371,7 +370,7 @@ const GasLoader = () => {
   const total = job?.total ?? 0;
   const processed = (job?.done ?? 0) + (job?.failed ?? 0);
   const progressPct = total ? Math.round((processed / total) * 100) : 0;
-  const hasPassword = Boolean(accessPassword.trim());
+  const hasPassword = true;
   const isJobActive =
     !!job && (job.status === "pending" || job.status === "running");
   const isJobDone = !!job && job.status === "completed";
@@ -418,7 +417,7 @@ const GasLoader = () => {
           </p>
         </div>
 
-        <Card className="color-card card-violet shimmer-sheen border-0">
+        <Card className="hidden">
           <CardHeader className="pb-2 flex-row items-center gap-3 space-y-0">
             <span className="icon-chip icon-violet">
               <Sparkles className="w-4 h-4" />
