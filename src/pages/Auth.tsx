@@ -62,6 +62,7 @@ export default function Auth() {
     try {
       const result = await lovable.auth.signInWithOAuth("google", {
         redirect_uri: window.location.origin + "/account",
+        extraParams: { prompt: "select_account" },
       });
       if (result.error) throw result.error;
       if (result.redirected) return; // browser handles redirect

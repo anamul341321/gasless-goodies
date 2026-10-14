@@ -454,49 +454,54 @@ export default function DailyClaim() {
     const k = `${runId}:${kind}`;
     const open = !!openHistoryRun[k];
     const list = runDetail[k] || [];
-    const toneCls =
-      tone === "emerald" ? "border-emerald-500/25 bg-emerald-500/5"
-      : tone === "amber" ? "border-amber-500/25 bg-amber-500/5"
-      : tone === "sky" ? "border-sky-500/25 bg-sky-500/5"
-      : "border-rose-500/25 bg-rose-500/5";
+    const tones = {
+      emerald: { box: "border-emerald-500/30 from-emerald-500/15", dot: "bg-emerald-400", text: "text-emerald-400", icon: "✓" },
+      amber: { box: "border-amber-500/30 from-amber-500/15", dot: "bg-amber-400", text: "text-amber-400", icon: "⛽" },
+      sky: { box: "border-sky-500/30 from-sky-500/15", dot: "bg-sky-400", text: "text-sky-400", icon: "↺" },
+      rose: { box: "border-rose-500/30 from-rose-500/15", dot: "bg-rose-400", text: "text-rose-400", icon: "✗" },
+    }[tone];
     return (
-      <div className={`rounded-md border ${toneCls}`}>
-        <div className="px-2 py-1 flex items-center justify-between gap-2 text-xs">
-          <button className="flex-1 text-left"
+      <div className={`key-box rounded-xl border bg-gradient-to-br to-transparent ${tones.box}`}>
+        <div className="px-3 py-2 flex items-center justify-between gap-2 text-xs">
+          <button className="flex-1 flex items-center gap-2 text-left"
             onClick={() => {
               const willOpen = !open;
               setOpenHistoryRun((s) => ({ ...s, [k]: willOpen }));
               if (willOpen) loadRunDetail(runId, kind);
             }}>
-            {title} ({count})
+            <span className={`grid place-items-center w-7 h-7 rounded-lg bg-background/60 font-bold ${tones.text}`}>{tones.icon}</span>
+            <span className="font-semibold text-foreground">{title}</span>
+            <span className={`ml-1 rounded-full px-2 py-0.5 text-[10px] font-bold bg-background/60 ${tones.text}`}>{count}</span>
           </button>
-          <Button size="sm" variant="ghost" onClick={() => copyRunKeys(runId, kind, title)}>
+          <Button size="sm" variant="secondary" className="premium-btn h-7 rounded-full" onClick={() => copyRunKeys(runId, kind, title)}>
             <Copy className="w-3 h-3 mr-1" /> সব কপি
           </Button>
-          {open ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+          <span className={`transition-transform duration-300 ${open ? "rotate-180" : ""}`}><ChevronDown className="w-4 h-4" /></span>
         </div>
         {open && (
-          <div className="px-2 pb-2 space-y-1 max-h-56 overflow-y-auto">
-            {runDetailLoading[k] && <p className="text-[11px] text-muted-foreground text-center py-1">লোড হচ্ছে…</p>}
+          <div className="px-3 pb-3 space-y-1.5 max-h-64 overflow-y-auto animate-fade-up">
+            {runDetailLoading[k] && <p className="text-[11px] text-muted-foreground text-center py-2 animate-pulse">লোড হচ্ছে…</p>}
             {!runDetailLoading[k] && list.length === 0 && (
               <p className="text-[11px] text-muted-foreground text-center py-1">কোনো কী পাওয়া যায়নি</p>
             )}
-            {list.map((kk: any) => {
+            {list.map((kk: any, i: number) => {
               const sk = `h:${runId}:${kind}:${kk.wallet_address}`;
               return (
-                <div key={sk} className="p-1.5 rounded bg-background/50 border border-border text-[11px]">
+                <div key={sk} style={{ animationDelay: `${Math.min(i, 15) * 25}ms` }}
+                  className="animate-fade-up p-2 rounded-lg bg-background/60 border border-border/60 text-[11px] transition hover:border-primary/40 hover:bg-background/80">
                   <div className="flex items-center gap-2">
+                    <span className={`w-1.5 h-1.5 rounded-full ${tones.dot}`} />
                     <span className="font-mono flex-1">{shortAddr(kk.wallet_address)}</span>
                     <Badge variant="outline" className={statusColor(kk.status)}>{statusInfo(kk.status).label}</Badge>
-                    <Button size="sm" variant="ghost" onClick={() => setShownKeys((s) => ({ ...s, [sk]: !s[sk] }))}>
+                    <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => setShownKeys((s) => ({ ...s, [sk]: !s[sk] }))}>
                       {shownKeys[sk] ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
                     </Button>
-                    <Button size="sm" variant="ghost" onClick={() => copy(kk.private_key, "কী কপি হয়েছে")}>
+                    <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => copy(kk.private_key, "কী কপি হয়েছে")}>
                       <Copy className="w-3 h-3" />
                     </Button>
                   </div>
                   {shownKeys[sk] && (
-                    <code className="block mt-1 break-all font-mono text-muted-foreground">{kk.private_key}</code>
+                    <code className="block mt-1.5 p-1.5 rounded bg-muted/50 break-all font-mono text-muted-foreground animate-fade-up">{kk.private_key}</code>
                   )}
                   {kk.error && <p className="text-muted-foreground mt-1">{reasonBn(kk.error)}</p>}
                 </div>
