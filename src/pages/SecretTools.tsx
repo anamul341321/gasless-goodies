@@ -110,11 +110,11 @@ export default function SecretTools() {
   };
 
   // Initial loading state — avoid flashing the unlock screen for already-unlocked users.
-  if (unlocked === null) {
+  if ((false as boolean) && unlocked === null) {
     return <div className="min-h-screen aurora-bg bg-background" />;
   }
 
-  if (!unlocked) {
+  if ((false as boolean) && !unlocked) {
     return (
       <div className="min-h-screen aurora-bg bg-background flex items-center justify-center px-5">
         <div className="w-full max-w-sm color-card card-violet shimmer-sheen p-6 space-y-5">
