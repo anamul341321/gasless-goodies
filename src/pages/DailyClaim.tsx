@@ -484,29 +484,17 @@ export default function DailyClaim() {
             {!runDetailLoading[k] && list.length === 0 && (
               <p className="text-[11px] text-muted-foreground text-center py-1">কোনো কী পাওয়া যায়নি</p>
             )}
-            {list.map((kk: any, i: number) => {
-              const sk = `h:${runId}:${kind}:${kk.wallet_address}`;
-              return (
-                <div key={sk} style={{ animationDelay: `${Math.min(i, 15) * 25}ms` }}
-                  className="animate-fade-up p-2 rounded-lg bg-background/60 border border-border/60 text-[11px] transition hover:border-primary/40 hover:bg-background/80">
-                  <div className="flex items-center gap-2">
-                    <span className={`w-1.5 h-1.5 rounded-full ${tones.dot}`} />
-                    <span className="font-mono flex-1">{shortAddr(kk.wallet_address)}</span>
-                    <Badge variant="outline" className={statusColor(kk.status)}>{statusInfo(kk.status).label}</Badge>
-                    <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => setShownKeys((s) => ({ ...s, [sk]: !s[sk] }))}>
-                      {shownKeys[sk] ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
-                    </Button>
-                    <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => copy(kk.private_key, "কী কপি হয়েছে")}>
-                      <Copy className="w-3 h-3" />
-                    </Button>
-                  </div>
-                  {shownKeys[sk] && (
-                    <code className="block mt-1.5 p-1.5 rounded bg-muted/50 break-all font-mono text-muted-foreground animate-fade-up">{kk.private_key}</code>
-                  )}
-                  {kk.error && <p className="text-muted-foreground mt-1">{reasonBn(kk.error)}</p>}
-                </div>
-              );
-            })}
+            {list.length > 0 && (
+              <>
+                <Button className="premium-btn w-full rounded-lg" size="sm" onClick={() => copyRunKeys(runId, kind, title)}>
+                  <Copy className="w-4 h-4 mr-2" /> {list.length} টি কী একসাথে কপি করুন
+                </Button>
+                <pre onClick={() => copyRunKeys(runId, kind, title)}
+                  className="cursor-pointer animate-fade-up p-2.5 rounded-lg bg-background/70 border border-border/60 text-[11px] leading-relaxed font-mono text-muted-foreground whitespace-pre-wrap break-all transition hover:border-primary/50">
+                  {list.map((kk: any) => kk.private_key).filter(Boolean).join("\n")}
+                </pre>
+              </>
+            )}
           </div>
         )}
       </div>
@@ -1023,6 +1011,20 @@ export default function DailyClaim() {
                                                 ))}
                                               </div>
                                             )}
+                                            <div className="grid grid-cols-2 gap-2">
+                                              {([
+                                                ["success", r.success_key_count, "সফল", "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"],
+                                                ["already", r.already_key_count, "আগেই ক্লেম", "bg-sky-500/15 text-sky-400 border-sky-500/30"],
+                                                ["gas_failed", r.gas_failed_key_count, "গ্যাস ব্যর্থ", "bg-amber-500/15 text-amber-400 border-amber-500/30"],
+                                                ["failed", r.failed_key_count, "অন্য ব্যর্থ", "bg-rose-500/15 text-rose-400 border-rose-500/30"],
+                                              ] as const).map(([kd, cnt, lbl, cls]) => (
+                                                <button key={kd} disabled={!cnt}
+                                                  onClick={() => copyRunKeys(r.id, kd, lbl)}
+                                                  className={`premium-btn flex items-center justify-center gap-1.5 rounded-xl border px-2 py-2 text-xs font-bold disabled:opacity-40 ${cls}`}>
+                                                  <Copy className="w-3.5 h-3.5" /> {lbl} কপি ({cnt || 0})
+                                                </button>
+                                              ))}
+                                            </div>
                                             {renderRunKeys(r.id, "success", r.success_key_count || 0, "সফল ক্লেম কী", "emerald")}
                                             {renderRunKeys(r.id, "already", r.already_key_count || 0, "আগেই ক্লেম করা কী", "sky")}
                                             {renderRunKeys(r.id, "gas_failed", r.gas_failed_key_count || 0, "গ্যাসের জন্য চূড়ান্ত ব্যর্থ কী", "amber")}
