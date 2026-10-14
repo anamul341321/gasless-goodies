@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { useNavigate, Link } from "@/lib/router-compat";
+import { useNavigate, Link, useSearchParams } from "@/lib/router-compat";
+import { oauthReturnPath } from "@/lib/oauth-return-path";
 import { ArrowLeft, Loader2, Mail, Wallet as WalletIcon } from "lucide-react";
 import { BrowserProvider } from "ethers";
 import { Button } from "@/components/ui/button";
@@ -15,6 +16,9 @@ const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
 export default function Auth() {
   const nav = useNavigate();
   const { toast } = useToast();
+  const [sp] = useSearchParams();
+  const nextPath = oauthReturnPath(sp.get("next"));
+  const hasNext = nextPath !== "/";
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -35,7 +39,7 @@ export default function Auth() {
         const { error } = await supabase.auth.signUp({
           email,
           password,
-          options: { emailRedirectTo: window.location.origin },
+          options: { emailRedirectTo: hasNext ? new URL(nextPath, window.location.origin).href : window.location.origin },
         });
         if (error) throw error;
         try { localStorage.setItem("show_verify_guide", "first"); } catch {}
@@ -45,6 +49,7 @@ export default function Auth() {
         if (error) throw error;
         toast({ title: "Welcome back" });
       }
+      if (hasNext) { window.location.href = nextPath; return; }
       nav(mode === "signup" ? "/" : "/account");
     } catch (e: any) {
       toast({
@@ -61,11 +66,12 @@ export default function Auth() {
     setGoogleBusy(true);
     try {
       const result = await lovable.auth.signInWithOAuth("google", {
-        redirect_uri: window.location.origin + "/account",
+        redirect_uri: hasNext ? new URL(nextPath, window.location.origin).href : window.location.origin + "/account",
         extraParams: { prompt: "select_account" },
       });
       if (result.error) throw result.error;
       if (result.redirected) return; // browser handles redirect
+      if (hasNext) { window.location.href = nextPath; return; }
       nav("/account");
     } catch (e: any) {
       toast({
