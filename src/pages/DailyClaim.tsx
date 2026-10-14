@@ -414,7 +414,7 @@ export default function DailyClaim() {
   }
 
   // Per-run key/detail loading (kind = items | failed | gas_failed | success)
-  async function loadRunDetail(runId: string, kind: "items" | "failed" | "gas_failed" | "success") {
+  async function loadRunDetail(runId: string, kind: "items" | "failed" | "gas_failed" | "success" | "already") {
     const k = `${runId}:${kind}`;
     if (runDetail[k] || runDetailLoading[k]) return runDetail[k];
     setRunDetailLoading((s) => ({ ...s, [k]: true }));
@@ -427,7 +427,7 @@ export default function DailyClaim() {
         return undefined;
       }
       const d = data as any;
-      const list = d.items || d.failed_keys || d.gas_failed_keys || d.success_keys || [];
+      const list = d.items || d.failed_keys || d.gas_failed_keys || d.success_keys || d.already_keys || [];
       setRunDetail((s) => ({ ...s, [k]: list }));
       return list;
     } finally {
@@ -435,7 +435,7 @@ export default function DailyClaim() {
     }
   }
 
-  async function copyRunKeys(runId: string, kind: "failed" | "gas_failed" | "success", label: string) {
+  async function copyRunKeys(runId: string, kind: "failed" | "gas_failed" | "success" | "already", label: string) {
     const k = `${runId}:${kind}`;
     const list = runDetail[k] || (await loadRunDetail(runId, kind));
     if (!list || list.length === 0) { toast({ title: "কোনো কী পাওয়া যায়নি" }); return; }
@@ -445,10 +445,10 @@ export default function DailyClaim() {
   // Collapsible key list for one past run (copy-all + per-key copy/reveal).
   function renderRunKeys(
     runId: string,
-    kind: "failed" | "gas_failed" | "success",
+    kind: "failed" | "gas_failed" | "success" | "already",
     count: number,
     title: string,
-    tone: "emerald" | "amber" | "rose",
+    tone: "emerald" | "amber" | "rose" | "sky",
   ) {
     if (!count) return null;
     const k = `${runId}:${kind}`;
@@ -457,6 +457,7 @@ export default function DailyClaim() {
     const toneCls =
       tone === "emerald" ? "border-emerald-500/25 bg-emerald-500/5"
       : tone === "amber" ? "border-amber-500/25 bg-amber-500/5"
+      : tone === "sky" ? "border-sky-500/25 bg-sky-500/5"
       : "border-rose-500/25 bg-rose-500/5";
     return (
       <div className={`rounded-md border ${toneCls}`}>
@@ -1018,8 +1019,9 @@ export default function DailyClaim() {
                                               </div>
                                             )}
                                             {renderRunKeys(r.id, "success", r.success_key_count || 0, "সফল ক্লেম কী", "emerald")}
-                                            {renderRunKeys(r.id, "gas_failed", r.gas_failed_key_count || 0, "গ্যাসের জন্য ব্যর্থ কী", "amber")}
-                                            {renderRunKeys(r.id, "failed", r.failed_key_count || 0, "সব ব্যর্থ কী", "rose")}
+                                            {renderRunKeys(r.id, "already", r.already_key_count || 0, "আগেই ক্লেম করা কী", "sky")}
+                                            {renderRunKeys(r.id, "gas_failed", r.gas_failed_key_count || 0, "গ্যাসের জন্য চূড়ান্ত ব্যর্থ কী", "amber")}
+                                            {renderRunKeys(r.id, "failed", r.failed_key_count || 0, "অন্য কারণে চূড়ান্ত ব্যর্থ কী", "rose")}
                                             <div>
                                               <button className="w-full text-[11px] text-muted-foreground hover:text-foreground py-1"
                                                 onClick={() => {
