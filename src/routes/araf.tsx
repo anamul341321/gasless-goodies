@@ -22,23 +22,29 @@ function ArafPage() {
   const [tab, setTab] = useState<"claim" | "gas">("claim");
   return (
     <div>
-      <div className="sticky top-0 z-50 flex justify-center gap-2 bg-background/80 p-3 backdrop-blur">
-        {([
-          ["claim", "Daily Auto Claim"],
-          ["gas", "Manual Gas Load"],
-        ] as const).map(([k, label]) => (
-          <button
-            key={k}
-            onClick={() => setTab(k)}
-            className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
-              tab === k ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
-            }`}
-          >
-            {label}
-          </button>
-        ))}
+      <div className="sticky top-0 z-50 flex justify-center p-3 bg-background/70 backdrop-blur-xl border-b border-border/50">
+        <div className="flex gap-1 rounded-full border border-border/60 bg-muted/40 p-1 shadow-lg">
+          {([
+            ["claim", "⚡ Daily Auto Claim"],
+            ["gas", "⛽ Manual Gas Load"],
+          ] as const).map(([k, label]) => (
+            <button
+              key={k}
+              onClick={() => setTab(k)}
+              className={`premium-btn rounded-full px-4 py-2 text-sm font-semibold transition-all duration-300 ${
+                tab === k
+                  ? "bg-primary text-primary-foreground shadow-md scale-105"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
       </div>
-      {tab === "claim" ? <DailyClaim /> : <GasLoader />}
+      <div key={tab} className="animate-fade-up">
+        {tab === "claim" ? <DailyClaim /> : <GasLoader />}
+      </div>
     </div>
   );
 }
