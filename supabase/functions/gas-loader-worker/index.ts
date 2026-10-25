@@ -563,16 +563,16 @@ async function processOneWallet(item: {
   const t = setTimeout(() => ac.abort(), 45_000);
   let result: { ok: boolean; txHash?: string; error?: string; ip?: string };
   try {
-    // 24h cooldown: if GoodDollar flagged this wallet as "faucet abuse"
+    // 12h cooldown: if GoodDollar flagged this wallet as "faucet abuse"
     // recently, don't ask again (asking again only extends the block).
-    const since = new Date(Date.now() - 24 * 3600_000).toISOString();
+    const since = new Date(Date.now() - 12 * 3600_000).toISOString();
     const cdRes = await fetch(
       `${SUPABASE_URL}/rest/v1/gas_load_history?wallet_address=ilike.${item.wallet_address}&error_message=ilike.faucet%20abuse*&created_at=gte.${encodeURIComponent(since)}&select=created_at&order=created_at.desc&limit=1`,
       { headers: sbHeaders() }
     ).catch(() => null);
     const cdRows = cdRes && cdRes.ok ? await cdRes.json() : [];
     if (Array.isArray(cdRows) && cdRows[0]) {
-      const until = new Date(new Date(cdRows[0].created_at).getTime() + 24 * 3600_000);
+      const until = new Date(new Date(cdRows[0].created_at).getTime() + 12 * 3600_000);
       clearTimeout(t);
       await finalizeWallet(item.id, item.job_id, {
         ok: false,
