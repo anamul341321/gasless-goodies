@@ -328,18 +328,39 @@ async function claimNextWallet(): Promise<{
     }
   ).catch((e) => console.warn("stale processing reset failed", e));
 
-  // Find oldest pending row
-  const findRes = await fetch(
-    `${SUPABASE_URL}/rest/v1/gas_load_queue?status=eq.pending&select=id,job_id,wallet_address&order=created_at.asc&limit=1`,
+  // Fair rotation across batches: serve the active job that was touched
+  // least recently, so one huge batch (e.g. 1000 wallets) never blocks a
+  // small batch submitted later from starting.
+  let row: { id: string; job_id: string; wallet_address: string } | null = null;
+  const jobsRes = await fetch(
+    `${SUPABASE_URL}/rest/v1/gas_load_jobs?status=in.(pending,running)&select=id&order=updated_at.asc&limit=50`,
     { headers: sbHeaders() }
   );
-  if (!findRes.ok) {
-    console.error("find pending failed", await findRes.text());
-    return null;
+  const activeJobs: Array<{ id: string }> = jobsRes.ok ? await jobsRes.json() : [];
+  for (const j of Array.isArray(activeJobs) ? activeJobs : []) {
+    const r = await fetch(
+      `${SUPABASE_URL}/rest/v1/gas_load_queue?job_id=eq.${j.id}&status=eq.pending&select=id,job_id,wallet_address&order=created_at.asc&limit=1`,
+      { headers: sbHeaders() }
+    );
+    if (!r.ok) continue;
+    const rr = await r.json();
+    if (Array.isArray(rr) && rr[0]) { row = rr[0]; break; }
   }
-  const rows = await findRes.json();
-  if (!Array.isArray(rows) || rows.length === 0) return null;
-  const row = rows[0];
+  if (!row) {
+    // Fallback: oldest pending row overall
+    const findRes = await fetch(
+      `${SUPABASE_URL}/rest/v1/gas_load_queue?status=eq.pending&select=id,job_id,wallet_address&order=created_at.asc&limit=1`,
+      { headers: sbHeaders() }
+    );
+    if (!findRes.ok) {
+      console.error("find pending failed", await findRes.text());
+      return null;
+    }
+    const rows = await findRes.json();
+    if (!Array.isArray(rows) || rows.length === 0) return null;
+    row = rows[0];
+  }
+  if (!row) return null;
 
   // Try to claim it (only succeeds if still pending)
   const claimRes = await fetch(
