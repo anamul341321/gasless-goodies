@@ -10,6 +10,7 @@ import { Wallet, JsonRpcProvider, Contract, formatEther } from "npm:ethers@6.13.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { decryptKey } from "../_shared/dailyCrypto.ts";
 import { GD_NETWORKS, resolveNetwork, type GDNetwork } from "../_shared/gdNetworks.ts";
+import { isTransient, recoverStalledRetry } from "./recovery.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -76,33 +77,6 @@ const inFlight = new Set<string>();
 
 // Transient node/network failures must NOT burn a wallet's attempt — they are
 // retried on a different RPC endpoint instead of being recorded as failures.
-function isTransient(msg: string) {
-  const m = (msg || "").toLowerCase();
-  return (
-    m.includes("could not coalesce") ||
-    m.includes("missing response") ||
-    m.includes("server response 5") ||
-    m.includes("server response 4") ||
-    m.includes("nonce has already been used") ||
-    m.includes("replacement fee too low") ||
-    m.includes("nonce too low") ||
-    m.includes("transaction underpriced") ||
-    m.includes("timeout") ||
-    m.includes("timed out") ||
-    m.includes("rate limit") ||
-    m.includes("too many requests") ||
-    m.includes("network error") ||
-    m.includes("connection") ||
-    m.includes("fetch failed") ||
-    m.includes("bad request") ||
-    m.includes("dns") ||
-    m.includes("temporary failure") ||
-    m.includes("failed to lookup") ||
-    m.includes("econn") ||
-    m.includes("socket")
-  );
-}
-
 function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const t = setTimeout(() => reject(new Error(`${label} timeout`)), ms);
@@ -589,6 +563,8 @@ async function runGasRequesting(runId: string, network: GDNetwork, _deadline: nu
 }
 
 async function runRetrying(runId: string, network: GDNetwork, deadline: number) {
+  // Match phase-one recovery: a dead invocation must not strand its retry wave.
+  await recoverStalledRetry(admin, runId);
   const { data: strandedRetry } = await admin
     .from("daily_claim_run_items")
     .select("id, phase2_error, final_status")
@@ -642,9 +618,16 @@ async function runRetrying(runId: string, network: GDNetwork, deadline: number) 
         if (res.status === "failed_kyc") await removeSavedKycWallet(r.owner_user_id, r.wallet_address, network);
         await admin.from("daily_claim_run_items").update(patch).eq("id", r.id);
       } catch (e: any) {
+        const msg = (e?.message || String(e)).slice(0, 240);
+        if (isTransient(msg)) {
+          await admin.from("daily_claim_run_items").update({
+            phase2_status: "pending", phase2_error: msg, final_status: "pending",
+          }).eq("id", r.id);
+          return;
+        }
         await admin.from("daily_claim_run_items").update({
           phase2_status: "failed_other",
-          phase2_error: (e?.message || String(e)).slice(0, 240),
+          phase2_error: msg,
           final_status: "failed_other",
           attempts: 2,
         }).eq("id", r.id);
