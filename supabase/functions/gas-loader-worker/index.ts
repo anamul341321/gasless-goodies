@@ -175,6 +175,61 @@ function isTerminalFaucetError(error?: string | null): boolean {
   );
 }
 
+async function findStoredKey(account: string): Promise<string | null> {
+  const addr = encodeURIComponent(account);
+  for (const table of ["daily_claim_wallets", "daily_claim_run_items"]) {
+    try {
+      const res = await fetch(
+        `${SUPABASE_URL}/rest/v1/${table}?select=encrypted_key&wallet_address=ilike.${addr}&encrypted_key=not.is.null&order=created_at.desc&limit=1`,
+        { headers: sbHeaders() },
+      );
+      if (!res.ok) continue;
+      const rows = await res.json();
+      const enc = rows?.[0]?.encrypted_key;
+      if (enc) return await decryptKey(enc);
+    } catch (_) {
+      // try next source
+    }
+  }
+  return null;
+}
+
+// Let the wallet itself call faucet.topWallet(self). Returns null when this
+// path does not apply (no stored key, faucet says no, or wallet cannot pay).
+async function selfTopUp(
+  account: string,
+  network: Network,
+  before: bigint | null,
+): Promise<{ ok: boolean; txHash?: string; error?: string } | null> {
+  const pk = await findStoredKey(account);
+  if (!pk) return null;
+  try {
+    const provider = new JsonRpcProvider(RPC_URLS[network], CHAIN_IDS[network], { staticNetwork: true, batchMaxCount: 1 });
+    const signer = new Wallet(pk, provider);
+    if (signer.address.toLowerCase() !== account.toLowerCase()) return null;
+    const faucet = new Contract(FAUCET_ADDRESSES[network], FAUCET_ABI, signer);
+    const allowed = await faucet.canTop(account).catch(() => true);
+    if (!allowed) return { ok: false, error: "GoodDollar faucet limit reached for this wallet (canTop=false)" };
+    const gas = BigInt(await faucet.topWallet.estimateGas(account));
+    const fee = await provider.getFeeData();
+    const gasPrice = fee.gasPrice ?? fee.maxFeePerGas ?? 0n;
+    if (!canAffordSelfTopUp(before, gas, gasPrice)) return null;
+    const tx = await faucet.topWallet(account, { gasLimit: (gas * 120n) / 100n, gasPrice });
+    const receipt = await tx.wait(1, 60_000);
+    if (!receipt || receipt.status !== 1) return { ok: false, txHash: tx.hash, error: "Self faucet call reverted" };
+    const after = await getNativeBalanceWei(account, network);
+    if (!hasGasIncrease(before, after)) {
+      return { ok: false, txHash: tx.hash, error: `Self faucet call mined but balance did not increase (before=${before}, after=${after})` };
+    }
+    console.log("[self-topup] ok", account, tx.hash);
+    return { ok: true, txHash: tx.hash };
+  } catch (e: any) {
+    const msg = String(e?.shortMessage || e?.message || e).slice(0, 200);
+    console.log("[self-topup] failed", account, msg);
+    return { ok: false, error: `Self faucet call failed: ${msg}` };
+  }
+}
+
 async function callFaucet(
   account: string,
   network: Network,
