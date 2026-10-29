@@ -1,7 +1,21 @@
 // Background worker that processes pending gas_load_queue rows.
 // Runs on a cron schedule (every minute) AND can be kicked by gas-loader on submit.
 // Single-instance guarded by PG advisory lock to prevent overlap.
-import { faucetRejection, hasGasIncrease } from "./verification.ts";
+import { canAffordSelfTopUp, faucetRejection, hasGasIncrease } from "./verification.ts";
+import { Wallet, JsonRpcProvider, Contract } from "npm:ethers@6.13.4";
+import { decryptKey } from "../_shared/dailyCrypto.ts";
+
+// GoodDollar faucet contracts. When a wallet already holds enough native coin
+// to pay for faucet.topWallet(self), GoodDollar's server replies {ok:1} but
+// sends nothing — the wallet must make that call itself.
+const FAUCET_ADDRESSES: Record<"celo" | "xdc", string> = {
+  celo: "0x4F93Fa058b03953C851eFaA2e4FC5C34afDFAb84",
+  xdc: "0x7344Da1Be296f03fbb8082aDaC5696058B5a9bd9",
+};
+const FAUCET_ABI = [
+  "function canTop(address) view returns (bool)",
+  "function topWallet(address)",
+];
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
