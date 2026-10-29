@@ -270,7 +270,14 @@ async function callFaucet(
     const chainId = CHAIN_IDS[network];
     const nativeLabel = NATIVE_LABEL[network];
 
-    // Always ask the GoodDollar faucet; it decides whether gas is sufficient.
+    // GoodDollar only sends gas itself to near-empty wallets; wallets that can
+    // pay for the faucet call get {ok:1} and nothing. When we hold the wallet's
+    // key, let it call the faucet directly first.
+    const self = await selfTopUp(account, network, beforeBalance);
+    if (self?.ok) return { ok: true, ip, txHash: self.txHash };
+    const selfNote = self?.error ? ` | ${self.error}` : "";
+
+    // Otherwise ask the GoodDollar server; it decides whether gas is sufficient.
 
     const res = await fetch(
       GD_FAUCET_URL,
@@ -333,7 +340,7 @@ async function callFaucet(
         ok: false,
         ip,
         txHash: txHash || undefined,
-        error: `Gas delivery not confirmed: GoodDollar replied ${text.slice(0, 200)}, but ${nativeLabel} balance did not increase (before=${confirmation.before ?? "unknown"}, after=${confirmation.after ?? "unknown"})`,
+        error: `Gas delivery not confirmed: GoodDollar replied ${text.slice(0, 200)}, but ${nativeLabel} balance did not increase (before=${confirmation.before ?? "unknown"}, after=${confirmation.after ?? "unknown"})${selfNote}`,
       };
     }
 
