@@ -1,0 +1,2 @@
+# Architecture rules
+- Keep existing gas-loader-worker response classification and balance-evidence checks in its browser-independent verification module, with focused tests, so faucet acknowledgement cannot be mistaken for confirmed gas delivery.

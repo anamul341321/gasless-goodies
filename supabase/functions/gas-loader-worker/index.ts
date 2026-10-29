@@ -1,6 +1,7 @@
 // Background worker that processes pending gas_load_queue rows.
 // Runs on a cron schedule (every minute) AND can be kicked by gas-loader on submit.
 // Single-instance guarded by PG advisory lock to prevent overlap.
+import { faucetRejection, hasGasIncrease } from "./verification.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -21,16 +22,6 @@ const WEBSHARE_HOST = "p.webshare.io";
 const WEBSHARE_PORT = "80";
 const BALANCE_VERIFY_ATTEMPTS = 8;
 const BALANCE_VERIFY_DELAY_MS = 4_000;
-// Only skip faucet when the wallet is genuinely ready for the current expensive
-// Celo claim gas path. Celo's live gas price can push one G$ claim above 0.07
-// CELO, so a 0.06 skip caused "success" gas rows without any top-up tx and the
-// next claim still failed for gas. Keep a safety buffer and call the faucet
-// below this balance.
-const FAUCET_SKIP_THRESHOLD_WEI: Record<Network, bigint> = {
-  celo: 90_000_000_000_000_000n, // 0.09 CELO
-  xdc: 3_500_000_000_000_000n,   // 0.0035 XDC
-};
-
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const WS_USERNAME = Deno.env.get("WEBSHARE_PROXY_USERNAME") ?? "";
@@ -89,7 +80,8 @@ async function waitForBalanceIncrease(
   for (let i = 0; i < BALANCE_VERIFY_ATTEMPTS; i++) {
     await new Promise((r) => setTimeout(r, BALANCE_VERIFY_DELAY_MS));
     after = await getNativeBalanceWei(address, network);
-    if (before !== null && after !== null && after > before) {
+    if (hasGasIncrease(before, after)) {
+      if (before === null || after === null) continue;
       return { increased: true, before: before.toString(), after: after.toString() };
     }
   }
@@ -254,35 +246,25 @@ async function callFaucet(
       body?.result?.hash ||
       null;
 
-    if (!txHash && (body?.ok === false || body?.error)) {
+    console.log("[faucet-response]", JSON.stringify({ network, httpStatus: res.status, body }));
+    const rejection = body && typeof body === "object" ? faucetRejection(body) : null;
+    if (rejection) {
       return {
         ok: false,
         ip,
-        error:
-          body?.error ||
-          body?.message ||
-          `faucet rejected: ${text.slice(0, 200)}`,
+        error: rejection,
       };
     }
 
-    // GoodDollar replied OK without sending a tx => the faucet says this wallet
-    // already has enough gas. Trust it and skip.
-    if (!txHash) {
-      return {
-        ok: true,
-        ip,
-        txHash: txHash || undefined,
-        error: undefined,
-      };
-    }
-
+    // An acknowledgement (including {ok:1}) is NOT proof of gas delivery.
+    // Verify balance even when GoodDollar does not include a transaction hash.
     const confirmation = await waitForBalanceIncrease(account, beforeBalance, network);
     if (!confirmation.increased) {
       return {
         ok: false,
         ip,
         txHash: txHash || undefined,
-        error: `faucet returned success but ${nativeLabel} balance did not increase (before=${confirmation.before ?? "unknown"}, after=${confirmation.after ?? "unknown"})`,
+        error: `Gas delivery not confirmed: GoodDollar replied ${text.slice(0, 200)}, but ${nativeLabel} balance did not increase (before=${confirmation.before ?? "unknown"}, after=${confirmation.after ?? "unknown"})`,
       };
     }
 
@@ -563,23 +545,7 @@ async function processOneWallet(item: {
   const t = setTimeout(() => ac.abort(), 45_000);
   let result: { ok: boolean; txHash?: string; error?: string; ip?: string };
   try {
-    // 12h cooldown: if GoodDollar flagged this wallet as "faucet abuse"
-    // recently, don't ask again (asking again only extends the block).
-    const since = new Date(Date.now() - 12 * 3600_000).toISOString();
-    const cdRes = await fetch(
-      `${SUPABASE_URL}/rest/v1/gas_load_history?wallet_address=ilike.${item.wallet_address}&error_message=ilike.faucet%20abuse*&created_at=gte.${encodeURIComponent(since)}&select=created_at&order=created_at.desc&limit=1`,
-      { headers: sbHeaders() }
-    ).catch(() => null);
-    const cdRows = cdRes && cdRes.ok ? await cdRes.json() : [];
-    if (Array.isArray(cdRows) && cdRows[0]) {
-      const until = new Date(new Date(cdRows[0].created_at).getTime() + 12 * 3600_000);
-      clearTimeout(t);
-      await finalizeWallet(item.id, item.job_id, {
-        ok: false,
-        error: `cooldown: faucet blocked this wallet, skipped until ${until.toISOString()}`,
-      });
-      return;
-    }
+    // No app-imposed cooldown: GoodDollar decides whether to accept requests.
     result = await callFaucet(item.wallet_address, item.network, ac.signal);
   } catch (e: any) {
     result = { ok: false, error: e?.message || String(e) };
