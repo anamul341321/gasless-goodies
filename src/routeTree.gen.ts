@@ -15,7 +15,6 @@ import { Route as AccountRouteImport } from './routes/account'
 import { Route as AnamultoolsRouteImport } from './routes/anamultools'
 import { Route as ArafRouteImport } from './routes/araf'
 import { Route as AuthRouteImport } from './routes/auth'
-import { Route as BaseMultisendRouteImport } from './routes/base-multisend'
 import { Route as BatchHistoryRouteImport } from './routes/batch-history'
 import { Route as BatchHistoryToolRouteImport } from './routes/batch-history-tool'
 import { Route as ClaimRouteImport } from './routes/claim'
@@ -24,8 +23,8 @@ import { Route as DailyClaimRouteImport } from './routes/daily-claim'
 import { Route as FarmerRouteImport } from './routes/farmer'
 import { Route as GasLoaderRouteImport } from './routes/gas-loader'
 import { Route as GasLoaderToolRouteImport } from './routes/gas-loader-tool'
+import { Route as GdCollectRouteImport } from './routes/gd-collect'
 import { Route as McpRouteImport } from './routes/mcp'
-import { Route as NanoCollectRouteImport } from './routes/nano-collect'
 import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as TermsRouteImport } from './routes/terms'
 import { Route as X7k9m2pToolsRouteImport } from './routes/x-7k9m2p-tools'
@@ -34,6 +33,7 @@ import { Route as AdminIndexRouteImport } from './routes/admin/index'
 import { Route as AdminBatchHistoryRouteImport } from './routes/admin/batch-history'
 import { Route as AdminGasLoaderRouteImport } from './routes/admin/gas-loader'
 import { Route as DotlovableOauthConsentRouteImport } from './routes/[.]lovable.oauth.consent'
+import { Route as ApiPublicHooksGdCollectionRouteImport } from './routes/api/public/hooks/gd-collection'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -63,11 +63,6 @@ const ArafRoute = ArafRouteImport.update({
 const AuthRoute = AuthRouteImport.update({
   id: '/auth',
   path: '/auth',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const BaseMultisendRoute = BaseMultisendRouteImport.update({
-  id: '/base-multisend',
-  path: '/base-multisend',
   getParentRoute: () => rootRouteImport,
 } as any)
 const BatchHistoryRoute = BatchHistoryRouteImport.update({
@@ -110,14 +105,14 @@ const GasLoaderToolRoute = GasLoaderToolRouteImport.update({
   path: '/gas-loader-tool',
   getParentRoute: () => rootRouteImport,
 } as any)
+const GdCollectRoute = GdCollectRouteImport.update({
+  id: '/gd-collect',
+  path: '/gd-collect',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const McpRoute = McpRouteImport.update({
   id: '/mcp',
   path: '/mcp',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const NanoCollectRoute = NanoCollectRouteImport.update({
-  id: '/nano-collect',
-  path: '/nano-collect',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PrivacyRoute = PrivacyRouteImport.update({
@@ -161,6 +156,12 @@ const DotlovableOauthConsentRoute = DotlovableOauthConsentRouteImport.update({
   path: '/.lovable/oauth/consent',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicHooksGdCollectionRoute =
+  ApiPublicHooksGdCollectionRouteImport.update({
+    id: '/api/public/hooks/gd-collection',
+    path: '/api/public/hooks/gd-collection',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -169,7 +170,6 @@ export interface FileRoutesByFullPath {
   '/anamultools': typeof AnamultoolsRoute
   '/araf': typeof ArafRoute
   '/auth': typeof AuthRoute
-  '/base-multisend': typeof BaseMultisendRoute
   '/batch-history': typeof BatchHistoryRoute
   '/batch-history-tool': typeof BatchHistoryToolRoute
   '/claim': typeof ClaimRoute
@@ -178,8 +178,8 @@ export interface FileRoutesByFullPath {
   '/farmer': typeof FarmerRoute
   '/gas-loader': typeof GasLoaderRoute
   '/gas-loader-tool': typeof GasLoaderToolRoute
+  '/gd-collect': typeof GdCollectRoute
   '/mcp': typeof McpRoute
-  '/nano-collect': typeof NanoCollectRoute
   '/privacy': typeof PrivacyRoute
   '/terms': typeof TermsRoute
   '/x-7k9m2p-tools': typeof X7k9m2pToolsRoute
@@ -188,6 +188,7 @@ export interface FileRoutesByFullPath {
   '/admin/gas-loader': typeof AdminGasLoaderRoute
   '/admin/': typeof AdminIndexRoute
   '/.lovable/oauth/consent': typeof DotlovableOauthConsentRoute
+  '/api/public/hooks/gd-collection': typeof ApiPublicHooksGdCollectionRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -196,7 +197,6 @@ export interface FileRoutesByTo {
   '/anamultools': typeof AnamultoolsRoute
   '/araf': typeof ArafRoute
   '/auth': typeof AuthRoute
-  '/base-multisend': typeof BaseMultisendRoute
   '/batch-history': typeof BatchHistoryRoute
   '/batch-history-tool': typeof BatchHistoryToolRoute
   '/claim': typeof ClaimRoute
@@ -205,8 +205,8 @@ export interface FileRoutesByTo {
   '/farmer': typeof FarmerRoute
   '/gas-loader': typeof GasLoaderRoute
   '/gas-loader-tool': typeof GasLoaderToolRoute
+  '/gd-collect': typeof GdCollectRoute
   '/mcp': typeof McpRoute
-  '/nano-collect': typeof NanoCollectRoute
   '/privacy': typeof PrivacyRoute
   '/terms': typeof TermsRoute
   '/x-7k9m2p-tools': typeof X7k9m2pToolsRoute
@@ -215,6 +215,7 @@ export interface FileRoutesByTo {
   '/admin/gas-loader': typeof AdminGasLoaderRoute
   '/admin': typeof AdminIndexRoute
   '/.lovable/oauth/consent': typeof DotlovableOauthConsentRoute
+  '/api/public/hooks/gd-collection': typeof ApiPublicHooksGdCollectionRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -224,7 +225,6 @@ export interface FileRoutesById {
   '/anamultools': typeof AnamultoolsRoute
   '/araf': typeof ArafRoute
   '/auth': typeof AuthRoute
-  '/base-multisend': typeof BaseMultisendRoute
   '/batch-history': typeof BatchHistoryRoute
   '/batch-history-tool': typeof BatchHistoryToolRoute
   '/claim': typeof ClaimRoute
@@ -233,8 +233,8 @@ export interface FileRoutesById {
   '/farmer': typeof FarmerRoute
   '/gas-loader': typeof GasLoaderRoute
   '/gas-loader-tool': typeof GasLoaderToolRoute
+  '/gd-collect': typeof GdCollectRoute
   '/mcp': typeof McpRoute
-  '/nano-collect': typeof NanoCollectRoute
   '/privacy': typeof PrivacyRoute
   '/terms': typeof TermsRoute
   '/x-7k9m2p-tools': typeof X7k9m2pToolsRoute
@@ -243,6 +243,7 @@ export interface FileRoutesById {
   '/admin/gas-loader': typeof AdminGasLoaderRoute
   '/admin/': typeof AdminIndexRoute
   '/.lovable/oauth/consent': typeof DotlovableOauthConsentRoute
+  '/api/public/hooks/gd-collection': typeof ApiPublicHooksGdCollectionRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -253,7 +254,6 @@ export interface FileRouteTypes {
     | '/anamultools'
     | '/araf'
     | '/auth'
-    | '/base-multisend'
     | '/batch-history'
     | '/batch-history-tool'
     | '/claim'
@@ -262,8 +262,8 @@ export interface FileRouteTypes {
     | '/farmer'
     | '/gas-loader'
     | '/gas-loader-tool'
+    | '/gd-collect'
     | '/mcp'
-    | '/nano-collect'
     | '/privacy'
     | '/terms'
     | '/x-7k9m2p-tools'
@@ -272,6 +272,7 @@ export interface FileRouteTypes {
     | '/admin/gas-loader'
     | '/admin/'
     | '/.lovable/oauth/consent'
+    | '/api/public/hooks/gd-collection'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -280,7 +281,6 @@ export interface FileRouteTypes {
     | '/anamultools'
     | '/araf'
     | '/auth'
-    | '/base-multisend'
     | '/batch-history'
     | '/batch-history-tool'
     | '/claim'
@@ -289,8 +289,8 @@ export interface FileRouteTypes {
     | '/farmer'
     | '/gas-loader'
     | '/gas-loader-tool'
+    | '/gd-collect'
     | '/mcp'
-    | '/nano-collect'
     | '/privacy'
     | '/terms'
     | '/x-7k9m2p-tools'
@@ -299,6 +299,7 @@ export interface FileRouteTypes {
     | '/admin/gas-loader'
     | '/admin'
     | '/.lovable/oauth/consent'
+    | '/api/public/hooks/gd-collection'
   id:
     | '__root__'
     | '/'
@@ -307,7 +308,6 @@ export interface FileRouteTypes {
     | '/anamultools'
     | '/araf'
     | '/auth'
-    | '/base-multisend'
     | '/batch-history'
     | '/batch-history-tool'
     | '/claim'
@@ -316,8 +316,8 @@ export interface FileRouteTypes {
     | '/farmer'
     | '/gas-loader'
     | '/gas-loader-tool'
+    | '/gd-collect'
     | '/mcp'
-    | '/nano-collect'
     | '/privacy'
     | '/terms'
     | '/x-7k9m2p-tools'
@@ -326,6 +326,7 @@ export interface FileRouteTypes {
     | '/admin/gas-loader'
     | '/admin/'
     | '/.lovable/oauth/consent'
+    | '/api/public/hooks/gd-collection'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -335,7 +336,6 @@ export interface RootRouteChildren {
   AnamultoolsRoute: typeof AnamultoolsRoute
   ArafRoute: typeof ArafRoute
   AuthRoute: typeof AuthRoute
-  BaseMultisendRoute: typeof BaseMultisendRoute
   BatchHistoryRoute: typeof BatchHistoryRoute
   BatchHistoryToolRoute: typeof BatchHistoryToolRoute
   ClaimRoute: typeof ClaimRoute
@@ -344,8 +344,8 @@ export interface RootRouteChildren {
   FarmerRoute: typeof FarmerRoute
   GasLoaderRoute: typeof GasLoaderRoute
   GasLoaderToolRoute: typeof GasLoaderToolRoute
+  GdCollectRoute: typeof GdCollectRoute
   McpRoute: typeof McpRoute
-  NanoCollectRoute: typeof NanoCollectRoute
   PrivacyRoute: typeof PrivacyRoute
   TermsRoute: typeof TermsRoute
   X7k9m2pToolsRoute: typeof X7k9m2pToolsRoute
@@ -354,6 +354,7 @@ export interface RootRouteChildren {
   AdminGasLoaderRoute: typeof AdminGasLoaderRoute
   AdminIndexRoute: typeof AdminIndexRoute
   DotlovableOauthConsentRoute: typeof DotlovableOauthConsentRoute
+  ApiPublicHooksGdCollectionRoute: typeof ApiPublicHooksGdCollectionRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -398,13 +399,6 @@ declare module '@tanstack/react-router' {
       path: '/auth'
       fullPath: '/auth'
       preLoaderRoute: typeof AuthRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/base-multisend': {
-      id: '/base-multisend'
-      path: '/base-multisend'
-      fullPath: '/base-multisend'
-      preLoaderRoute: typeof BaseMultisendRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/batch-history': {
@@ -463,18 +457,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof GasLoaderToolRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/gd-collect': {
+      id: '/gd-collect'
+      path: '/gd-collect'
+      fullPath: '/gd-collect'
+      preLoaderRoute: typeof GdCollectRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/mcp': {
       id: '/mcp'
       path: '/mcp'
       fullPath: '/mcp'
       preLoaderRoute: typeof McpRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/nano-collect': {
-      id: '/nano-collect'
-      path: '/nano-collect'
-      fullPath: '/nano-collect'
-      preLoaderRoute: typeof NanoCollectRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/privacy': {
@@ -533,6 +527,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DotlovableOauthConsentRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/hooks/gd-collection': {
+      id: '/api/public/hooks/gd-collection'
+      path: '/api/public/hooks/gd-collection'
+      fullPath: '/api/public/hooks/gd-collection'
+      preLoaderRoute: typeof ApiPublicHooksGdCollectionRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -543,7 +544,6 @@ const rootRouteChildren: RootRouteChildren = {
   AnamultoolsRoute: AnamultoolsRoute,
   ArafRoute: ArafRoute,
   AuthRoute: AuthRoute,
-  BaseMultisendRoute: BaseMultisendRoute,
   BatchHistoryRoute: BatchHistoryRoute,
   BatchHistoryToolRoute: BatchHistoryToolRoute,
   ClaimRoute: ClaimRoute,
@@ -552,8 +552,8 @@ const rootRouteChildren: RootRouteChildren = {
   FarmerRoute: FarmerRoute,
   GasLoaderRoute: GasLoaderRoute,
   GasLoaderToolRoute: GasLoaderToolRoute,
+  GdCollectRoute: GdCollectRoute,
   McpRoute: McpRoute,
-  NanoCollectRoute: NanoCollectRoute,
   PrivacyRoute: PrivacyRoute,
   TermsRoute: TermsRoute,
   X7k9m2pToolsRoute: X7k9m2pToolsRoute,
@@ -563,6 +563,7 @@ const rootRouteChildren: RootRouteChildren = {
   AdminGasLoaderRoute: AdminGasLoaderRoute,
   AdminIndexRoute: AdminIndexRoute,
   DotlovableOauthConsentRoute: DotlovableOauthConsentRoute,
+  ApiPublicHooksGdCollectionRoute: ApiPublicHooksGdCollectionRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
