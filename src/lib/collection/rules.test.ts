@@ -1,7 +1,14 @@
 import { describe,it,expect } from 'vitest';
 import { id, zeroPadValue, toBeHex, Wallet } from 'ethers';
-import { COLLECTION_NETWORKS,parseCollectionKeys,receiverAddress,transferProven } from './rules';
+import { COLLECTION_NETWORKS, COLLECTION_PARALLEL_LIMIT, COLLECTION_CALLBACK_SLOTS, COLLECTION_CALLBACK_COUNT,parseCollectionKeys,receiverAddress,transferProven } from './rules';
 describe('G$ collection rules',()=>{
+ it('splits 200 parallel wallets across runtime-safe callback slots',()=>{
+  expect(COLLECTION_PARALLEL_LIMIT).toBe(200);
+  expect(COLLECTION_CALLBACK_SLOTS).toBe(6);
+  expect(COLLECTION_CALLBACK_COUNT).toBe(34);
+  expect(COLLECTION_CALLBACK_COUNT*COLLECTION_CALLBACK_SLOTS).toBeGreaterThanOrEqual(200);
+  expect((COLLECTION_CALLBACK_COUNT-1)*COLLECTION_CALLBACK_SLOTS).toBeLessThan(200);
+ });
  it('accepts more than 4,000 unique wallets without truncation',()=>{
   const keys=Array.from({length:4001},(_,i)=>toBeHex(i+1,32));
   expect(parseCollectionKeys(keys.join('\n'))).toHaveLength(4001);
