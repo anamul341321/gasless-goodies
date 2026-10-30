@@ -560,6 +560,7 @@ export type Database = {
           id: string
           max_retries: number
           network: string
+          owner_user_id: string | null
           retry_round: number
           status: string
           submitted_by_wallet: string | null
@@ -576,6 +577,7 @@ export type Database = {
           id?: string
           max_retries?: number
           network?: string
+          owner_user_id?: string | null
           retry_round?: number
           status?: string
           submitted_by_wallet?: string | null
@@ -592,6 +594,7 @@ export type Database = {
           id?: string
           max_retries?: number
           network?: string
+          owner_user_id?: string | null
           retry_round?: number
           status?: string
           submitted_by_wallet?: string | null
@@ -659,6 +662,7 @@ export type Database = {
           finished_at: string | null
           id: string
           last_error: string | null
+          owner_user_id: string | null
           sender_address: string
           sender_key_encrypted: string
           sent: number
@@ -675,6 +679,7 @@ export type Database = {
           finished_at?: string | null
           id?: string
           last_error?: string | null
+          owner_user_id?: string | null
           sender_address: string
           sender_key_encrypted: string
           sent?: number
@@ -691,6 +696,7 @@ export type Database = {
           finished_at?: string | null
           id?: string
           last_error?: string | null
+          owner_user_id?: string | null
           sender_address?: string
           sender_key_encrypted?: string
           sent?: number
