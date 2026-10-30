@@ -685,7 +685,7 @@ export default function Farmer() {
               <CardContent className="space-y-4">
                 <div>
                   <label className="text-xs font-medium text-muted-foreground mb-1 block">
-                    Paste addresses or private keys (one per line — up to 1000, processed in parallel batches of 100)
+                    প্রতি লাইনে একটি ঠিকানা বা প্রাইভেট কী দিন (সর্বোচ্চ ১০০০টি)
                   </label>
                   <Textarea
                     value={checkInput}
@@ -696,7 +696,7 @@ export default function Farmer() {
                     disabled={checking}
                   />
                   <p className="text-[11px] text-muted-foreground mt-1">
-                    Both wallet addresses (40 hex) and private keys (64 hex) are accepted. Keys are not saved.
+                    ঠিকানা অথবা প্রাইভেট কী দিয়ে ব্যালেন্স দেখা যাবে।
                   </p>
                 </div>
                 <Button onClick={runBalanceCheck} disabled={checking} className="w-full">
