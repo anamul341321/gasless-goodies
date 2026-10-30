@@ -10,6 +10,7 @@ import { Slider } from "@/components/ui/slider";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import {
   AlertDialog,
@@ -89,12 +90,10 @@ function parseInputLines(raw: string): { addresses: string[]; invalid: string[] 
 
 const GasLoader = () => {
   const { toast } = useToast();
-  const [accessPassword, setAccessPassword] = useState<string>(
-    () =>
-      localStorage.getItem("gl_admin_pw") ||
-      sessionStorage.getItem("gl_admin_pw") ||
-      ""
-  );
+  const { user, session, loading: authLoading } = useAuth();
+  const accessPassword = "";
+  const setAccessPassword = (_value: string) => {};
+  const storageKey = `${ACTIVE_JOB_KEY}:${user?.id || "signed-out"}`;
   const [rawInput, setRawInput] = useState("");
   const [parsed, setParsed] = useState<string[]>([]);
   const [invalid, setInvalid] = useState<string[]>([]);
@@ -111,9 +110,11 @@ const GasLoader = () => {
 
 
   // Active server-side job state
-  const [jobId, setJobId] = useState<string | null>(
-    () => localStorage.getItem(ACTIVE_JOB_KEY)
-  );
+  const [jobId, setJobId] = useState<string | null>(null);
+  useEffect(() => {
+    setJob(null); setWallets([]);
+    setJobId(user ? localStorage.getItem(storageKey) : null);
+  }, [user?.id]);
   const [job, setJob] = useState<Job | null>(null);
   const [wallets, setWallets] = useState<WalletRow[]>([]);
   const [submitting, setSubmitting] = useState(false);
@@ -168,20 +169,22 @@ const GasLoader = () => {
 
   // Poll job status from server
   const fetchStatus = async (id: string) => {
+    if (!session?.access_token) return;
     const pw = accessPassword.trim();
     try {
       const res = await fetch(`${SUPABASE_URL}/functions/v1/gas-loader-status`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "x-admin-password": pw,
+          "Authorization": `Bearer ${session?.access_token || ""}`,
         },
         body: JSON.stringify({ job_id: id, include_wallets: true }),
       });
       if (res.status === 401) {
+        setJob(null); setWallets([]);
         toast({
-          title: "Wrong password",
-          description: "Re-enter the access password to resume polling.",
+          title: "আবার লগইন করুন",
+          description: "আপনার অ্যাকাউন্টে আবার লগইন করুন।",
           variant: "destructive",
         });
         return;
@@ -199,7 +202,7 @@ const GasLoader = () => {
         setJob(null);
         setWallets([]);
         setJobId(null);
-        localStorage.removeItem(ACTIVE_JOB_KEY);
+        localStorage.removeItem(storageKey);
       }
     } catch (e) {
       console.warn("status poll failed", e);
@@ -227,7 +230,7 @@ const GasLoader = () => {
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [jobId, accessPassword]);
+  }, [jobId, session?.access_token]);
 
   const successCount = useMemo(
     () => wallets.filter((w) => w.status === "success").length,
@@ -263,14 +266,14 @@ const GasLoader = () => {
     }
     if (!name) {
       toast({
-        title: "Batch name required",
-        description: "Give this batch a name to track it in history.",
+        title: "ব্যাচের নাম দিন",
+        description: "এই ব্যাচের একটি নাম দিন।",
         variant: "destructive",
       });
       return;
     }
     if (parsed.length === 0) {
-      toast({ title: "No wallets parsed", variant: "destructive" });
+      toast({ title: "সঠিক ওয়ালেট দিন", variant: "destructive" });
       return;
     }
     setSubmitting(true);
@@ -279,7 +282,7 @@ const GasLoader = () => {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "x-admin-password": pw,
+          "Authorization": `Bearer ${session?.access_token || ""}`,
         },
         body: JSON.stringify({
           wallets: parsed,
@@ -292,25 +295,25 @@ const GasLoader = () => {
         localStorage.removeItem("gl_admin_pw");
         sessionStorage.removeItem("gl_admin_pw");
         setAccessPassword("");
-        throw new Error("Wrong password");
+        throw new Error("আবার লগইন করুন");
       }
       const data = await res.json();
       if (!res.ok || !data?.job_id) {
         throw new Error(data?.error || `HTTP ${res.status}`);
       }
       setJobId(data.job_id);
-      localStorage.setItem(ACTIVE_JOB_KEY, data.job_id);
+      localStorage.setItem(storageKey, data.job_id);
       setRawInput("");
       setParsed([]);
       setBatchName("");
       toast({
-        title: "Submitted",
+        title: "অনুরোধ পাঠানো হয়েছে",
         description: `"${name}" — ${data.total} wallet(s) queued. Runs on the server.`,
       });
     } catch (e: any) {
       toast({
-        title: "Submit failed",
-        description: e?.message || "Could not submit job",
+        title: "অনুরোধ পাঠানো যায়নি",
+        description: e?.message || "পরে আবার চেষ্টা করুন",
         variant: "destructive",
       });
     } finally {
@@ -322,7 +325,7 @@ const GasLoader = () => {
     setJobId(null);
     setJob(null);
     setWallets([]);
-    localStorage.removeItem(ACTIVE_JOB_KEY);
+    localStorage.removeItem(storageKey);
   };
 
   const handleCancel = async () => {
@@ -338,12 +341,12 @@ const GasLoader = () => {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "x-admin-password": pw,
+          "Authorization": `Bearer ${session?.access_token || ""}`,
         },
         body: JSON.stringify({ jobId }),
       });
       if (res.status === 401) {
-        toast({ title: "Wrong password", variant: "destructive" });
+        toast({ title: "আবার লগইন করুন", variant: "destructive" });
         return;
       }
       const data = await res.json().catch(() => ({}));
@@ -351,15 +354,15 @@ const GasLoader = () => {
         throw new Error(data?.error || `HTTP ${res.status}`);
       }
       toast({
-        title: "Batch cancelled",
+        title: "ব্যাচ বন্ধ হয়েছে",
         description: `${data.cancelled ?? 0} pending wallet(s) marked failed.`,
       });
       // Refresh status immediately
       fetchStatus(jobId);
     } catch (e: any) {
       toast({
-        title: "Cancel failed",
-        description: e?.message || "Could not cancel batch",
+        title: "বন্ধ করা যায়নি",
+        description: e?.message || "পরে আবার চেষ্টা করুন",
         variant: "destructive",
       });
     } finally {
@@ -375,6 +378,9 @@ const GasLoader = () => {
     !!job && (job.status === "pending" || job.status === "running");
   const isJobDone = !!job && job.status === "completed";
 
+  if (authLoading) return <div className="p-8 text-center text-muted-foreground">লোড হচ্ছে…</div>;
+  if (!user) return <main className="min-h-screen bg-background flex flex-col items-center justify-center gap-5 p-6"><h1 className="text-2xl font-bold">ফ্রিতে গ্যাস ফি নিন</h1><Button asChild><Link to="/auth?next=/gas-loader">লগইন করুন</Link></Button><Button asChild variant="ghost"><Link to="/">ড্যাশবোর্ডে ফিরুন</Link></Button></main>;
+
   return (
     <div className="aurora-bg min-h-screen bg-background p-4 md:p-8">
       <div className="max-w-3xl mx-auto space-y-5">
@@ -383,13 +389,13 @@ const GasLoader = () => {
             to="/"
             className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
           >
-            <ArrowLeft className="w-4 h-4" /> Home
+            <ArrowLeft className="w-4 h-4" /> ড্যাশবোর্ড
           </Link>
           <Link
             to="/batch-history"
             className="inline-flex items-center gap-1.5 text-xs font-medium text-foreground/80 hover:text-primary transition-colors"
           >
-            <HistoryIcon className="w-3.5 h-3.5" /> History
+            <HistoryIcon className="w-3.5 h-3.5" /> আমার ইতিহাস
           </Link>
         </header>
 
@@ -398,10 +404,10 @@ const GasLoader = () => {
             <PowerOff className="w-5 h-5 text-destructive shrink-0 mt-0.5" />
             <div className="space-y-0.5 min-w-0">
               <p className="text-sm font-semibold text-destructive">
-                Gas loader is currently disabled
+                গ্যাস নেওয়া আপাতত বন্ধ
               </p>
               <p className="text-xs text-destructive/80">
-                The admin has temporarily turned off this service. Please check back soon.
+                পরে আবার চেষ্টা করুন।
               </p>
             </div>
           </div>
@@ -410,32 +416,12 @@ const GasLoader = () => {
         <div className="text-center space-y-2">
           <h1 className="text-3xl md:text-4xl font-bold heading-shimmer inline-flex items-center gap-2">
             <Sparkles className="w-7 h-7 text-primary float-slow" />
-            Batch Gas Loader
+            ফ্রিতে গ্যাস ফি নিন
           </h1>
           <p className="text-muted-foreground text-xs md:text-sm">
-            Server-side queue · runs in background · safe to close this page
+            Celo · XDC
           </p>
         </div>
-
-        <Card className="hidden">
-          <CardHeader className="pb-2 flex-row items-center gap-3 space-y-0">
-            <span className="icon-chip icon-violet">
-              <Sparkles className="w-4 h-4" />
-            </span>
-            <CardTitle className="text-sm font-semibold">
-              Access password
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <Input
-              type="password"
-              value={accessPassword}
-              onChange={(e) => setAccessPassword(e.target.value)}
-              placeholder="Enter password"
-              className="h-11 bg-white/70 border-white/60"
-            />
-          </CardContent>
-        </Card>
 
         {/* Active / completed job panel */}
         {job && (
@@ -447,7 +433,7 @@ const GasLoader = () => {
                 </span>
                 <div className="min-w-0">
                   <CardTitle className="text-sm font-semibold">
-                    {isJobDone ? "Last batch — completed" : "Current batch"}
+                    {isJobDone ? "শেষ ব্যাচ সম্পন্ন" : "চলতি ব্যাচ"}
                   </CardTitle>
                   {job.batch_name && (
                     <p className="text-xs text-primary font-medium truncate mt-0.5 inline-flex items-center gap-1">
@@ -457,13 +443,13 @@ const GasLoader = () => {
                 </div>
               </div>
               <Badge variant={isJobActive ? "default" : "secondary"}>
-                {job.status}
+                {{ pending: "অপেক্ষায়", running: "চলছে", completed: "সম্পন্ন" }[job.status]}
               </Badge>
             </CardHeader>
             <CardContent className="space-y-3">
               <div className="flex items-center justify-between text-xs">
                 <span className="text-muted-foreground">
-                  {processed} / {total} processed
+                  {processed} / {total} টি সম্পন্ন
                 </span>
                 <span className="font-mono text-foreground">
                   {progressPct}%
@@ -472,19 +458,19 @@ const GasLoader = () => {
               <Progress value={progressPct} />
               <div className="grid grid-cols-3 gap-2 text-center text-xs">
                 <div className="rounded-lg bg-muted/30 p-2">
-                  <div className="text-muted-foreground">Success</div>
+                  <div className="text-muted-foreground">গ্যাস এসেছে</div>
                   <div className="font-semibold text-foreground">
                     {successCount || job.done}
                   </div>
                 </div>
                 <div className="rounded-lg bg-muted/30 p-2">
-                  <div className="text-muted-foreground">Failed</div>
+                  <div className="text-muted-foreground">ব্যর্থ</div>
                   <div className="font-semibold text-foreground">
                     {failedCount || job.failed}
                   </div>
                 </div>
                 <div className="rounded-lg bg-muted/30 p-2">
-                  <div className="text-muted-foreground">Pending</div>
+                  <div className="text-muted-foreground">অপেক্ষায়</div>
                   <div className="font-semibold text-foreground">
                     {pendingCount}
                   </div>
@@ -496,7 +482,7 @@ const GasLoader = () => {
                   variant="ghost"
                   onClick={() => jobId && fetchStatus(jobId)}
                 >
-                  <RefreshCw className="w-3.5 h-3.5 mr-1" /> Refresh
+                  <RefreshCw className="w-3.5 h-3.5 mr-1" /> হালনাগাদ
                 </Button>
                 <div className="flex items-center gap-2">
                   {isJobActive && (
@@ -508,25 +494,23 @@ const GasLoader = () => {
                           ) : (
                             <Trash2 className="w-3.5 h-3.5 mr-1" />
                           )}
-                          Cancel batch
+                          ব্যাচ বন্ধ করুন
                         </Button>
                       </AlertDialogTrigger>
                       <AlertDialogContent>
                         <AlertDialogHeader>
-                          <AlertDialogTitle>Cancel this batch?</AlertDialogTitle>
+                          <AlertDialogTitle>এই ব্যাচ বন্ধ করবেন?</AlertDialogTitle>
                           <AlertDialogDescription>
-                            All pending and processing wallets will be marked as
-                            failed. Already successful wallets are kept. This
-                            cannot be undone.
+                            অপেক্ষায় থাকা ওয়ালেটের কাজ বন্ধ হবে। সফল ওয়ালেট অপরিবর্তিত থাকবে।
                           </AlertDialogDescription>
                         </AlertDialogHeader>
                         <AlertDialogFooter>
-                          <AlertDialogCancel>Keep running</AlertDialogCancel>
+                          <AlertDialogCancel>চালু রাখুন</AlertDialogCancel>
                           <AlertDialogAction
                             onClick={handleCancel}
                             className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                           >
-                            Yes, cancel batch
+                            হ্যাঁ, বন্ধ করুন
                           </AlertDialogAction>
                         </AlertDialogFooter>
                       </AlertDialogContent>
@@ -534,15 +518,14 @@ const GasLoader = () => {
                   )}
                   {isJobDone && (
                     <Button size="sm" variant="outline" onClick={handleNewBatch}>
-                      Start new batch
+                      নতুন ব্যাচ
                     </Button>
                   )}
                 </div>
               </div>
               {isJobActive && (
                 <p className="text-[11px] text-muted-foreground text-center">
-                  Processing runs on the server. You can close this page or
-                  turn off your screen — progress will continue.
+                  
                 </p>
               )}
             </CardContent>
@@ -558,7 +541,7 @@ const GasLoader = () => {
                   <Wallet2Icon className="w-4 h-4" />
                 </span>
                 <CardTitle className="text-sm font-semibold">
-                  Wallets — paste addresses or private keys
+                  ওয়ালেটের ঠিকানা বা প্রাইভেট কী দিন
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
@@ -566,18 +549,18 @@ const GasLoader = () => {
                   value={rawInput}
                   onChange={(e) => setRawInput(e.target.value)}
                   placeholder={`0xAbC1234...\n0x123...64hex private key\n...`}
-                  className="min-h-[180px] font-mono text-xs bg-white/70 border-white/60"
+                  className="min-h-[180px] font-mono text-xs bg-card/70 border-border/60"
                 />
                 <div className="flex flex-wrap items-center gap-2">
-                  <Badge variant="secondary" className="bg-white/70">Auto parsed</Badge>
+                  <Badge variant="secondary" className="bg-card/70">ওয়ালেট শনাক্ত হয়েছে</Badge>
                   <Button onClick={handleClear} variant="ghost" size="sm">
-                    <Trash2 className="w-4 h-4 mr-1" /> Clear
+                    <Trash2 className="w-4 h-4 mr-1" /> মুছুন
                   </Button>
                   <div className="ml-auto flex items-center gap-2 text-xs">
-                    <Badge variant="secondary" className="bg-white/70">Valid: {parsed.length}</Badge>
+                    <Badge variant="secondary" className="bg-card/70">সঠিক: {parsed.length}</Badge>
                     {invalid.length > 0 && (
                       <Badge variant="destructive">
-                        Invalid: {invalid.length}
+                        ভুল: {invalid.length}
                       </Badge>
                     )}
                   </div>
@@ -585,7 +568,7 @@ const GasLoader = () => {
                 {invalid.length > 0 && (
                   <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-xs">
                     <p className="font-medium text-destructive mb-1">
-                      Invalid lines (skipped):
+                      ভুলগুলো বাদ পড়েছে:
                     </p>
                     <pre className="font-mono whitespace-pre-wrap break-all text-destructive/80">
                       {invalid.slice(0, 8).join("\n")}
@@ -603,20 +586,19 @@ const GasLoader = () => {
                   <Tag className="w-4 h-4" />
                 </span>
                 <CardTitle className="text-sm font-semibold inline-flex items-center gap-1">
-                  Batch name <span className="text-destructive">*</span>
+                  ব্যাচের নাম <span className="text-destructive">*</span>
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-2">
                 <Input
                   value={batchName}
                   onChange={(e) => setBatchName(e.target.value.slice(0, 80))}
-                  placeholder="e.g. Customer Order #12 or Morning Run"
-                  className="h-11 bg-white/70 border-white/60"
+                  placeholder="যেমন: সকালের ব্যাচ"
+                  className="h-11 bg-card/70 border-border/60"
                   maxLength={80}
                 />
                 <p className="text-[11px] text-muted-foreground">
-                  Required. Saved permanently in public batch history — search
-                  by this name later to see total wallets loaded.
+                  এই ইতিহাস শুধু আপনার অ্যাকাউন্টে থাকবে।
                 </p>
               </CardContent>
             </Card>
@@ -626,34 +608,34 @@ const GasLoader = () => {
                 <span className="icon-chip icon-amber">
                   <SettingsIcon className="w-4 h-4" />
                 </span>
-                <CardTitle className="text-sm font-semibold">Settings</CardTitle>
+                <CardTitle className="text-sm font-semibold">সেটিংস</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div>
-                  <Label className="text-xs mb-2 block">Network</Label>
+                  <Label className="text-xs mb-2 block">নেটওয়ার্ক</Label>
                   <div className="grid grid-cols-2 gap-2">
                     {(["celo", "xdc"] as const).map((n) => (
-                      <button
+                      <Button
                         key={n}
                         type="button"
                         onClick={() => setNetwork(n)}
                         className={`h-10 rounded-lg border text-xs font-bold uppercase tracking-wider transition ${
                           network === n
                             ? "bg-primary text-primary-foreground border-primary"
-                            : "bg-white/70 border-white/60 text-muted-foreground hover:border-primary/40"
+                            : "bg-card/70 border-border/60 text-muted-foreground hover:border-primary/40"
                         }`}
                       >
                         {n === "celo" ? "Celo" : "XDC"}
-                      </button>
+                      </Button>
                     ))}
                   </div>
                   <p className="text-[10px] text-muted-foreground mt-1">
-                    GoodDollar faucet will send {network === "xdc" ? "XDC" : "CELO"} gas to each wallet on the {network === "xdc" ? "XDC Network" : "Celo Mainnet"}.
+                    
                   </p>
                 </div>
                 <div>
                   <div className="flex justify-between text-xs mb-2">
-                    <Label>Delay between requests</Label>
+                    <Label>অনুরোধের মাঝে বিরতি</Label>
                     <span className="text-muted-foreground font-semibold">{delaySec}s</span>
                   </div>
                   <Slider
@@ -688,13 +670,13 @@ const GasLoader = () => {
                       <Rocket className="w-4 h-4 mr-2" />
                     )}
                     {!loaderEnabled
-                      ? "Disabled by admin"
-                      : `Queue ${parsed.length} Wallet(s)`}
+                      ? "আপাতত বন্ধ"
+                      : `ফ্রিতে গ্যাস নিন (${parsed.length} ওয়ালেট)`}
                   </Button>
                 </AlertDialogTrigger>
                 <AlertDialogContent>
                   <AlertDialogHeader>
-                    <AlertDialogTitle>Submit batch to server</AlertDialogTitle>
+                    <AlertDialogTitle>গ্যাসের অনুরোধ পাঠাবেন?</AlertDialogTitle>
                     <AlertDialogDescription asChild>
                       <div className="space-y-2 text-sm">
                         {!hasPassword && (
@@ -704,7 +686,7 @@ const GasLoader = () => {
                         )}
                         {!batchName.trim() && (
                           <p className="text-destructive">
-                            Enter a batch name above — required for history.
+                            ব্যাচের নাম দিন।
                           </p>
                         )}
                         {hasPassword && batchName.trim() && (
@@ -717,9 +699,7 @@ const GasLoader = () => {
                               delay.
                             </p>
                             <p>
-                              Runs on the server in the background. Safe to
-                              close this page. Saved permanently in public
-                              batch history.
+                              ফলাফল শুধু আপনার অ্যাকাউন্টে দেখা যাবে।
                             </p>
                           </>
                         )}
@@ -727,7 +707,7 @@ const GasLoader = () => {
                     </AlertDialogDescription>
                   </AlertDialogHeader>
                   <AlertDialogFooter>
-                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogCancel>বাতিল</AlertDialogCancel>
                     <AlertDialogAction
                       onClick={handleSubmit}
                       disabled={
@@ -735,7 +715,7 @@ const GasLoader = () => {
                       }
                       className="btn-premium text-primary-foreground"
                     >
-                      Submit
+                      গ্যাসের অনুরোধ পাঠান
                     </AlertDialogAction>
                   </AlertDialogFooter>
                 </AlertDialogContent>

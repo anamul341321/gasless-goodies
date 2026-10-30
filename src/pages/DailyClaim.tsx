@@ -99,8 +99,8 @@ function statusColor(s?: string) {
 function reasonBn(raw?: string | null) {
   if (!raw) return null;
   const m = raw.toLowerCase();
-  if (m.includes("verified claim")) return "Claimed in the current on-chain period";
-  if (m.includes("unconfirmed") || m.includes("no entitlement") || m.includes("claim no-op")) return "Claim not confirmed — no verified G$ receipt";
+  if (m.includes("verified claim")) return "বর্তমান ক্লেইমের সময়ে আগেই নেওয়ার প্রমাণ আছে";
+  if (m.includes("unconfirmed") || m.includes("no entitlement") || m.includes("claim no-op")) return "ক্লেইম নিশ্চিত নয় — G$ পাওয়ার প্রমাণ নেই";
   if (m.includes("whitelist") || m.includes("not verified")) return "ওয়ালেটে ফেস ভেরিফিকেশন করা নেই";
   if (m.includes("insufficient")) return "গ্যাস ফি (CELO) নেই — গ্যাস লোড দরকার";
   if (m.includes("nonce")) return "নেটওয়ার্ক সংঘর্ষ (nonce) — আবার চেষ্টা হবে";
@@ -220,10 +220,10 @@ export default function DailyClaim() {
       const result = await retryGas({ data: { runId: g.run.id } });
       setDetailByGroup((s) => { const next = { ...s }; delete next[g.id]; return next; });
       setLoadedKinds((s) => Object.fromEntries(Object.entries(s).filter(([key]) => !key.startsWith(`${g.id}:`))));
-      toast({ title: `${result.retried} gas-failed wallets queued` });
+      toast({ title: `${result.retried} টি গ্যাসের জন্য ব্যর্থ ওয়ালেট আবার চালু হয়েছে` });
       await fetchStatus(true);
     } catch (error) {
-      toast({ title: "Retry unavailable", description: error instanceof Error ? error.message : "Please try again", variant: "destructive" });
+      toast({ title: "আবার চেষ্টা করা যায়নি", description: error instanceof Error ? error.message : "পরে আবার চেষ্টা করুন", variant: "destructive" });
     } finally { setRetryingGroup(null); }
   }
 
@@ -606,9 +606,9 @@ export default function DailyClaim() {
                               const isSoon = cp.total <= 300;
                               const isLive = !!(g.run && ["claiming","requesting_gas","waiting_30m","retrying"].includes(g.run.phase));
                               const segs = [
-                                { v: cp.h, l: "HRS" },
-                                { v: cp.m, l: "MIN" },
-                                { v: cp.s, l: "SEC" },
+                                { v: cp.h, l: "ঘণ্টা" },
+                                { v: cp.m, l: "মিনিট" },
+                                { v: cp.s, l: "সেকেন্ড" },
                               ];
                               return (
                                 <div className={`relative overflow-hidden rounded-xl border ${isSoon ? "border-emerald-500/40" : "border-primary/25"} bg-gradient-to-br from-background via-card to-background p-4 shadow-[0_0_40px_-12px_hsl(var(--primary)/0.35)]`}>
@@ -617,7 +617,7 @@ export default function DailyClaim() {
                                     <div className="flex items-center gap-2">
                                       <span className={`inline-flex h-2 w-2 rounded-full ${isLive ? "bg-emerald-400 animate-pulse" : isSoon ? "bg-amber-400 animate-pulse" : "bg-primary/70"}`} />
                                       <span className="text-[10px] uppercase tracking-[0.22em] text-muted-foreground font-semibold">
-                                        {isLive ? "Running now" : "Next claim in"}
+                                        {isLive ? "এখন চলছে" : "পরের ক্লেইম বাকি"}
                                       </span>
                                     </div>
                                     <span className="text-[10px] uppercase tracking-wider text-muted-foreground/80">{fmt12(hr, mn)} BD</span>
@@ -650,7 +650,7 @@ export default function DailyClaim() {
                                 {g.run.phase === "completed" && (g.breakdown?.failed_gas ?? g.run.failed_gas) > 0 && (
                                   <Button onClick={() => retryGroupGas(g)} disabled={retryingGroup !== null} className="w-full sm:w-auto">
                                     <RefreshCw className={`mr-2 h-4 w-4 ${retryingGroup === g.id ? "animate-spin" : ""}`} />
-                                    {retryingGroup === g.id ? "Restarting…" : `Retry gas-failed wallets (${g.breakdown?.failed_gas ?? g.run.failed_gas})`}
+                                    {retryingGroup === g.id ? "আবার শুরু হচ্ছে…" : `গ্যাসের জন্য ব্যর্থগুলো আবার চেষ্টা করুন (${g.breakdown?.failed_gas ?? g.run.failed_gas})`}
                                   </Button>
                                 )}
                                 {(() => {
@@ -709,19 +709,19 @@ export default function DailyClaim() {
                                       </div>
                                       {(gasRequested + gasLoaded + gasLoadFailed) > 0 && (
                                         <div className="rounded-xl border border-amber-500/25 bg-amber-500/5 p-3 space-y-2">
-                                          <div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground font-semibold">Gas load status</div>
+                                          <div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground font-semibold">গ্যাসের অবস্থা</div>
                                           <div className="grid grid-cols-3 gap-2 text-center">
                                             <div className="rounded-lg border border-sky-500/25 bg-sky-500/10 p-2">
                                               <div className="text-lg font-black tabular-nums text-sky-500">{gasRequested}</div>
-                                              <div className="text-[10px] text-muted-foreground">In progress</div>
+                                              <div className="text-[10px] text-muted-foreground">চলছে</div>
                                             </div>
                                             <div className="rounded-lg border border-emerald-500/25 bg-emerald-500/10 p-2">
                                               <div className="text-lg font-black tabular-nums text-emerald-500">{gasLoaded}</div>
-                                              <div className="text-[10px] text-muted-foreground">Gas received</div>
+                                              <div className="text-[10px] text-muted-foreground">গ্যাস এসেছে</div>
                                             </div>
                                             <div className="rounded-lg border border-rose-500/25 bg-rose-500/10 p-2">
                                               <div className="text-lg font-black tabular-nums text-rose-500">{gasLoadFailed}</div>
-                                              <div className="text-[10px] text-muted-foreground">Not received</div>
+                                              <div className="text-[10px] text-muted-foreground">গ্যাস আসেনি</div>
                                             </div>
                                           </div>
                                         </div>
@@ -805,7 +805,7 @@ export default function DailyClaim() {
                                       <div className="px-3 pb-3 space-y-1 max-h-72 overflow-y-auto">
                                         {detailLoading[`${g.id}:failed`] && <p className="text-xs text-muted-foreground py-2 text-center">কী লোড হচ্ছে…</p>}
                                         {!detailLoading[`${g.id}:failed`] && loadedKinds[`${g.id}:failed`] && (detailByGroup[g.id]?.failed_keys || []).length === 0 && (
-                                          <p className="text-xs text-muted-foreground py-2 text-center">No failed keys found</p>
+                                          <p className="text-xs text-muted-foreground py-2 text-center">কোনো ব্যর্থ কী পাওয়া যায়নি</p>
                                         )}
                                         {(detailByGroup[g.id]?.failed_keys || []).map((k) => (
                                           <div key={k.wallet_address} className="p-2 rounded-md bg-muted/40 border border-border text-xs">
@@ -849,7 +849,7 @@ export default function DailyClaim() {
                                       </div>
                                     ))}
                                     {(detailByGroup[g.id]?.items.length || 0) > 500 && (
-                                      <p className="text-center text-muted-foreground py-1">প্রথম ৫০০টি দেখানো হচ্ছে (মোট {detailByGroup[g.id]!.items.length})</p>
+                                      <p className="text-center text-muted-foreground py-1">প্রথম ৫০০টি দেখানো হচ্ছে (মোট {detailByGroup[g.id]?.items.length})</p>
                                     )}
                                   </div>
                                 )}
