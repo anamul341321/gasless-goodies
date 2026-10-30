@@ -1,10 +1,10 @@
 import { Contract, Interface, JsonRpcProvider, Wallet, formatUnits, keccak256, id } from 'ethers';
-import { COLLECTION_NETWORKS, transferProven } from './rules';
+import { COLLECTION_CALLBACK_SLOTS, COLLECTION_NETWORKS, transferProven } from './rules';
 import { decryptCollectionKey } from './crypto.server';
 import { supabaseAdmin } from '@/integrations/supabase/client.server';
 const ABI = ['function balanceOf(address) view returns(uint256)','function decimals() view returns(uint8)','function transfer(address,uint256) returns(bool)'];
 export async function processCollectionWave() {
- const { data: rows,error } = await supabaseAdmin.rpc('reserve_gd_collection_items',{p_limit:6});
+ const { data: rows,error } = await supabaseAdmin.rpc('reserve_gd_collection_items',{p_limit:COLLECTION_CALLBACK_SLOTS});
  if (error) throw error;
  await Promise.all((rows ?? []).map(async row => {
   const { data: job } = await supabaseAdmin.from('gd_collection_jobs').select('network,receiver,status').eq('id',row.job_id).single();

@@ -1,5 +1,5 @@
 # Architecture rules
-- G$ collection uses encrypted owner-only database queues, atomic leased reservations, a secret-authenticated scheduled TanStack callback, and persist-before-broadcast signed transactions; recovery must never create a second transfer, and stopping cancels only unsent work.
+- G$ collection uses encrypted owner-only database queues, atomic globally capped leased reservations split across six-slot secret-authenticated callbacks, and persist-before-broadcast signed transactions; recovery must never create a second transfer, and stopping cancels only unsent work.
 - Scope every history/status read to a verified session owner at the endpoint and SQL boundary; caller-supplied IDs locate rows but never authorize them, and ownerless legacy jobs stay inaccessible.
 - Share dashboard feature entries between home and the services drawer so all public tools stay discoverable without exposing the private workspace URL.
 - Keep the npm lockfile synchronized with package.json and React-compatible dependency peers so external hosts can install without bypassing dependency checks; use NITRO_PRESET=node-server for Render while preserving Lovable's managed deployment target.
