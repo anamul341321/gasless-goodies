@@ -36,15 +36,16 @@ async function getUser(req: Request): Promise<{ id: string } | null> {
 
 function json(b: any, s = 200) {
   return new Response(JSON.stringify(b), {
-    status: s, headers: { ...corsHeaders, "Content-Type": "application/json" },
+    status: s, headers: { ...corsHeaders, "Content-Type": "application/json", "Cache-Control": "no-store" },
   });
 }
 
-async function countFailedKeys(runId: string) {
+async function countFailedKeys(runId: string, ownerUserId: string) {
   const { count } = await admin
     .from("daily_claim_run_items")
     .select("id", { count: "exact", head: true })
     .eq("run_id", runId)
+      .eq("owner_user_id", ownerUserId)
     .not("encrypted_key", "is", null)
     .not("final_status", "in", "(success,pending)");
   return count || 0;
@@ -61,7 +62,7 @@ const BREAKDOWN_STATUSES = [
   "pending",
 ] as const;
 
-async function breakdownForRun(runId: string) {
+async function breakdownForRun(runId: string, ownerUserId: string) {
   const out: Record<string, number> = {};
   await Promise.all(
     BREAKDOWN_STATUSES.map(async (s) => {
@@ -69,6 +70,7 @@ async function breakdownForRun(runId: string) {
         .from("daily_claim_run_items")
         .select("id", { count: "exact", head: true })
         .eq("run_id", runId)
+      .eq("owner_user_id", ownerUserId)
         .eq("final_status", s);
       out[s] = count || 0;
     }),
@@ -79,6 +81,7 @@ async function breakdownForRun(runId: string) {
       .from("daily_claim_run_items")
       .select("id", { count: "exact", head: true })
       .eq("run_id", runId)
+      .eq("owner_user_id", ownerUserId)
       .eq("final_status", "pending")
       .eq("phase1_status", "failed_gas")
       .is("gas_request_status", null),
@@ -86,6 +89,7 @@ async function breakdownForRun(runId: string) {
       .from("daily_claim_run_items")
       .select("id", { count: "exact", head: true })
       .eq("run_id", runId)
+      .eq("owner_user_id", ownerUserId)
       .eq("final_status", "pending")
       .eq("phase1_status", "failed_gas")
       .eq("gas_request_status", "requested"),
@@ -93,6 +97,7 @@ async function breakdownForRun(runId: string) {
       .from("daily_claim_run_items")
       .select("id", { count: "exact", head: true })
       .eq("run_id", runId)
+      .eq("owner_user_id", ownerUserId)
       .eq("final_status", "pending")
       .eq("phase1_status", "failed_gas")
       .eq("gas_request_status", "done"),
@@ -100,6 +105,7 @@ async function breakdownForRun(runId: string) {
       .from("daily_claim_run_items")
       .select("id", { count: "exact", head: true })
       .eq("run_id", runId)
+      .eq("owner_user_id", ownerUserId)
       .eq("final_status", "pending")
       .eq("phase1_status", "failed_gas")
       .eq("gas_request_status", "error"),
@@ -114,7 +120,7 @@ async function breakdownForRun(runId: string) {
 }
 
 
-async function pagedItems(runId: string, select: string, apply?: (q: any) => any) {
+async function pagedItems(runId: string, ownerUserId: string, select: string, apply?: (q: any) => any) {
   const out: any[] = [];
   const PAGE = 1000;
   let from = 0;
@@ -123,6 +129,7 @@ async function pagedItems(runId: string, select: string, apply?: (q: any) => any
       .from("daily_claim_run_items")
       .select(select)
       .eq("run_id", runId)
+      .eq("owner_user_id", ownerUserId)
       .order("wallet_address", { ascending: true })
       .range(from, from + PAGE - 1);
     if (apply) q = apply(q);
@@ -137,17 +144,17 @@ async function pagedItems(runId: string, select: string, apply?: (q: any) => any
   return out;
 }
 
-async function itemsForRun(runId: string) {
+async function itemsForRun(runId: string, ownerUserId: string) {
   const items = await pagedItems(
-    runId,
+    runId, ownerUserId,
     "wallet_address, phase1_status, phase1_tx, phase1_error, gas_request_status, phase2_status, phase2_tx, phase2_error, final_status",
   );
   return { items };
 }
 
-async function failedKeysForRun(runId: string) {
+async function failedKeysForRun(runId: string, ownerUserId: string) {
   const rows = await pagedItems(
-    runId,
+    runId, ownerUserId,
     "wallet_address, final_status, phase1_error, phase2_error, encrypted_key",
     (q) => q.not("encrypted_key", "is", null).not("final_status", "in", "(success,pending)"),
   );
@@ -165,9 +172,9 @@ async function failedKeysForRun(runId: string) {
   return { failed_keys };
 }
 
-async function successKeysForRun(runId: string) {
+async function successKeysForRun(runId: string, ownerUserId: string) {
   const rows = await pagedItems(
-    runId,
+    runId, ownerUserId,
     "owner_user_id, network, wallet_address, phase1_tx, phase2_tx, encrypted_key",
     (q) => q.eq("final_status", "success"),
   );
@@ -183,7 +190,7 @@ async function successKeysForRun(runId: string) {
     grouped.set(key, [...(grouped.get(key) || []), r]);
   }
   for (const [key] of grouped.entries()) {
-    const [ownerUserId, network] = key.split(":");
+    const [, network] = key.split(":");
     const PAGE = 1000;
     let from = 0;
     while (true) {
@@ -245,18 +252,19 @@ Deno.serve(async (req) => {
         .from("daily_claim_runs")
         .select("id")
         .eq("group_id", detailGroupId)
+        .eq("owner_user_id", user.id)
         .order("run_date", { ascending: false })
         .order("started_at", { ascending: false })
         .limit(1)
         .maybeSingle();
       if (!run) return json({ items: [], failed_keys: [], success_keys: [] });
-      if (detailKind === "success") return json(await successKeysForRun(run.id));
-      if (detailKind === "failed") return json(await failedKeysForRun(run.id));
-      if (detailKind === "items") return json(await itemsForRun(run.id));
+      if (detailKind === "success") return json(await successKeysForRun(run.id, user.id));
+      if (detailKind === "failed") return json(await failedKeysForRun(run.id, user.id));
+      if (detailKind === "items") return json(await itemsForRun(run.id, user.id));
       const [a, b, c] = await Promise.all([
-        itemsForRun(run.id),
-        failedKeysForRun(run.id),
-        successKeysForRun(run.id),
+        itemsForRun(run.id, user.id),
+        failedKeysForRun(run.id, user.id),
+        successKeysForRun(run.id, user.id),
       ]);
       return json({ ...a, ...b, ...c });
     }
@@ -298,6 +306,7 @@ Deno.serve(async (req) => {
         .from("daily_claim_runs")
         .select("*")
         .in("group_id", groupIds)
+        .eq("owner_user_id", user.id)
         .order("run_date", { ascending: false })
         .order("started_at", { ascending: false })
         .limit(500);
@@ -314,8 +323,8 @@ Deno.serve(async (req) => {
         ...g,
         wallet_count: perGroupCount.get(g.id) || 0,
         run,
-        failed_key_count: run ? await countFailedKeys(run.id) : 0,
-        breakdown: run ? await breakdownForRun(run.id) : null,
+        failed_key_count: run ? await countFailedKeys(run.id, user.id) : 0,
+        breakdown: run ? await breakdownForRun(run.id, user.id) : null,
 
       });
     }

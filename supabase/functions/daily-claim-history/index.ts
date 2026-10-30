@@ -34,13 +34,13 @@ async function getUser(req: Request): Promise<{ id: string } | null> {
 
 function json(b: any, s = 200) {
   return new Response(JSON.stringify(b), {
-    status: s, headers: { ...corsHeaders, "Content-Type": "application/json" },
+    status: s, headers: { ...corsHeaders, "Content-Type": "application/json", "Cache-Control": "no-store" },
   });
 }
 
 const PAGE = 1000;
 
-async function pagedItems(runId: string, select: string, apply?: (q: any) => any) {
+async function pagedItems(runId: string, ownerUserId: string, select: string, apply?: (q: any) => any) {
   const out: any[] = [];
   let from = 0;
   while (true) {
@@ -48,6 +48,7 @@ async function pagedItems(runId: string, select: string, apply?: (q: any) => any
       .from("daily_claim_run_items")
       .select(select)
       .eq("run_id", runId)
+      .eq("owner_user_id", ownerUserId)
       .order("wallet_address", { ascending: true })
       .range(from, from + PAGE - 1);
     if (apply) q = apply(q);
@@ -62,11 +63,12 @@ async function pagedItems(runId: string, select: string, apply?: (q: any) => any
   return out;
 }
 
-async function countItems(runId: string, apply?: (q: any) => any) {
+async function countItems(runId: string, ownerUserId: string, apply?: (q: any) => any) {
   let q = admin
     .from("daily_claim_run_items")
     .select("id", { count: "exact", head: true })
-    .eq("run_id", runId);
+    .eq("run_id", runId)
+      .eq("owner_user_id", ownerUserId);
   if (apply) q = apply(q);
   const { count } = await q;
   return count || 0;
@@ -130,14 +132,14 @@ Deno.serve(async (req) => {
 
       if (kind === "items") {
         const items = await pagedItems(
-          runId,
+          runId, user.id,
           "wallet_address, phase1_status, phase1_tx, phase1_error, gas_request_status, phase2_status, phase2_tx, phase2_error, final_status",
         );
         return json({ items });
       }
       if (kind === "success") {
         const rows = await pagedItems(
-          runId,
+          runId, user.id,
           "wallet_address, final_status, phase1_tx, phase2_tx, phase1_error, phase2_error, encrypted_key",
           (q) => q.eq("final_status", "success").not("encrypted_key", "is", null),
         );
@@ -145,7 +147,7 @@ Deno.serve(async (req) => {
       }
       if (kind === "already") {
         const rows = await pagedItems(
-          runId,
+          runId, user.id,
           "wallet_address, final_status, phase1_tx, phase2_tx, phase1_error, phase2_error, encrypted_key",
           (q) => q.eq("final_status", "already_claimed").not("encrypted_key", "is", null),
         );
@@ -153,7 +155,7 @@ Deno.serve(async (req) => {
       }
       if (kind === "gas_failed") {
         const rows = await pagedItems(
-          runId,
+          runId, user.id,
           "wallet_address, final_status, phase1_status, phase2_status, phase1_tx, phase2_tx, phase1_error, phase2_error, encrypted_key",
           (q) => applyGasFailed(q.not("encrypted_key", "is", null)),
         );
@@ -161,7 +163,7 @@ Deno.serve(async (req) => {
       }
       // default: failed
       const rows = await pagedItems(
-        runId,
+        runId, user.id,
         "wallet_address, final_status, phase1_tx, phase2_tx, phase1_error, phase2_error, encrypted_key",
         (q) => applyFailed(q.not("encrypted_key", "is", null)),
       );
@@ -177,7 +179,7 @@ Deno.serve(async (req) => {
     if (!g || g.owner_user_id !== user.id) return json({ error: "not found" }, 404);
 
     const { data: runs } = await admin.from("daily_claim_runs")
-      .select("*").eq("group_id", groupId)
+      .select("*").eq("group_id", groupId).eq("owner_user_id", user.id)
       .order("run_date", { ascending: false })
       .order("started_at", { ascending: false })
       .limit(limit);
@@ -190,6 +192,7 @@ Deno.serve(async (req) => {
       const { data: gjobs } = await admin.from("gas_load_jobs")
         .select("id, batch_name, total, done, failed, status, created_at, finished_at")
         .in("batch_name", batchNames)
+        .eq("owner_user_id", user.id)
         .order("created_at", { ascending: true });
       for (const j of gjobs || []) {
         gasJobsByBatch.set(j.batch_name, [...(gasJobsByBatch.get(j.batch_name) || []), j]);
@@ -199,13 +202,13 @@ Deno.serve(async (req) => {
     const result = await Promise.all((runs || []).map(async (r: any) => {
       const batchName = `daily-claim-${r.network || g.network || "celo"}-${String(r.id).slice(0, 8)}`;
       const [successCount, alreadyCount, failedKeyCount, gasFailedKeyCount, gasDone, gasReq, gasErr] = await Promise.all([
-        countItems(r.id, (q) => q.eq("final_status", "success").not("encrypted_key", "is", null)),
-        countItems(r.id, (q) => q.eq("final_status", "already_claimed").not("encrypted_key", "is", null)),
-        countItems(r.id, (q) => applyFailed(q.not("encrypted_key", "is", null))),
-        countItems(r.id, (q) => applyGasFailed(q.not("encrypted_key", "is", null))),
-        countItems(r.id, (q) => q.eq("gas_request_status", "done")),
-        countItems(r.id, (q) => q.eq("gas_request_status", "requested")),
-        countItems(r.id, (q) => q.eq("gas_request_status", "error")),
+        countItems(r.id, user.id, (q) => q.eq("final_status", "success").not("encrypted_key", "is", null)),
+        countItems(r.id, user.id, (q) => q.eq("final_status", "already_claimed").not("encrypted_key", "is", null)),
+        countItems(r.id, user.id, (q) => applyFailed(q.not("encrypted_key", "is", null))),
+        countItems(r.id, user.id, (q) => applyGasFailed(q.not("encrypted_key", "is", null))),
+        countItems(r.id, user.id, (q) => q.eq("gas_request_status", "done")),
+        countItems(r.id, user.id, (q) => q.eq("gas_request_status", "requested")),
+        countItems(r.id, user.id, (q) => q.eq("gas_request_status", "error")),
       ]);
       return {
         ...r,
