@@ -882,6 +882,122 @@ export type Database = {
           },
         ]
       }
+      gd_collection_callback_config: {
+        Row: {
+          id: boolean
+          token: string
+        }
+        Insert: {
+          id?: boolean
+          token: string
+        }
+        Update: {
+          id?: boolean
+          token?: string
+        }
+        Relationships: []
+      }
+      gd_collection_items: {
+        Row: {
+          amount: string | null
+          attempts: number
+          created_at: string
+          encrypted_key: string | null
+          error_message: string | null
+          id: string
+          job_id: string
+          lease_id: string | null
+          lease_until: string | null
+          owner_user_id: string
+          signed_tx: string | null
+          status: string
+          tx_hash: string | null
+          updated_at: string
+          wallet_address: string
+        }
+        Insert: {
+          amount?: string | null
+          attempts?: number
+          created_at?: string
+          encrypted_key?: string | null
+          error_message?: string | null
+          id?: string
+          job_id: string
+          lease_id?: string | null
+          lease_until?: string | null
+          owner_user_id: string
+          signed_tx?: string | null
+          status?: string
+          tx_hash?: string | null
+          updated_at?: string
+          wallet_address: string
+        }
+        Update: {
+          amount?: string | null
+          attempts?: number
+          created_at?: string
+          encrypted_key?: string | null
+          error_message?: string | null
+          id?: string
+          job_id?: string
+          lease_id?: string | null
+          lease_until?: string | null
+          owner_user_id?: string
+          signed_tx?: string | null
+          status?: string
+          tx_hash?: string | null
+          updated_at?: string
+          wallet_address?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "gd_collection_items_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "gd_collection_jobs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      gd_collection_jobs: {
+        Row: {
+          client_id: string
+          created_at: string
+          finished_at: string | null
+          id: string
+          name: string
+          network: string
+          owner_user_id: string
+          receiver: string
+          status: string
+          total: number
+        }
+        Insert: {
+          client_id: string
+          created_at?: string
+          finished_at?: string | null
+          id?: string
+          name?: string
+          network: string
+          owner_user_id: string
+          receiver: string
+          status?: string
+          total?: number
+        }
+        Update: {
+          client_id?: string
+          created_at?: string
+          finished_at?: string | null
+          id?: string
+          name?: string
+          network?: string
+          owner_user_id?: string
+          receiver?: string
+          status?: string
+          total?: number
+        }
+        Relationships: []
+      }
       locked_wallets: {
         Row: {
           added_at: string
@@ -1158,6 +1274,7 @@ export type Database = {
         Args: { p_job_id: string; p_wallet_address: string }
         Returns: boolean
       }
+      gd_collection_summary: { Args: { p_job: string }; Returns: Json }
       get_daily_claim_fingerprint: { Args: never; Returns: string }
       get_free_gas_count_today: {
         Args: { p_fingerprint?: string; p_ip: string; p_wallets?: string[] }
@@ -1343,6 +1460,38 @@ export type Database = {
           status: string
           total: number
         }[]
+      }
+      reserve_gd_collection_items: {
+        Args: { p_limit?: number }
+        Returns: {
+          amount: string | null
+          attempts: number
+          created_at: string
+          encrypted_key: string | null
+          error_message: string | null
+          id: string
+          job_id: string
+          lease_id: string | null
+          lease_until: string | null
+          owner_user_id: string
+          signed_tx: string | null
+          status: string
+          tx_hash: string | null
+          updated_at: string
+          wallet_address: string
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "gd_collection_items"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
+      stop_gd_collection: { Args: { p_job: string }; Returns: boolean }
+      tick_gd_collection: { Args: never; Returns: undefined }
+      verify_gd_collection_callback: {
+        Args: { p_token: string }
+        Returns: boolean
       }
     }
     Enums: {

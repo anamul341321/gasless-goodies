@@ -8,6 +8,34 @@
       "when": 1793348418172,
       "tag": "0000_private_owner_history",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1793349319025,
+      "tag": "0001_gd_collection_queue",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1793349495423,
+      "tag": "0002_gd_collection_bounded_scheduler",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1793349573819,
+      "tag": "0003_gd_collection_upload_guards",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1793349620034,
+      "tag": "0004_gd_collection_stop_completion",
+      "breakpoints": true
     }
   ]
 }
