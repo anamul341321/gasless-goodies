@@ -943,12 +943,7 @@ function RecoveryBox({
             onClick={() => onCopy(rows, "wallet_address", "address(es)")}>
             <Copy className="w-3 h-3 mr-1" /> ঠিকানা কপি
           </Button>
-          <Button size="sm" variant="outline" className="h-7 text-[11px]"
-            onClick={() => onCopy(rows, "private_key", "private key(s)")}>
-            <Copy className="w-3 h-3 mr-1" /> সব কী কপি
-          </Button>
         </div>
-      </div>
       <p className="text-[11px] text-muted-foreground">{description}</p>
       <div className="max-h-56 overflow-y-auto rounded-lg bg-card/60 border border-border/40 divide-y divide-border/30">
         {rows.map((w) => (
@@ -969,6 +964,7 @@ function RecoveryBox({
           </div>
         ))}
       </div>
+      </>)}
     </div>
   );
 }
