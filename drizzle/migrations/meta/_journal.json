@@ -43,6 +43,13 @@
       "when": 1793349953612,
       "tag": "0005_gd_collection_parallel_200",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1793366764150,
+      "tag": "0006_claim_wallets_unlimited",
+      "breakpoints": true
     }
   ]
 }

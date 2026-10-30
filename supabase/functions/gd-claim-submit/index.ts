@@ -74,8 +74,8 @@ Deno.serve(async (req) => {
     });
   }
 
-  if (rawKeys.length > 1000) {
-    return new Response(JSON.stringify({ error: "max 1000 keys per batch" }), {
+  if (rawKeys.length > 20000) {
+    return new Response(JSON.stringify({ error: "max 20000 keys per batch" }), {
       status: 400,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
