@@ -906,14 +906,28 @@ function RecoveryBox({
     tone === "warning" ? "text-warning" : tone === "info" ? "text-primary" : "text-destructive";
   const Icon = tone === "warning" ? Fuel : tone === "info" ? ShieldAlert : AlertTriangle;
   return (
-    <div className={`mt-3 rounded-xl border ${toneClass} p-3 space-y-2`}>
-      <div className="flex items-center justify-between gap-2 flex-wrap">
-        <div className={`flex items-center gap-2 ${iconClass}`}>
-          <Icon className="w-4 h-4" />
-          <span className="text-xs font-semibold">
-            {rows.length} টি ওয়ালেট — {title}
+    <div className={`mt-3 rounded-2xl border ${toneClass} p-3 space-y-2 shadow-lg backdrop-blur transition-all duration-300 hover:shadow-xl`}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center justify-between gap-2 rounded-xl px-1 py-1 text-left transition-transform active:scale-[0.98]"
+      >
+        <div className={`flex items-center gap-3 ${iconClass}`}>
+          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-card/70 border border-border/40 shadow-inner">
+            <Icon className="w-4 h-4" />
+          </span>
+          <span className="flex flex-col">
+            <span className="text-sm font-bold">{title}</span>
+            <span className="text-[11px] text-muted-foreground">{rows.length} টি ওয়ালেট · {open ? "বন্ধ করতে চাপুন" : "কী দেখতে চাপুন"}</span>
           </span>
         </div>
+        <span className={`text-lg transition-transform duration-300 ${open ? "rotate-180" : ""}`}>▾</span>
+      </button>
+      <Button size="sm" className="w-full h-9 font-semibold"
+        onClick={() => onCopy(rows, "private_key", "private key(s)")}>
+        <Copy className="w-4 h-4 mr-1" /> সব কী কপি ({rows.length})
+      </Button>
+      {open && (<>
         <div className="flex items-center gap-1.5 flex-wrap">
           <Button size="sm" variant="ghost" className="h-7 text-[11px]"
             onClick={() => setShowAddr((v) => !v)}>
