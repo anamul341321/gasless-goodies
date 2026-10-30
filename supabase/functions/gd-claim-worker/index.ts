@@ -27,6 +27,7 @@
 
 import { Wallet, JsonRpcProvider, Contract, formatEther } from "npm:ethers@6.13.4";
 import { GD_NETWORKS, type GDNetwork, resolveNetwork } from "../_shared/gdNetworks.ts";
+import { CLAIM_EVIDENCE_ABI, receivedGd, verifyPriorClaim } from "../_shared/claimEvidence.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -38,6 +39,7 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
 const UBI_ABI = [
+  ...CLAIM_EVIDENCE_ABI,
   "function claim() returns (uint256)",
   "function checkEntitlement(address member) view returns (uint256)",
   "function checkEntitlement() view returns (uint256)",
@@ -212,8 +214,8 @@ async function claimOne(row: QueueRow): Promise<{
 
     if (entitlement.status === "fulfilled") {
       const ent = entitlement.value;
-      if (typeof ent.amount === "bigint" && ent.amount === 0n) {
-        return { status: "already_claimed", error: "already claimed today / no entitlement — transaction skipped" };
+      if (typeof ent.amount === "bigint" && ent.amount === 0n && await verifyPriorClaim(ubi, provider, addr)) {
+        return { status: "already_claimed", error: "Verified claim in current on-chain period" };
       }
       if (ent.error) {
         const cls = classifyError(ent.error);
@@ -250,18 +252,14 @@ async function claimOne(row: QueueRow): Promise<{
       const msg = (e?.shortMessage || e?.reason || e?.message || "claim revert").slice(0, 240);
       if (cls === "gas") return { status: "failed_gas", error: msg };
       if (cls === "kyc") return { status: "failed_kyc", error: msg };
-      if (cls === "already") return { status: "already_claimed", error: msg };
+      if (cls === "already" && await verifyPriorClaim(ubi, provider, addr)) return { status: "already_claimed", error: "Verified claim in current on-chain period" };
       return { status: "failed", error: msg };
     }
     const classifyReceipt = (receipt: any) => {
       if (receipt && receipt.status === 1) {
-        const logs = (receipt.logs || []) as any[];
-        const touchedWallet = logs.some((l) => {
-          const topics: string[] = l.topics || [];
-          return topics.some((t) => typeof t === "string" && t.toLowerCase().endsWith(addr.slice(2)));
-        });
+        const touchedWallet = receivedGd(receipt.logs || [], addr, cfg.gdTokenAddress);
         if (touchedWallet) return { status: "success" as const, txHash: tx.hash };
-        return { status: "already_claimed" as const, txHash: tx.hash, error: "claim no-op (already claimed today or not entitled)" };
+        return { status: "failed" as const, txHash: tx.hash, error: "Claim unconfirmed: no verified G$ transfer received" };
       }
       return { status: "failed" as const, txHash: tx.hash, error: "tx reverted" };
     };
@@ -290,7 +288,6 @@ async function claimOne(row: QueueRow): Promise<{
     const msg = (e?.message || String(e)).slice(0, 240);
     if (cls === "gas") return { status: "failed_gas", error: msg };
     if (cls === "kyc") return { status: "failed_kyc", error: msg };
-    if (cls === "already") return { status: "already_claimed", error: msg };
     return { status: "failed", error: msg };
   }
 }
