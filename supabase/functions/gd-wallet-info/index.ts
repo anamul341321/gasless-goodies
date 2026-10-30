@@ -150,8 +150,8 @@ async function readDirect(addresses: string[], mode: Mode, net: GDNetwork): Prom
     } catch {}
     return {
       address: a, whitelisted,
-      balance: formatUnits(balWei, GD_DECIMALS), balanceWei: String(balWei),
-      entitlement: formatUnits(ent, GD_DECIMALS), canClaim: whitelisted && ent > 0n,
+      balance: formatUnits(balWei, cfg.gdDecimals ?? GD_DECIMALS), balanceWei: String(balWei),
+      entitlement: formatUnits(ent, cfg.gdDecimals ?? GD_DECIMALS), canClaim: whitelisted && ent > 0n,
     };
   }));
 }
@@ -196,9 +196,9 @@ async function inspectChunk(addresses: string[], mode: Mode, net: GDNetwork): Pr
     out.push({
       address: addresses[i],
       whitelisted,
-      balance: formatUnits(balWei, GD_DECIMALS),
+      balance: formatUnits(balWei, GD_NETWORKS[net].gdDecimals ?? GD_DECIMALS),
       balanceWei: String(balWei),
-      entitlement: formatUnits(ent, GD_DECIMALS),
+      entitlement: formatUnits(ent, GD_NETWORKS[net].gdDecimals ?? GD_DECIMALS),
       canClaim: whitelisted && ent > 0n,
     });
   }
