@@ -33,11 +33,12 @@ type WalletStatus =
   | "needs_gas"
   | "waiting_gas";
 
-type ClaimNetwork = "celo" | "xdc";
+type ClaimNetwork = "celo" | "xdc" | "fuse";
 
 const NETWORK_META: Record<ClaimNetwork, { label: string; explorerTx: string; nativeGas: string }> = {
   celo: { label: "Celo Mainnet", explorerTx: "https://celoscan.io/tx/", nativeGas: "CELO" },
   xdc: { label: "XDC Mainnet", explorerTx: "https://xdcscan.com/tx/", nativeGas: "XDC" },
+  fuse: { label: "Fuse", explorerTx: "https://explorer.fuse.io/tx/", nativeGas: "FUSE" },
 };
 
 type Job = {
@@ -715,8 +716,8 @@ const Claim = () => {
               {/* Network selector */}
               <div className="rounded-lg border border-border/40 bg-card/40 p-2">
                 <div className="text-[11px] text-muted-foreground mb-1.5 px-1">নেটওয়ার্ক</div>
-                <div className="grid grid-cols-2 gap-2">
-                  {(["celo", "xdc"] as ClaimNetwork[]).map((n) => (
+                <div className="grid grid-cols-3 gap-2">
+                  {(["celo", "xdc", "fuse"] as ClaimNetwork[]).map((n) => (
                     <Button
                       type="button"
                       key={n}
