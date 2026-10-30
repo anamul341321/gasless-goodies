@@ -199,7 +199,7 @@ export default function BaseEthSender() {
               className="font-mono text-xs min-h-[160px]"
             />
             <p className="text-[10px] text-muted-foreground">
-              {recipients.length} valid recipients · total needed:{" "}
+              {recipients.length} টি প্রাপক · মোট দরকার:{" "}
               <span className="font-mono">{totalNeeded > 0n ? ethers.formatEther(totalNeeded) : "0"} ETH</span> + gas
             </p>
           </div>
@@ -248,8 +248,8 @@ export default function BaseEthSender() {
         <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4 text-[11px] text-muted-foreground leading-relaxed flex gap-3">
           <Wallet className="h-4 w-4 text-primary shrink-0 mt-0.5" />
           <div>
-            <p className="font-bold text-foreground text-xs mb-1">Browser-side execution</p>
-            Your private key stays in this browser tab. Transactions are signed locally and broadcast directly to Base RPCs. Use small amounts to test first.
+            <p className="font-bold text-foreground text-xs mb-1">প্রাইভেট কী সুরক্ষা</p>
+            প্রাইভেট কী এই পাতাতেই থাকে। আগে অল্প পরিমাণ দিয়ে পরীক্ষা করুন।
           </div>
         </div>
       </main>

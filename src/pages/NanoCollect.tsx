@@ -326,7 +326,7 @@ export default function NanoCollect() {
               className="font-mono text-xs"
             />
             <p className="text-[10px] text-muted-foreground">
-              If left empty, wallets without gas will be skipped. If provided, only the EXACT gas amount is sent (no waste).
+              গ্যাস না থাকলে সেই ওয়ালেট বাদ পড়বে। গ্যাস দেওয়ার কী থাকলে প্রয়োজনীয় ETH পাঠানো হবে।
             </p>
           </div>
 
@@ -355,7 +355,7 @@ export default function NanoCollect() {
               className="font-mono text-xs min-h-[160px]"
             />
             <p className="text-[10px] text-muted-foreground">
-              {parseKeyList(keysText).length} valid keys · all transfers run in parallel · keys never leave your browser
+              {parseKeyList(keysText).length} টি সঠিক কী
             </p>
           </div>
 
@@ -385,7 +385,7 @@ export default function NanoCollect() {
               <div className="rounded-xl border border-orange-500/30 bg-orange-500/5 p-3 space-y-2">
                 <div className="flex items-center justify-between gap-2">
                   <p className="text-xs font-bold text-orange-500">
-                    {noGasRows.length} wallet(s) failed (no gas)
+                    {noGasRows.length} টি ওয়ালেটে গ্যাস নেই
                   </p>
                   <Button
                     size="sm"
@@ -439,7 +439,7 @@ export default function NanoCollect() {
               <div className="rounded-xl border border-red-500/30 bg-red-500/5 p-3 space-y-2">
                 <div className="flex items-center justify-between gap-2">
                   <p className="text-xs font-bold text-red-500">
-                    {failedRows.length} wallet(s) failed (other error)
+                    {failedRows.length} টি ওয়ালেট ব্যর্থ
                   </p>
                   <Button
                     size="sm"

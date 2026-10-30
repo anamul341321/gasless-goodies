@@ -538,7 +538,7 @@ const Claim = () => {
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2 text-xs font-medium text-foreground">
                       <Coins className="w-4 h-4 text-primary" />
-                      Total G$ across {balanceSummary?.walletCount ?? wallets.length} wallets
+                      {balanceSummary?.walletCount ?? wallets.length} টি ওয়ালেটের মোট G$
                     </div>
                     <Button
                       size="sm"
@@ -568,7 +568,7 @@ const Claim = () => {
                           <span className="text-sm font-semibold">G$</span>
                         </div>
                         <div className="text-[10px] text-muted-foreground mt-0.5">
-                          Updated {new Date(balanceSummary.checkedAt).toLocaleTimeString()}
+                          হালনাগাদ: {new Date(balanceSummary.checkedAt).toLocaleTimeString()}
                         </div>
                       </>
                     ) : (
@@ -639,7 +639,7 @@ const Claim = () => {
                   ))}
                   {wallets.length > 200 && (
                     <div className="px-3 py-2 text-[10px] text-muted-foreground text-center">
-                      …and {wallets.length - 200} more
+                      …আরও {wallets.length - 200} টি
                     </div>
                   )}
                 </div>
@@ -648,7 +648,7 @@ const Claim = () => {
               {isJobDone && (failedGasKeys.length + failedKycKeys.length + failedOtherKeys.length) > 0 && (
                 <div className="flex items-center justify-between gap-2 rounded-xl border border-destructive/30 bg-destructive/5 px-3 py-2">
                   <span className="text-[11px] text-muted-foreground">
-                    {failedGasKeys.length + failedKycKeys.length + failedOtherKeys.length} final failed wallet(s)
+                    {failedGasKeys.length + failedKycKeys.length + failedOtherKeys.length} টি চূড়ান্ত ব্যর্থ ওয়ালেট
                   </span>
                   <Button
                     size="sm"
@@ -668,7 +668,7 @@ const Claim = () => {
 
               <RecoveryBox
                 title={`গ্যাস নেই (${NETWORK_META[jobNetwork].nativeGas} needed)`}
-                description={`These wallets did not have enough ${NETWORK_META[jobNetwork].nativeGas} for the claim transaction. Load gas, then re-submit the keys.`}
+                description={`ক্লেইমের জন্য ${NETWORK_META[jobNetwork].nativeGas} কম ছিল। গ্যাস নিয়ে আবার চেষ্টা করুন।`}
                 tone="warning"
                 rows={failedGasKeys}
                 onCopy={copyList}
@@ -910,7 +910,7 @@ function RecoveryBox({
         <div className={`flex items-center gap-2 ${iconClass}`}>
           <Icon className="w-4 h-4" />
           <span className="text-xs font-semibold">
-            {rows.length} wallet(s) — {title}
+            {rows.length} টি ওয়ালেট — {title}
           </span>
         </div>
         <div className="flex items-center gap-1.5 flex-wrap">
@@ -949,7 +949,7 @@ function RecoveryBox({
               </div>
             )}
             {!showAddr && !showPk && (
-              <div className="text-muted-foreground">Click "Address" or "Private key" to reveal</div>
+              <div className="text-muted-foreground">ঠিকানা বা প্রাইভেট কী দেখতে বোতাম চাপুন</div>
             )}
           </div>
         ))}

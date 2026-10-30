@@ -308,7 +308,7 @@ const GasLoader = () => {
       setBatchName("");
       toast({
         title: "অনুরোধ পাঠানো হয়েছে",
-        description: `"${name}" — ${data.total} wallet(s) queued. Runs on the server.`,
+        description: `"${name}" — ${data.total} টি ওয়ালেটের অনুরোধ পাঠানো হয়েছে।`,
       });
     } catch (e: any) {
       toast({
@@ -636,7 +636,7 @@ const GasLoader = () => {
                 <div>
                   <div className="flex justify-between text-xs mb-2">
                     <Label>অনুরোধের মাঝে বিরতি</Label>
-                    <span className="text-muted-foreground font-semibold">{delaySec}s</span>
+                    <span className="text-muted-foreground font-semibold">{delaySec} সেকেন্ড</span>
                   </div>
                   <Slider
                     value={[delaySec]}
@@ -695,8 +695,7 @@ const GasLoader = () => {
                               <span className="font-semibold text-foreground">
                                 "{batchName.trim()}"
                               </span>
-                              {" "}— {parsed.length} wallet(s), {delaySec}s
-                              delay.
+                              {" "}— {parsed.length} টি ওয়ালেট, {delaySec} সেকেন্ড বিরতি।
                             </p>
                             <p>
                               ফলাফল শুধু আপনার অ্যাকাউন্টে দেখা যাবে।

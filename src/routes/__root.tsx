@@ -96,9 +96,9 @@ function RootErrorComponent({ error, reset }: import("@tanstack/react-router").E
   return (
     <div className="min-h-screen bg-background text-foreground flex items-center justify-center p-6">
       <div className="glass-card max-w-md w-full p-8 text-center space-y-4">
-        <h1 className="text-xl font-bold">This page didn't load</h1>
+        <h1 className="text-xl font-bold">পাতাটি খোলা যায়নি</h1>
         <p className="text-muted-foreground text-sm">
-          Something went wrong. You can try again or head back home.
+          আবার চেষ্টা করুন অথবা ড্যাশবোর্ডে ফিরুন।
         </p>
         <div className="flex items-center justify-center gap-3">
           <button
@@ -108,13 +108,13 @@ function RootErrorComponent({ error, reset }: import("@tanstack/react-router").E
               reset();
             }}
           >
-            Try again
+            আবার চেষ্টা করুন
           </button>
           <a
             href="/"
             className="border border-border px-4 py-2 rounded-lg font-medium text-foreground"
           >
-            Go home
+            ড্যাশবোর্ডে ফিরুন
           </a>
         </div>
       </div>

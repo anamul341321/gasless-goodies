@@ -37,7 +37,7 @@ export default function Farmer() {
   const [sweepProgress, setSweepProgress] = useState<{ done: number; total: number; success: number; failed: number } | null>(null);
   const [activeSweepJobId, setActiveSweepJobId] = useState<string | null>(null);
 
-  // ----- Balance checker state -----
+  // ----- ব্যালেন্স দেখুন state -----
   const [checkInput, setCheckInput] = useState("");
   const [checking, setChecking] = useState(false);
   const [checkResults, setCheckResults] = useState<{
@@ -48,11 +48,11 @@ export default function Farmer() {
   const runBalanceCheck = async () => {
     const inputs = checkInput.split(/[\s,;\n]+/).map(s => s.trim()).filter(Boolean);
     if (inputs.length === 0) {
-      toast({ title: "Paste at least one address or private key", variant: "destructive" });
+      toast({ title: "অন্তত একটি ঠিকানা বা প্রাইভেট কী দিন", variant: "destructive" });
       return;
     }
     if (inputs.length > 1000) {
-      toast({ title: "Max 1000 entries per check", variant: "destructive" });
+      toast({ title: "একবারে সর্বোচ্চ ১০০০টি দিন", variant: "destructive" });
       return;
     }
     setChecking(true);
@@ -69,12 +69,12 @@ export default function Farmer() {
       });
       const json = await res.json();
       if (!res.ok) {
-        toast({ title: "Check failed", description: json?.error || `HTTP ${res.status}`, variant: "destructive" });
+        toast({ title: "দেখা যায়নি", description: json?.error || `HTTP ${res.status}`, variant: "destructive" });
       } else {
         setCheckResults(json);
       }
     } catch (e: any) {
-      toast({ title: "Network error", description: e?.message || String(e), variant: "destructive" });
+      toast({ title: "সংযোগের সমস্যা", description: e?.message || String(e), variant: "destructive" });
     } finally {
       setChecking(false);
     }
@@ -84,7 +84,7 @@ export default function Farmer() {
     if (!checkResults) return;
     const addrs = checkResults.results.filter(r => r.address).map(r => r.address).join("\n");
     await navigator.clipboard.writeText(addrs);
-    toast({ title: "Addresses copied" });
+    toast({ title: "ঠিকানা কপি হয়েছে" });
   };
 
   // ----- Bulk Send G$ state (async job system) -----
@@ -93,11 +93,14 @@ export default function Farmer() {
   const [bulkAmount, setBulkAmount] = useState("0.5");
   const [bulkSubmitting, setBulkSubmitting] = useState(false);
   const [bulkCancelling, setBulkCancelling] = useState(false);
-  const [bulkJobId, setBulkJobId] = useState<string | null>(() => {
-    try { return localStorage.getItem(`gd_bulk_job_id:${user?.id || "signed-out"}`); } catch { return null; }
-  });
+  const [bulkJobId, setBulkJobId] = useState<string | null>(null);
   const [bulkJob, setBulkJob] = useState<any>(null);
   const [bulkRecipientsStatus, setBulkRecipientsStatus] = useState<any[]>([]);
+
+  useEffect(() => {
+    setBulkJob(null); setBulkRecipientsStatus([]); setSweepSummary(null); setSweepResults(null); setSweepProgress(null);
+    setBulkJobId(user ? localStorage.getItem(`gd_bulk_job_id:${user.id}`) : null);
+  }, [user?.id]);
 
   // Poll job status — only depends on bulkJobId; uses local var for stop condition
   useEffect(() => {
@@ -159,7 +162,7 @@ export default function Farmer() {
         setBulkJob((prev: any) => prev ? { ...prev, status: "stopped", skipped: json.skipped, sent: json.sent, failed: json.failed, last_error: "Cancelled by user" } : prev);
       }
     } catch (e: any) {
-      toast({ title: "Network error", description: e?.message || String(e), variant: "destructive" });
+      toast({ title: "সংযোগের সমস্যা", description: e?.message || String(e), variant: "destructive" });
     } finally {
       setBulkCancelling(false);
     }
@@ -169,7 +172,7 @@ export default function Farmer() {
     let key = bulkSenderKey.trim();
     if (/^[a-fA-F0-9]{64}$/.test(key)) key = "0x" + key;
     if (!/^0x[a-fA-F0-9]{64}$/.test(key)) {
-      toast({ title: "Invalid sender private key", variant: "destructive" });
+      toast({ title: "প্রেরকের কী ভুল", variant: "destructive" });
       return;
     }
     const recipients = bulkRecipients
@@ -181,7 +184,7 @@ export default function Farmer() {
       return;
     }
     if (recipients.length > 5000) {
-      toast({ title: "Max 5000 recipients per request", variant: "destructive" });
+      toast({ title: "একবারে সর্বোচ্চ ৫০০০ জন প্রাপক", variant: "destructive" });
       return;
     }
     const amt = Number(bulkAmount);
@@ -218,7 +221,7 @@ export default function Farmer() {
         });
       }
     } catch (e: any) {
-      toast({ title: "Network error", description: e?.message || String(e), variant: "destructive" });
+      toast({ title: "সংযোগের সমস্যা", description: e?.message || String(e), variant: "destructive" });
     } finally {
       setBulkSubmitting(false);
     }
@@ -307,11 +310,11 @@ export default function Farmer() {
       setActiveSweepJobId(json.job_id);
       setSweepKeys("");
       toast({
-        title: `Sweep started on server`,
+        title: `সংগ্রহ শুরু হয়েছে`,
         description: `${json.total} wallets queued. Safe to close the browser.`,
       });
     } catch (e: any) {
-      toast({ title: "Network error", description: e?.message || String(e), variant: "destructive" });
+      toast({ title: "সংযোগের সমস্যা", description: e?.message || String(e), variant: "destructive" });
       setSweeping(false);
     }
   };
@@ -328,7 +331,7 @@ export default function Farmer() {
       return;
     }
     setSweeping(false);
-    toast({ title: "Sweep stopped" });
+    toast({ title: "সংগ্রহ বন্ধ হয়েছে" });
   };
 
   if (authLoading) {
@@ -375,8 +378,7 @@ export default function Farmer() {
               </CardHeader>
               <CardContent className="space-y-4">
                 <p className="text-xs text-muted-foreground">
-                  Send G$ from one wallet to many recipients using the audited
-                  Disperse contract. Large lists are auto-split into safe batches.
+                  
                 </p>
 
                 <div>
@@ -437,7 +439,7 @@ export default function Farmer() {
                   {bulkSubmitting ? "অনুরোধ যাচ্ছে…" : "G$ পাঠান"}
                 </Button>
                 <p className="text-[11px] text-muted-foreground -mt-1">
-                  Runs on our servers. Safe to close the browser.
+                  
                 </p>
 
                 {bulkJobId && bulkJob && (
@@ -499,13 +501,13 @@ export default function Farmer() {
 
                     {bulkJob.approve_tx && (
                       <div className="p-2 rounded bg-muted/40 border border-border text-xs">
-                        <span className="text-muted-foreground">Approve tx: </span>
+                        <span className="text-muted-foreground">অনুমতির লেনদেন: </span>
                         <a
                           href={`https://celoscan.io/tx/${bulkJob.approve_tx}`}
                           target="_blank" rel="noreferrer"
                           className="text-primary hover:underline inline-flex items-center gap-1"
                         >
-                          <ExternalLink className="size-3" /> view
+                          <ExternalLink className="size-3" /> দেখুন
                         </a>
                       </div>
                     )}
@@ -532,7 +534,7 @@ export default function Farmer() {
                         ))}
                         {bulkRecipientsStatus.length > 200 && (
                           <p className="text-[10px] text-muted-foreground text-center pt-1">
-                            Showing first 200 of {bulkRecipientsStatus.length}
+                            প্রথম ২০০টি দেখানো হচ্ছে, মোট {bulkRecipientsStatus.length}
                           </p>
                         )}
                       </div>
@@ -578,7 +580,7 @@ export default function Farmer() {
                     disabled={sweeping}
                   />
                   <p className="text-[11px] text-muted-foreground mt-1">
-                    Keys are not saved. Each wallet's CELO balance (minus gas) will be sent to the receiver.
+                    গ্যাসের খরচ বাদ দিয়ে CELO প্রাপকের কাছে যাবে।
                   </p>
                 </div>
                 <div className="flex gap-2">
@@ -593,7 +595,7 @@ export default function Farmer() {
                   )}
                 </div>
                 <p className="text-[11px] text-muted-foreground -mt-1">
-                  Runs in the background on our servers — safe to close the browser.
+                  
                 </p>
 
                 {sweepProgress && sweeping && (
@@ -709,7 +711,7 @@ export default function Farmer() {
                         <p className="text-lg font-bold text-primary">
                           {checkResults.total_celo.toFixed(4)}
                         </p>
-                        <p className="text-[10px] text-muted-foreground uppercase">Total CELO</p>
+                        <p className="text-[10px] text-muted-foreground uppercase">মোট CELO</p>
                       </div>
                       <div className="p-2 rounded bg-muted/40 border border-border">
                         <p className="text-lg font-bold text-success">{checkResults.ok}</p>
@@ -717,7 +719,7 @@ export default function Farmer() {
                       </div>
                       <div className="p-2 rounded bg-muted/40 border border-border">
                         <p className="text-lg font-bold text-destructive">{checkResults.errors}</p>
-                        <p className="text-[10px] text-muted-foreground uppercase">Errors</p>
+                        <p className="text-[10px] text-muted-foreground uppercase">ভুল</p>
                       </div>
                     </div>
 

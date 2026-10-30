@@ -185,7 +185,7 @@ export default function Account() {
               <div>
                 <CardTitle className="text-xl">{displayName}</CardTitle>
                 <p className="text-sm text-muted-foreground capitalize">
-                  Signed in via {profile?.auth_method || "email"}
+                  লগইন: {profile?.auth_method || "email"}
                   {profile?.wallet_address && (
                     <span className="ml-2 font-mono text-xs">
                       · {profile.wallet_address.slice(0, 6)}…{profile.wallet_address.slice(-4)}
@@ -204,7 +204,7 @@ export default function Account() {
               <div className="flex items-center gap-2 p-3 rounded-lg bg-warning/10 border border-warning/30 text-sm">
                 <AlertTriangle className="size-4 text-warning shrink-0" />
                 <span>
-                  You have <strong>{totalFailedKeys}</strong> failed wallet{totalFailedKeys === 1 ? "" : "s"} with recoverable keys.
+                  <strong>{totalFailedKeys}</strong> টি ব্যর্থ ওয়ালেটের কী রাখা আছে।
                 </span>
               </div>
             </CardContent>
@@ -268,7 +268,7 @@ export default function Account() {
                     {Number(b.failed_with_keys) > 0 && (
                       <div className="mb-3 flex items-center justify-between gap-2 flex-wrap">
                         <div className="text-xs text-muted-foreground">
-                          <strong className="text-foreground">{b.failed_with_keys}</strong> failed wallet{Number(b.failed_with_keys) === 1 ? "" : "s"} have recoverable keys.
+                          <strong className="text-foreground">{b.failed_with_keys}</strong> টি ব্যর্থ ওয়ালেটের কী রাখা আছে।
                         </div>
                         <div className="flex items-center gap-2">
                           <Button size="sm" variant="outline" className="h-7" onClick={() => copyAllKeys(b.id)}>
@@ -314,8 +314,8 @@ export default function Account() {
                                 <code className="flex-1 px-2 py-1.5 text-xs font-mono bg-background rounded border border-border truncate">
                                   {w.private_key.slice(0, 10)}…{w.private_key.slice(-8)}
                                 </code>
-                                <Button size="sm" variant="outline" className="h-7" onClick={() => copy(w.private_key!, "Private key")}>
-                                  <Copy className="size-3" /> Copy
+                                <Button size="sm" variant="outline" className="h-7" onClick={() => copy(w.private_key || "", "প্রাইভেট কী")}>
+                                  <Copy className="size-3" /> কপি
                                 </Button>
                                 <Button size="sm" variant="ghost" className="h-7 text-destructive hover:text-destructive" onClick={() => deleteKey(b.id, w.wallet_address)}>
                                   <Trash2 className="size-3" />
