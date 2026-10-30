@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useServerFn } from "@tanstack/react-start";
+import { retryDailyGasFailures } from "@/lib/dailyClaim.functions";
 import { Link, useNavigate } from "@/lib/router-compat";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -97,7 +99,8 @@ function statusColor(s?: string) {
 function reasonBn(raw?: string | null) {
   if (!raw) return null;
   const m = raw.toLowerCase();
-  if (m.includes("no entitlement") || m.includes("already claim")) return "আজকের ক্লেম আগেই নেওয়া হয়ে গেছে";
+  if (m.includes("verified claim")) return "Claimed in the current on-chain period";
+  if (m.includes("unconfirmed") || m.includes("no entitlement") || m.includes("claim no-op")) return "Claim not confirmed — no verified G$ receipt";
   if (m.includes("whitelist") || m.includes("not verified")) return "ওয়ালেটে ফেস ভেরিফিকেশন করা নেই";
   if (m.includes("insufficient")) return "গ্যাস ফি (CELO) নেই — গ্যাস লোড দরকার";
   if (m.includes("nonce")) return "নেটওয়ার্ক সংঘর্ষ (nonce) — আবার চেষ্টা হবে";
@@ -158,6 +161,8 @@ export default function DailyClaim() {
   const [adding, setAdding] = useState(false);
   const [addProgress, setAddProgress] = useState<{ done: number; total: number } | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const retryGas = useServerFn(retryDailyGasFailures);
+  const [retryingGroup, setRetryingGroup] = useState<string | null>(null);
   const [walletsLoading, setWalletsLoading] = useState(false);
   const [walletSearch, setWalletSearch] = useState("");
   const [walletLimit, setWalletLimit] = useState(100);
@@ -206,6 +211,20 @@ export default function DailyClaim() {
     } finally {
       setWalletsLoading(false);
     }
+  }
+
+  async function retryGroupGas(g: Group) {
+    if (!g.run || retryingGroup) return;
+    setRetryingGroup(g.id);
+    try {
+      const result = await retryGas({ data: { runId: g.run.id } });
+      setDetailByGroup((s) => { const next = { ...s }; delete next[g.id]; return next; });
+      setLoadedKinds((s) => Object.fromEntries(Object.entries(s).filter(([key]) => !key.startsWith(`${g.id}:`))));
+      toast({ title: `${result.retried} gas-failed wallets queued` });
+      await fetchStatus(true);
+    } catch (error) {
+      toast({ title: "Retry unavailable", description: error instanceof Error ? error.message : "Please try again", variant: "destructive" });
+    } finally { setRetryingGroup(null); }
   }
 
   async function fetchAll() {
@@ -628,6 +647,12 @@ export default function DailyClaim() {
                             {/* Today's run summary */}
                             {g.run && (
                               <div className="pt-3 border-t border-border space-y-3">
+                                {g.run.phase === "completed" && (g.breakdown?.failed_gas ?? g.run.failed_gas) > 0 && (
+                                  <Button onClick={() => retryGroupGas(g)} disabled={retryingGroup !== null} className="w-full sm:w-auto">
+                                    <RefreshCw className={`mr-2 h-4 w-4 ${retryingGroup === g.id ? "animate-spin" : ""}`} />
+                                    {retryingGroup === g.id ? "Restarting…" : `Retry gas-failed wallets (${g.breakdown?.failed_gas ?? g.run.failed_gas})`}
+                                  </Button>
+                                )}
                                 {(() => {
                                   const b = g.breakdown || {};
                                   const total = g.run.total || 0;
