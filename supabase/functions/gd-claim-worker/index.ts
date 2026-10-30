@@ -232,9 +232,12 @@ async function claimOne(row: QueueRow): Promise<{
       const feeData = feeDataRes.value;
       const estimatedGas = BigInt(estimatedGasRes.value);
       const gasUnitPrice = feeData.gasPrice ?? feeData.maxFeePerGas;
+      let gasLimit = (estimatedGas * 120n) / 100n;
       if (gasUnitPrice && balanceRes.status === "fulfilled") {
         const balance = balanceRes.value;
-        const required = estimatedGas * gasUnitPrice;
+        // Tight wallets: fall back to a 5% margin when the 20% one doesn't fit.
+        if (balance < gasLimit * gasUnitPrice) gasLimit = (estimatedGas * 105n) / 100n;
+        const required = gasLimit * gasUnitPrice;
         if (balance < required) {
           return {
             status: "failed_gas",
@@ -244,7 +247,7 @@ async function claimOne(row: QueueRow): Promise<{
       }
 
       tx = await (ubi as any).claim({
-        gasLimit: (estimatedGas * 120n) / 100n,
+        gasLimit,
         ...(feeData.gasPrice ? { gasPrice: feeData.gasPrice } : {}),
       });
     } catch (e: any) {
