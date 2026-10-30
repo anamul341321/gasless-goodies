@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 import { Link } from "@/lib/router-compat";
 import appLogo from "@/assets/logo.png";
+import { dashboardServices, historyServices } from "@/lib/dashboard-services";
 import ServicesDrawer from "@/components/ServicesDrawer";
 import VerifyGuide from "@/components/VerifyGuide";
 import { Button } from "@/components/ui/button";
@@ -14,49 +15,6 @@ import { useAuth } from "@/contexts/AuthContext";
 
 const BRAND_TITLE = "Celo Gas Sponsor";
 const BRAND_SUBTITLE = "by Good-App";
-
-const quickLinks = [
-  {
-    to: "/claim",
-    icon: Coins,
-    label: "Batch G$ Claim",
-    desc: "Auto-claim daily GoodDollar · auto gas refill on fail",
-    cardClass: "card-indigo",
-    iconClass: "icon-indigo",
-    badge: "NEW",
-  },
-  {
-    to: "/nano-collect",
-    icon: Download,
-    label: "NanoPay Batch Collect",
-    desc: "Collect NanoPay (Base) from many wallets · auto gas top-up",
-    cardClass: "card-indigo",
-    iconClass: "icon-indigo",
-    badge: "BASE",
-  },
-  {
-    to: "/base-multisend",
-    icon: Send,
-    label: "Base ETH Multi-Sender",
-    desc: "Send Base ETH (gas) to many wallets from one key",
-    cardClass: "card-violet",
-    iconClass: "icon-violet",
-    badge: "BASE",
-  },
-];
-
-const stats = [
-  { icon: Wallet, label: "Wallets Loaded", value: "12K+" },
-  { icon: Coins, label: "G$ Claimed", value: "Daily" },
-  { icon: Shield, label: "Self-Custody", value: "100%" },
-];
-
-const features = [
-  { icon: Lock, title: "Non-custodial", desc: "Your keys, your wallet — always" },
-  { icon: Zap, title: "Instant", desc: "Gas arrives in seconds, not minutes" },
-  { icon: TrendingUp, title: "Earn yield", desc: "Park USDT/USDC, earn passive returns" },
-  { icon: Clock, title: "24/7 ready", desc: "Background workers run round the clock" },
-];
 
 export default function Index() {
   const { user } = useAuth();
@@ -104,7 +62,7 @@ export default function Index() {
     };
   }, []);
 
-  const visibleLinks = quickLinks;
+  
 
   return (
     <div className="aurora-bg min-h-screen bg-background relative overflow-hidden">
@@ -134,11 +92,11 @@ export default function Index() {
                 variant={user ? "default" : "outline"}
                 size="sm"
                 className="h-10 rounded-xl px-3 font-bold"
-                title={user ? "My account" : "Sign in"}
+                title={user ? "আমার অ্যাকাউন্ট" : "লগইন"}
               >
-                <Link to={user ? "/account" : "/auth"} aria-label={user ? "My account" : "Sign in"}>
+                <Link to={user ? "/account" : "/auth"} aria-label={user ? "আমার অ্যাকাউন্ট" : "লগইন"}>
                   {user ? <User className="h-4 w-4" /> : <LogIn className="h-4 w-4" />}
-                  <span className="hidden min-[380px]:inline">{user ? "Account" : "Login"}</span>
+                  <span className="hidden min-[380px]:inline">{user ? "অ্যাকাউন্ট" : "লগইন"}</span>
                 </Link>
               </Button>
               <ServicesDrawer>
@@ -159,7 +117,7 @@ export default function Index() {
               <Megaphone className="h-4 w-4" />
             </span>
             <div className="min-w-0 space-y-0.5">
-              <p className="text-[10px] font-bold uppercase tracking-widest text-foreground/70">Notice</p>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-foreground/70">নোটিশ</p>
               <p className="text-sm font-semibold text-foreground leading-snug whitespace-pre-wrap break-words">
                 {notice}
               </p>
@@ -167,39 +125,48 @@ export default function Index() {
           </div>
         )}
 
-        {/* Daily Auto Claim — main button */}
-        <Link to="/daily-claim" className="block animate-fade-up">
-          <div className="btn-premium premium-btn rounded-3xl p-6 flex items-center gap-4 text-primary-foreground shadow-2xl hover:-translate-y-1">
-            <div className="h-14 w-14 rounded-2xl bg-background/20 grid place-items-center shrink-0">
-              <Clock className="h-7 w-7" />
-            </div>
-            <p className="flex-1 text-xl font-black">Daily Auto Claim</p>
-            <ArrowRight className="h-6 w-6" />
-          </div>
-        </Link>
+        <Button asChild className="btn-premium w-full h-auto min-h-28 rounded-2xl px-6 py-6 text-left animate-fade-up">
+          <Link to="/gas-loader">
+            <Zap className="h-9 w-9 shrink-0" />
+            <span className="flex-1 text-xl font-bold whitespace-normal leading-relaxed">ফ্রিতে গ্যাস ফি নিন</span>
+            <ArrowRight className="h-6 w-6 shrink-0" />
+          </Link>
+        </Button>
 
-        <div className="grid grid-cols-1 gap-3">
-          {quickLinks.map(({ to, icon: Icon, label, cardClass, iconClass }, i) => (
-            <Link key={to} to={to} className="block animate-fade-up" style={{ animationDelay: `${(i + 1) * 70}ms` }}>
-              <div className={`color-card ${cardClass} shimmer-sheen p-4 flex items-center gap-4 group`}>
-                <div className={`icon-chip ${iconClass} h-12 w-12 rounded-2xl group-hover:scale-110 transition-transform`}>
-                  <Icon className="h-5 w-5" />
-                </div>
-                <p className="flex-1 text-base font-bold text-foreground">{label}</p>
-                <ArrowRight className="h-5 w-5 text-muted-foreground/50 group-hover:text-foreground group-hover:translate-x-1 transition-all" />
-              </div>
-            </Link>
-          ))}
-        </div>
+        <section className="space-y-3">
+          <h2 className="text-base font-bold">সব সুবিধা</h2>
+          <div className="grid grid-cols-1 gap-3">
+            {dashboardServices.map(({ to, icon: Icon, label, tone, iconTone }) => (
+              <Button key={to} asChild variant="ghost" className={`color-card ${tone} shimmer-sheen h-auto min-h-20 w-full justify-start px-4 py-4 group`}>
+                <Link to={to}>
+                  <span className={`icon-chip ${iconTone} h-12 w-12 rounded-xl shrink-0 group-hover:scale-105 transition-transform`}><Icon className="h-5 w-5" /></span>
+                  <span className="flex-1 text-base font-semibold text-foreground whitespace-normal text-left leading-relaxed">{label}</span>
+                  <ArrowRight className="h-5 w-5 text-muted-foreground shrink-0" />
+                </Link>
+              </Button>
+            ))}
+          </div>
+        </section>
+
+        <section className="space-y-3">
+          <h2 className="text-base font-bold">আমার ইতিহাস</h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {historyServices.map(({ to, icon: Icon, label }) => (
+              <Button key={to} asChild variant="outline" className="h-auto min-h-14 whitespace-normal justify-start">
+                <Link to={to}><Icon className="h-4 w-4 shrink-0" />{label}</Link>
+              </Button>
+            ))}
+          </div>
+        </section>
 
         <div className="flex gap-2">
           <Button size="sm" variant="outline" className="flex-1 h-10 rounded-xl text-xs"
             onClick={() => { setGuideTab("first"); setGuideOpen(true); }}>
-            <Volume2 className="h-4 w-4" /> First Verify
+            <Volume2 className="h-4 w-4" /> প্রথম ভেরিফিকেশন
           </Button>
           <Button size="sm" variant="outline" className="flex-1 h-10 rounded-xl text-xs"
             onClick={() => { setGuideTab("re"); setGuideOpen(true); }}>
-            <ShieldCheck className="h-4 w-4" /> Re-Verify
+            <ShieldCheck className="h-4 w-4" /> আবার ভেরিফিকেশন
           </Button>
         </div>
         <VerifyGuide open={guideOpen} onOpenChange={setGuideOpen} defaultTab={guideTab} />
@@ -207,11 +174,11 @@ export default function Index() {
         {/* Footer */}
         <footer className="text-center space-y-3 py-4">
           <div className="flex items-center justify-center gap-4 text-xs">
-            <Link to="/about" className="text-primary font-semibold hover:underline">About</Link>
+            <Link to="/about" className="text-primary font-semibold hover:underline">পরিচিতি</Link>
             <span className="text-border/60">·</span>
-            <Link to="/terms" className="text-primary font-semibold hover:underline">Terms</Link>
+            <Link to="/terms" className="text-primary font-semibold hover:underline">শর্তাবলি</Link>
             <span className="text-border/60">·</span>
-            <Link to="/privacy" className="text-primary font-semibold hover:underline">Privacy</Link>
+            <Link to="/privacy" className="text-primary font-semibold hover:underline">গোপনীয়তা</Link>
           </div>
         </footer>
       </main>
