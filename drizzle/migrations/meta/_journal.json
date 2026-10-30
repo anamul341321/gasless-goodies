@@ -29,6 +29,13 @@
       "when": 1793349573819,
       "tag": "0003_gd_collection_upload_guards",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1793349620034,
+      "tag": "0004_gd_collection_stop_completion",
+      "breakpoints": true
     }
   ]
 }
