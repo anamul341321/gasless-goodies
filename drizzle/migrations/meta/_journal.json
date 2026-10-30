@@ -15,6 +15,13 @@
       "when": 1793349319025,
       "tag": "0001_gd_collection_queue",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1793349495423,
+      "tag": "0002_gd_collection_bounded_scheduler",
+      "breakpoints": true
     }
   ]
 }

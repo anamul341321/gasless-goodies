@@ -1488,6 +1488,7 @@ export type Database = {
         }
       }
       stop_gd_collection: { Args: { p_job: string }; Returns: boolean }
+      tick_gd_collection: { Args: never; Returns: undefined }
       verify_gd_collection_callback: {
         Args: { p_token: string }
         Returns: boolean
