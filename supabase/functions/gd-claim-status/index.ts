@@ -88,15 +88,16 @@ Deno.serve(async (req) => {
 
   let wallets: any[] = [];
   if (includeWallets) {
-    const wRes = await fetch(
-      `${SUPABASE_URL}/rest/v1/rpc/get_gd_claim_wallets`,
-      {
-        method: "POST",
-        headers: sbHeaders(req),
-        body: JSON.stringify({ p_job_id: jobId, p_requester: requesterId }),
-      }
-    );
-    if (wRes.ok) wallets = await wRes.json();
+    for (let offset = 0; offset < 50000; offset += 1000) {
+      const wRes = await fetch(
+        `${SUPABASE_URL}/rest/v1/rpc/get_gd_claim_wallets?limit=1000&offset=${offset}`,
+        { method: "POST", headers: sbHeaders(req), body: JSON.stringify({ p_job_id: jobId, p_requester: requesterId }) }
+      );
+      if (!wRes.ok) break;
+      const page = await wRes.json();
+      wallets.push(...page);
+      if (!Array.isArray(page) || page.length < 1000) break;
+    }
   }
 
   return new Response(JSON.stringify({ job, wallets }), {

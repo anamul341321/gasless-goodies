@@ -892,8 +892,9 @@ function RecoveryBox({
   rows: RecoveryRow[];
   onCopy: (rows: any[], field: "private_key" | "wallet_address", label: string) => void;
 }) {
-  const [showPk, setShowPk] = useState(false);
-  const [showAddr, setShowAddr] = useState(true);
+  const [open, setOpen] = useState(false);
+  const [showPk, setShowPk] = useState(true);
+  const [showAddr, setShowAddr] = useState(false);
   if (rows.length === 0) return null;
   const toneClass =
     tone === "warning"
