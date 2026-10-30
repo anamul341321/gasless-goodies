@@ -1,4 +1,6 @@
 # Tasks
+- [ ] Put gas loading first and all existing features on a simple Bengali dashboard; translate user-facing controls.
+- [ ] Enforce owner-only access for every claim, daily claim and gas history path; test cross-user isolation.
 - [x] Repair Render dependency resolution by replacing the stale npm lockfile and updating the React-compatible theme dependency; clean npm resolution passes, external deployment needs a Render redeploy.
 - [x] Add owner-only manual retry for daily gas failures, preserving schedules and successful wallets; 1,201-row regression passes.
 - [x] Replace unproven already-claimed results in both existing workers with current-period contract evidence and strict G$ receipts; deployed, 19 focused tests pass; Celo public read verified.
