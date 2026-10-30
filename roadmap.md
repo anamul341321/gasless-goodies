@@ -1,4 +1,5 @@
 # Tasks
+- [ ] Replace NanoPay/Base ETH tools with Celo/XDC G$ collection for 4,000+ wallets; durable encrypted queue, background processing, stop, owner-only results and regression tests.
 - [x] Put gas loading first and all existing features on a simple Bengali dashboard; translate user-facing controls and information pages; desktop/mobile browser checks passed.
 - [x] Enforce owner-only access for claim, daily claim and gas history endpoints and SQL functions; deploy existing endpoints, test owner/foreign/unsigned boundaries and live unsigned denial.
 - [ ] Verify signed-in histories through the requesting user's page — blocked: no matching requesting-user account/session; live unsigned checks and ownership regression tests passed.
