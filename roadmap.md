@@ -1,7 +1,8 @@
 # Tasks
-- [ ] Add owner-only manual retry for daily gas failures, preserving schedules and successful wallets.
-- [ ] Replace unproven already-claimed results with verified on-chain evidence and regression tests.
-- [ ] Verify current results, gas loader behavior, and manual retry through the signed-in page.
+- [x] Add owner-only manual retry for daily gas failures, preserving schedules and successful wallets; 1,201-row regression passes.
+- [x] Replace unproven already-claimed results in both existing workers with current-period contract evidence and strict G$ receipts; deployed, 19 focused tests pass; Celo public read verified.
+- [ ] Verify manual retry through the signed-in page — blocked: no requesting-user account/session available; preview redirects to sign-in.
+- [ ] Verify XDC current-period evidence live — blocked: public RPC endpoints reject sandbox requests with HTTP 403; unsupported reads safely remain unconfirmed.
 - [x] Hide past daily G$ claim history without deleting data or current results (source verified; signed-in browser check unavailable).
 - [x] Fix stale XDC retry waves and temporary HTTP failures; 11 regression tests pass, deployed worker resolved the eight stranded rows as already claimed.
 - [x] Remove the app-imposed gas cooldown.
