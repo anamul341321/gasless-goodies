@@ -26,6 +26,9 @@ describe("gas delivery evidence", () => {
     // 128_804 gas * 1.2 * 202.5 gwei ≈ 0.0313 CELO
     expect(canAffordSelfTopUp(62_197_130_000_000_000n, 128_804n, 202_500_000_000n)).toBe(true);
   });
+  it("lets a 0.0287 CELO wallet self-call at 202.5 gwei (GoodDollar refuses to fund it)", () => {
+    expect(canAffordSelfTopUp(28_698_238_938_000_000n, 129_044n, 202_500_000_000n)).toBe(true);
+  });
   it("does not self-call when the wallet cannot pay the faucet call", () => {
     expect(canAffordSelfTopUp(18_272_877_264_280_166n, 128_804n, 202_500_000_000n)).toBe(false);
     expect(canAffordSelfTopUp(null, 128_804n, 202_500_000_000n)).toBe(false);

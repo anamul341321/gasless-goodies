@@ -1,7 +1,7 @@
 // Background worker that processes pending gas_load_queue rows.
 // Runs on a cron schedule (every minute) AND can be kicked by gas-loader on submit.
 // Single-instance guarded by PG advisory lock to prevent overlap.
-import { canAffordSelfTopUp, faucetRejection, hasGasIncrease } from "./verification.ts";
+import { canAffordSelfTopUp, faucetRejection, hasGasIncrease, selfTopUpGasLimit } from "./verification.ts";
 import { Wallet, JsonRpcProvider, Contract } from "npm:ethers@6.13.4";
 import { decryptKey } from "../_shared/dailyCrypto.ts";
 
@@ -214,7 +214,7 @@ async function selfTopUp(
     const fee = await provider.getFeeData();
     const gasPrice = fee.gasPrice ?? fee.maxFeePerGas ?? 0n;
     if (!canAffordSelfTopUp(before, gas, gasPrice)) return null;
-    const tx = await faucet.topWallet(account, { gasLimit: (gas * 120n) / 100n, gasPrice });
+    const tx = await faucet.topWallet(account, { gasLimit: selfTopUpGasLimit(gas), gasPrice });
     const receipt = await tx.wait(1, 60_000);
     if (!receipt || receipt.status !== 1) return { ok: false, txHash: tx.hash, error: "Self faucet call reverted" };
     const after = await getNativeBalanceWei(account, network);

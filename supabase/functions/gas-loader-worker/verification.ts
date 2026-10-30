@@ -15,9 +15,13 @@ export function faucetRejection(body: Record<string, unknown>): string | null {
 
 // GoodDollar's server replies {ok:1} WITHOUT sending gas when the wallet can
 // afford to call the faucet contract itself. In that case the wallet must sign
-// faucet.topWallet(self). Returns true when the balance covers that call with
-// a 20% safety margin.
+// faucet.topWallet(self). The call is sent with a gas limit 5% above the
+// estimate; a wider margin locks out wallets GoodDollar already refuses to fund.
+export function selfTopUpGasLimit(estimate: bigint): bigint {
+  return (estimate * 105n) / 100n;
+}
+
 export function canAffordSelfTopUp(balance: bigint | null, gasLimit: bigint, gasPrice: bigint): boolean {
   if (balance === null || gasLimit <= 0n || gasPrice <= 0n) return false;
-  return balance >= (gasLimit * 120n / 100n) * gasPrice;
+  return balance >= selfTopUpGasLimit(gasLimit) * gasPrice;
 }
