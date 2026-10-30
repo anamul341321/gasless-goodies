@@ -12,8 +12,8 @@ export async function processCollectionWave() {
   const network = COLLECTION_NETWORKS[job.network as keyof typeof COLLECTION_NETWORKS];
   const provider = new JsonRpcProvider(network.rpc, network.chainId, { staticNetwork: true, batchMaxCount: 1 });
   const update = async (patch: Record<string, unknown>) => {
-   const { error: writeError } = await supabaseAdmin.from('gd_collection_items').update({...patch,updated_at:new Date().toISOString()}).eq('id',row.id).eq('lease_id',row.lease_id ?? '');
-   if (writeError) throw writeError;
+   const { data: written,error: writeError } = await supabaseAdmin.from('gd_collection_items').update({...patch,updated_at:new Date().toISOString()}).eq('id',row.id).eq('lease_id',row.lease_id ?? '').select('id').maybeSingle();
+   if (writeError || !written) throw new Error('Lease lost');
   };
   let prepared = !!row.signed_tx;
   try {
@@ -46,7 +46,7 @@ export async function processCollectionWave() {
     }
     receipt = await provider.getTransactionReceipt(hash);
    }
-   if (!receipt) { await update({status:'confirming',lease_until:null}); return; }
+   if (!receipt) { await update({status:'confirming',lease_until:new Date(Date.now()+30000).toISOString()}); return; }
    const decoded = new Interface(ABI).decodeFunctionData('transfer', (await provider.getTransaction(hash))?.data ?? '0x');
    if (receipt.status !== 1 || !transferProven(receipt.logs,network.token,row.wallet_address,job.receiver,BigInt(decoded[1]),id('Transfer(address,address,uint256)'))) {
     await update({status:'failed',error_message:'লেনদেনে G$ পৌঁছানোর প্রমাণ পাওয়া যায়নি',signed_tx:null,encrypted_key:null,lease_until:null}); return;
