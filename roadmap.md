@@ -1,5 +1,5 @@
 # Tasks
-- [ ] Increase G$ collection to up to 200 globally leased wallets across separate six-slot callbacks; preserve stop, recovery and active-only scheduling; test limit.
+- [x] Increase G$ collection to up to 200 globally leased wallets across separate six-slot callbacks; preserve stop, recovery and active-only scheduling; regression tests and installed SQL limits checked. Real throughput remains unverified without requesting-user login and publication.
 - [x] Replace NanoPay/Base ETH tools with Celo/XDC G$ collection for 4,000+ wallets; encrypted owner-only queue, leased signed-transaction recovery, bounded active-only scheduler and stop; 4,001-key and transfer-evidence tests passed, public browser and callback denial checked.
 - [ ] Verify G$ collection with real wallets through the signed-in page — blocked: requesting user has no matching available session; no real token transfers attempted. Published callback requires publishing the app.
 - [x] Put gas loading first and all existing features on a simple Bengali dashboard; translate user-facing controls and information pages; desktop/mobile browser checks passed.
