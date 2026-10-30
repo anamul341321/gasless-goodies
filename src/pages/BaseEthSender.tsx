@@ -23,10 +23,10 @@ function short(addr: string) {
 
 function statusBadge(s: Status) {
   const map: Record<Status, { label: string; cls: string; icon: React.ReactNode }> = {
-    pending: { label: "Pending", cls: "bg-muted text-muted-foreground", icon: <Clock className="h-3 w-3" /> },
-    sending: { label: "Sending", cls: "bg-violet-500/15 text-violet-500", icon: <Loader2 className="h-3 w-3 animate-spin" /> },
-    success: { label: "Sent", cls: "bg-emerald-500/15 text-emerald-500", icon: <CheckCircle2 className="h-3 w-3" /> },
-    failed: { label: "Failed", cls: "bg-red-500/15 text-red-500", icon: <XCircle className="h-3 w-3" /> },
+    pending: { label: "অপেক্ষায়", cls: "bg-muted text-muted-foreground", icon: <Clock className="h-3 w-3" /> },
+    sending: { label: "পাঠানো হচ্ছে", cls: "bg-violet-500/15 text-violet-500", icon: <Loader2 className="h-3 w-3 animate-spin" /> },
+    success: { label: "পাঠানো হয়েছে", cls: "bg-emerald-500/15 text-emerald-500", icon: <CheckCircle2 className="h-3 w-3" /> },
+    failed: { label: "ব্যর্থ", cls: "bg-red-500/15 text-red-500", icon: <XCircle className="h-3 w-3" /> },
   };
   const m = map[s];
   return (
@@ -68,11 +68,11 @@ export default function BaseEthSender() {
   async function run() {
     const funder = normalizeKey(funderKey);
     if (!funder) {
-      toast({ title: "Invalid funder private key", variant: "destructive" });
+      toast({ title: "গ্যাস দেওয়ার প্রাইভেট কী ভুল", variant: "destructive" });
       return;
     }
     if (recipients.length === 0) {
-      toast({ title: "No valid recipient addresses", variant: "destructive" });
+      toast({ title: "সঠিক প্রাপকের ঠিকানা দিন", variant: "destructive" });
       return;
     }
     let amountWei: bigint;
@@ -80,7 +80,7 @@ export default function BaseEthSender() {
       amountWei = ethers.parseEther(amount.trim());
       if (amountWei <= 0n) throw new Error("Amount must be > 0");
     } catch {
-      toast({ title: "Invalid amount", variant: "destructive" });
+      toast({ title: "সঠিক পরিমাণ দিন", variant: "destructive" });
       return;
     }
 
@@ -126,7 +126,7 @@ export default function BaseEthSender() {
         }
       });
 
-      toast({ title: "Multi-send finished" });
+      toast({ title: "পাঠানো শেষ" });
     } catch (e) {
       toast({
         title: "Error",
@@ -147,10 +147,10 @@ export default function BaseEthSender() {
           </Button>
           <div className="min-w-0">
             <h1 className="text-base font-extrabold heading-shimmer leading-tight truncate">
-              Base ETH Multi-Sender
+              একসাথে Base ETH পাঠান
             </h1>
             <p className="text-[11px] text-muted-foreground font-semibold truncate">
-              Send Base ETH (gas) to many wallets
+              Base
             </p>
           </div>
         </div>
@@ -160,7 +160,7 @@ export default function BaseEthSender() {
         <div className="color-card card-violet p-4 space-y-4">
           <div className="space-y-2">
             <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-              Main Private Key (Base ETH source)
+              যে ওয়ালেট থেকে ETH যাবে, তার প্রাইভেট কী
             </label>
             <Input
               type="password"
@@ -174,7 +174,7 @@ export default function BaseEthSender() {
 
           <div className="space-y-2">
             <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-              Amount per Wallet (ETH)
+              প্রতি ওয়ালেটে ETH এর পরিমাণ
             </label>
             <Input
               type="text"
@@ -189,7 +189,7 @@ export default function BaseEthSender() {
 
           <div className="space-y-2">
             <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-              Recipient Addresses (one per line)
+              প্রতি লাইনে একটি প্রাপকের ঠিকানা
             </label>
             <Textarea
               placeholder="0xabc...&#10;0xdef..."
@@ -205,7 +205,7 @@ export default function BaseEthSender() {
           </div>
 
           <Button onClick={run} disabled={running} className="w-full h-12 rounded-2xl font-bold">
-            {running ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Sending...</> : <><Play className="h-4 w-4 mr-2" /> Start Multi-Send</>}
+            {running ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> পাঠানো হচ্ছে…</> : <><Play className="h-4 w-4 mr-2" /> পাঠানো শুরু করুন</>}
           </Button>
         </div>
 
@@ -214,11 +214,11 @@ export default function BaseEthSender() {
             <div className="grid grid-cols-2 gap-2">
               <div className="rounded-xl bg-card/60 border border-border/40 p-2 text-center">
                 <p className="text-lg font-extrabold text-emerald-500">{sent}</p>
-                <p className="text-[9px] uppercase tracking-wider text-muted-foreground font-bold">Sent</p>
+                <p className="text-[9px] uppercase tracking-wider text-muted-foreground font-bold">পাঠানো হয়েছে</p>
               </div>
               <div className="rounded-xl bg-card/60 border border-border/40 p-2 text-center">
                 <p className="text-lg font-extrabold text-red-500">{failed}</p>
-                <p className="text-[9px] uppercase tracking-wider text-muted-foreground font-bold">Failed</p>
+                <p className="text-[9px] uppercase tracking-wider text-muted-foreground font-bold">ব্যর্থ</p>
               </div>
             </div>
 

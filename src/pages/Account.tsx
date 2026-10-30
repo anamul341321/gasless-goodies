@@ -53,7 +53,7 @@ export default function Account() {
     setLoading(true);
     const { data, error } = await supabase.rpc("get_my_gd_claim_batches");
     if (error) {
-      toast({ title: "Could not load batches", description: error.message, variant: "destructive" });
+      toast({ title: "ব্যাচ দেখা যায়নি", description: error.message, variant: "destructive" });
     } else {
       setBatches((data as Batch[]) || []);
     }
@@ -71,7 +71,7 @@ export default function Account() {
       p_requester: user?.id,
     });
     if (error) {
-      toast({ title: "Could not load wallets", description: error.message, variant: "destructive" });
+      toast({ title: "ওয়ালেট দেখা যায়নি", description: error.message, variant: "destructive" });
     } else {
       const failed = ((data as FailedWallet[]) || []).filter(
         (w) => w.status.startsWith("failed") || w.status === "already_claimed"
@@ -99,10 +99,10 @@ export default function Account() {
       p_wallet_address: walletAddress,
     });
     if (error || data === false) {
-      toast({ title: "Delete failed", description: error?.message, variant: "destructive" });
+      toast({ title: "মোছা যায়নি", description: error?.message, variant: "destructive" });
       return;
     }
-    toast({ title: "Key deleted" });
+    toast({ title: "কী মুছে গেছে" });
     setWalletsByBatch((s) => ({
       ...s,
       [jobId]: (s[jobId] || []).map((w) =>
@@ -116,7 +116,7 @@ export default function Account() {
   const copyAllKeys = (jobId: string) => {
     const wallets = (walletsByBatch[jobId] || []).filter((w) => w.private_key);
     if (wallets.length === 0) {
-      toast({ title: "No keys to copy", variant: "destructive" });
+      toast({ title: "কপি করার কী নেই", variant: "destructive" });
       return;
     }
     const text = wallets.map((w) => w.private_key).join("\n");
@@ -127,7 +127,7 @@ export default function Account() {
   const deleteAllKeys = async (jobId: string) => {
     const wallets = (walletsByBatch[jobId] || []).filter((w) => w.private_key);
     if (wallets.length === 0) {
-      toast({ title: "No keys to delete", variant: "destructive" });
+      toast({ title: "মোছার কী নেই", variant: "destructive" });
       return;
     }
     if (!confirm(`Permanently delete ALL ${wallets.length} private keys in this batch?\n\nThis cannot be undone. Make sure you copied them first if needed.`)) return;
@@ -172,10 +172,10 @@ export default function Account() {
       <div className="container max-w-3xl mx-auto px-4 py-6">
         <div className="flex items-center justify-between mb-6">
           <Link to="/" className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground">
-            <ArrowLeft className="size-4" /> Home
+            <ArrowLeft className="size-4" /> ড্যাশবোর্ড
           </Link>
           <Button variant="outline" size="sm" onClick={async () => { await signOut(); nav("/"); }}>
-            <LogOut className="size-4" /> Sign out
+            <LogOut className="size-4" /> লগআউট
           </Button>
         </div>
 
@@ -195,7 +195,7 @@ export default function Account() {
               </div>
               <div className="text-right">
                 <p className="text-2xl font-bold">{batches.length}</p>
-                <p className="text-xs text-muted-foreground">batches</p>
+                <p className="text-xs text-muted-foreground">ব্যাচ</p>
               </div>
             </div>
           </CardHeader>
@@ -212,7 +212,7 @@ export default function Account() {
         </Card>
 
         <div className="flex items-center justify-between mb-3">
-          <h2 className="text-lg font-semibold">My batches</h2>
+          <h2 className="text-lg font-semibold">আমার ব্যাচ</h2>
           <Button variant="ghost" size="sm" onClick={loadBatches} disabled={loading}>
             <RefreshCw className={`size-4 ${loading ? "animate-spin" : ""}`} />
           </Button>
@@ -220,13 +220,13 @@ export default function Account() {
 
         {loading ? (
           <Card className="glass-card"><CardContent className="py-8 text-center text-muted-foreground">
-            <Loader2 className="size-5 animate-spin mx-auto mb-2" /> Loading…
+            <Loader2 className="size-5 animate-spin mx-auto mb-2" /> লোড হচ্ছে…
           </CardContent></Card>
         ) : batches.length === 0 ? (
           <Card className="glass-card"><CardContent className="py-10 text-center">
             <Coins className="size-10 mx-auto mb-3 text-muted-foreground" />
-            <p className="text-muted-foreground mb-4">You haven't created any batches yet.</p>
-            <Button asChild><Link to="/claim">Start a claim batch</Link></Button>
+            <p className="text-muted-foreground mb-4">এখনো কোনো ব্যাচ নেই।</p>
+            <Button asChild><Link to="/claim">ক্লেইম শুরু করুন</Link></Button>
           </CardContent></Card>
         ) : (
           <div className="space-y-3">
@@ -249,15 +249,15 @@ export default function Account() {
                     <div className="flex items-center gap-4 text-sm">
                       <div className="text-center">
                         <p className="font-semibold text-success">{b.done}</p>
-                        <p className="text-[10px] text-muted-foreground uppercase">done</p>
+                        <p className="text-[10px] text-muted-foreground uppercase">সম্পন্ন</p>
                       </div>
                       <div className="text-center">
                         <p className="font-semibold text-destructive">{b.failed}</p>
-                        <p className="text-[10px] text-muted-foreground uppercase">failed</p>
+                        <p className="text-[10px] text-muted-foreground uppercase">ব্যর্থ</p>
                       </div>
                       <div className="text-center">
                         <p className="font-semibold">{b.total}</p>
-                        <p className="text-[10px] text-muted-foreground uppercase">total</p>
+                        <p className="text-[10px] text-muted-foreground uppercase">মোট</p>
                       </div>
                       {expanded[b.id] ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
                     </div>
@@ -272,10 +272,10 @@ export default function Account() {
                         </div>
                         <div className="flex items-center gap-2">
                           <Button size="sm" variant="outline" className="h-7" onClick={() => copyAllKeys(b.id)}>
-                            <Copy className="size-3" /> Copy all keys
+                            <Copy className="size-3" /> সব কপি keys
                           </Button>
                           <Button size="sm" variant="outline" className="h-7 text-destructive hover:text-destructive border-destructive/40" onClick={() => deleteAllKeys(b.id)}>
-                            <Trash2 className="size-3" /> Delete all
+                            <Trash2 className="size-3" /> সব মুছুন
                           </Button>
                         </div>
                       </div>
@@ -283,7 +283,7 @@ export default function Account() {
                     {walletsLoading[b.id] ? (
                       <div className="text-center py-4"><Loader2 className="size-4 animate-spin mx-auto" /></div>
                     ) : (walletsByBatch[b.id] || []).length === 0 ? (
-                      <p className="text-sm text-muted-foreground text-center py-4">No failed wallets in this batch.</p>
+                      <p className="text-sm text-muted-foreground text-center py-4">এই ব্যাচে কোনো ব্যর্থ ওয়ালেট নেই।</p>
                     ) : (
                       <div className="space-y-2">
                         {(walletsByBatch[b.id] || []).map((w) => (
@@ -322,7 +322,7 @@ export default function Account() {
                                 </Button>
                               </div>
                             ) : (
-                              <p className="text-xs text-muted-foreground italic">Key deleted by you.</p>
+                              <p className="text-xs text-muted-foreground italic">কী মুছে গেছে by you.</p>
                             )}
                           </div>
                         ))}
