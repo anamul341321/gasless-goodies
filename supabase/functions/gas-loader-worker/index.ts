@@ -8,9 +8,10 @@ import { decryptKey } from "../_shared/dailyCrypto.ts";
 // GoodDollar faucet contracts. When a wallet already holds enough native coin
 // to pay for faucet.topWallet(self), GoodDollar's server replies {ok:1} but
 // sends nothing — the wallet must make that call itself.
-const FAUCET_ADDRESSES: Record<"celo" | "xdc", string> = {
+const FAUCET_ADDRESSES: Record<"celo" | "xdc" | "fuse", string> = {
   celo: "0x4F93Fa058b03953C851eFaA2e4FC5C34afDFAb84",
   xdc: "0x7344Da1Be296f03fbb8082aDaC5696058B5a9bd9",
+  fuse: "0x01ab5966C1d742Ae0CFF7f14cC0F4D85156e83d9",
 };
 const FAUCET_ABI = [
   "function canTop(address) view returns (bool)",
@@ -28,10 +29,10 @@ const GD_FAUCET_URL = "https://goodserver.gooddollar.org/verify/topWallet";
 const CELO_RPC_URL = "https://forno.celo.org";
 const XDC_RPC_URL = "https://rpc.xinfin.network";
 
-type Network = "celo" | "xdc";
-const CHAIN_IDS: Record<Network, number> = { celo: 42220, xdc: 50 };
-const RPC_URLS: Record<Network, string> = { celo: CELO_RPC_URL, xdc: XDC_RPC_URL };
-const NATIVE_LABEL: Record<Network, string> = { celo: "CELO", xdc: "XDC" };
+type Network = "celo" | "xdc" | "fuse";
+const CHAIN_IDS: Record<Network, number> = { celo: 42220, xdc: 50, fuse: 122 };
+const RPC_URLS: Record<Network, string> = { celo: CELO_RPC_URL, xdc: XDC_RPC_URL, fuse: "https://rpc.fuse.io" };
+const NATIVE_LABEL: Record<Network, string> = { celo: "CELO", xdc: "XDC", fuse: "FUSE" };
 const WEBSHARE_HOST = "p.webshare.io";
 const WEBSHARE_PORT = "80";
 const BALANCE_VERIFY_ATTEMPTS = 8;
@@ -454,7 +455,7 @@ async function claimNextWallet(): Promise<{
     const jobs = await jobRes.json();
     if (Array.isArray(jobs) && jobs[0]) {
       delay_ms = Number(jobs[0].delay_ms) || 3000;
-      if (jobs[0].network === "xdc") network = "xdc";
+      if (jobs[0].network === "xdc" || jobs[0].network === "fuse") network = jobs[0].network;
       // Mark job as running on first activity
       if (jobs[0].status === "pending") {
         await fetch(

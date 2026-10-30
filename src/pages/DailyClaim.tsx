@@ -15,7 +15,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 
-type Network = "celo" | "xdc";
+type Network = "celo" | "xdc" | "fuse";
 
 type SavedWallet = {
   id: string; wallet_address: string; label: string | null; is_active: boolean;
@@ -149,7 +149,7 @@ export default function DailyClaim() {
   const navigate = useNavigate();
   const [activeNet, setActiveNet] = useState<Network>("celo");
   const [wallets, setWallets] = useState<SavedWallet[]>([]);
-  const [walletCounts, setWalletCounts] = useState<Record<Network, number>>({ celo: 0, xdc: 0 });
+  const [walletCounts, setWalletCounts] = useState<Record<Network, number>>({ celo: 0, xdc: 0, fuse: 0 });
   const [groups, setGroups] = useState<Group[]>([]);
   const [tickNow, setTickNow] = useState<number>(Date.now());
   useEffect(() => {
@@ -465,12 +465,13 @@ export default function DailyClaim() {
         </header>
 
         <Tabs value={activeNet} onValueChange={(v) => setActiveNet(v as Network)}>
-          <TabsList className="grid grid-cols-2 w-full max-w-xs">
+          <TabsList className="grid grid-cols-3 w-full max-w-sm">
             <TabsTrigger value="celo">Celo ({walletCounts.celo})</TabsTrigger>
             <TabsTrigger value="xdc">XDC ({walletCounts.xdc})</TabsTrigger>
+            <TabsTrigger value="fuse">Fuse ({walletCounts.fuse ?? 0})</TabsTrigger>
           </TabsList>
 
-          {(["celo", "xdc"] as Network[]).map((net) => (
+          {(["celo", "xdc", "fuse"] as Network[]).map((net) => (
             <TabsContent key={net} value={net} className="space-y-6 mt-4">
               {/* Groups list */}
               <Card>

@@ -149,7 +149,7 @@ async function claimOne(privateKey: string, network: GDNetwork): Promise<ClaimRe
         const balance = await provider.getBalance(addr);
         const required = gasLimit * gasUnitPrice;
         if (balance < required) {
-          const nativeLabel = network === "xdc" ? "XDC" : "CELO";
+          const nativeLabel = network === "xdc" ? "XDC" : network === "fuse" ? "FUSE" : "CELO";
           return { status: "failed_gas", error: `insufficient ${nativeLabel} for gas: has ${fmt(balance)}, needs ~${fmt(required)}` };
         }
       }

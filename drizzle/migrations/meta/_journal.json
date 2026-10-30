@@ -50,6 +50,13 @@
       "when": 1793366764150,
       "tag": "0006_claim_wallets_unlimited",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1793382793344,
+      "tag": "0007_migration",
+      "breakpoints": true
     }
   ]
 }

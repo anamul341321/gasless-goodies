@@ -271,7 +271,7 @@ Deno.serve(async (req) => {
 
 
     // ---- Light mode ----
-    const walletCounts: Record<string, number> = { celo: 0, xdc: 0 };
+    const walletCounts: Record<string, number> = { celo: 0, xdc: 0, fuse: 0 };
     const perGroupCount = new Map<string, number>();
     const PAGE = 1000;
     let from = 0;

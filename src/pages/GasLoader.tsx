@@ -99,8 +99,8 @@ const GasLoader = () => {
   const [invalid, setInvalid] = useState<string[]>([]);
   const [delaySec, setDelaySec] = useState(3);
   const [batchName, setBatchName] = useState("");
-  const [network, setNetwork] = useState<"celo" | "xdc">(
-    () => (localStorage.getItem("gl_network") as "celo" | "xdc") || "celo"
+  const [network, setNetwork] = useState<"celo" | "xdc" | "fuse">(
+    () => (localStorage.getItem("gl_network") as "celo" | "xdc" | "fuse") || "celo"
   );
   const [loaderEnabled, setLoaderEnabled] = useState<boolean>(true);
 
@@ -613,8 +613,8 @@ const GasLoader = () => {
               <CardContent className="space-y-4">
                 <div>
                   <Label className="text-xs mb-2 block">নেটওয়ার্ক</Label>
-                  <div className="grid grid-cols-2 gap-2">
-                    {(["celo", "xdc"] as const).map((n) => (
+                  <div className="grid grid-cols-3 gap-2">
+                    {(["celo", "xdc", "fuse"] as const).map((n) => (
                       <Button
                         key={n}
                         type="button"
@@ -625,7 +625,7 @@ const GasLoader = () => {
                             : "bg-card/70 border-border/60 text-muted-foreground hover:border-primary/40"
                         }`}
                       >
-                        {n === "celo" ? "Celo" : "XDC"}
+                        {n === "celo" ? "Celo" : n === "xdc" ? "XDC" : "Fuse"}
                       </Button>
                     ))}
                   </div>

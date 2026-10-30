@@ -39,7 +39,7 @@ const admin = createClient(SUPABASE_URL, SERVICE_KEY);
 
 // Ensure user has at least one group per (network) they're working with.
 // Returns the default group id for that network.
-async function ensureDefaultGroup(userId: string, network: "celo" | "xdc"): Promise<string> {
+async function ensureDefaultGroup(userId: string, network: "celo" | "xdc" | "fuse"): Promise<string> {
   const { data: existing } = await admin
     .from("daily_claim_groups")
     .select("id")
@@ -85,7 +85,7 @@ Deno.serve(async (req) => {
           .from("daily_claim_wallets")
           .select("id, wallet_address, label, is_active, network, group_id, created_at")
           .eq("owner_user_id", user.id);
-        if (network === "celo" || network === "xdc") q = q.eq("network", network);
+        if (network === "celo" || network === "xdc" || network === "fuse") q = q.eq("network", network);
         const { data, error } = await q
           .order("created_at", { ascending: true })
           .range(from, from + PAGE - 1);
@@ -112,7 +112,7 @@ Deno.serve(async (req) => {
     }
 
     if (action === "create_group") {
-      const network: "celo" | "xdc" = body?.network === "xdc" ? "xdc" : "celo";
+      const network: "celo" | "xdc" | "fuse" = body?.network === "xdc" || body?.network === "fuse" ? body.network : "celo";
       const name = String(body?.name || "Group").slice(0, 80);
       const h = Number(body?.start_hour_bd ?? 0);
       const m = Number(body?.start_minute_bd ?? 0);
@@ -200,7 +200,7 @@ Deno.serve(async (req) => {
     // -------- Wallet add --------
     if (req.method === "POST" && action === "add") {
       const rawKeys: string[] = Array.isArray(body?.private_keys) ? body.private_keys : [];
-      const network: "celo" | "xdc" = body?.network === "xdc" ? "xdc" : "celo";
+      const network: "celo" | "xdc" | "fuse" = body?.network === "xdc" || body?.network === "fuse" ? body.network : "celo";
       let groupId: string | null = body?.group_id || null;
       if (rawKeys.length === 0) return json({ error: "no keys provided" }, 400);
       if (rawKeys.length > 5000) return json({ error: "max 5000 keys per request" }, 400);
@@ -265,7 +265,7 @@ Deno.serve(async (req) => {
     if (req.method === "DELETE" || action === "delete") {
       const id = body?.id || url.searchParams.get("id");
       const all = body?.all === true;
-      const netFilter = body?.network === "celo" || body?.network === "xdc" ? body.network : null;
+      const netFilter = body?.network === "celo" || body?.network === "xdc" || body?.network === "fuse" ? body.network : null;
       const groupFilter = body?.group_id || null;
       if (all) {
         let q = admin.from("daily_claim_wallets").delete().eq("owner_user_id", user.id);
@@ -296,7 +296,7 @@ Deno.serve(async (req) => {
     }
 
     if (action === "set_settings") {
-      const network: "celo" | "xdc" = body?.network === "xdc" ? "xdc" : "celo";
+      const network: "celo" | "xdc" | "fuse" = body?.network === "xdc" || body?.network === "fuse" ? body.network : "celo";
       const h = Number(body?.start_hour_bd);
       const m = Number(body?.start_minute_bd);
       const enabled = body?.enabled === false ? false : true;
