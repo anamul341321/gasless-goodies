@@ -15,11 +15,11 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
-function sbHeaders() {
+function sbHeaders(req: Request) {
   return {
     "Content-Type": "application/json",
-    apikey: SUPABASE_SERVICE_ROLE_KEY,
-    Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+    apikey: SUPABASE_ANON_KEY,
+    Authorization: req.headers.get("Authorization") || "",
   };
 }
 
@@ -48,7 +48,7 @@ Deno.serve(async (req) => {
   } catch {
     return new Response(JSON.stringify({ error: "invalid json" }), {
       status: 400,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      headers: { ...corsHeaders, "Content-Type": "application/json", "Cache-Control": "no-store" },
     });
   }
 
@@ -56,32 +56,33 @@ Deno.serve(async (req) => {
   if (!/^[0-9a-f-]{36}$/i.test(jobId)) {
     return new Response(JSON.stringify({ error: "invalid job_id" }), {
       status: 400,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      headers: { ...corsHeaders, "Content-Type": "application/json", "Cache-Control": "no-store" },
     });
   }
 
   const includeWallets = body?.include_wallets === true;
   const requesterId = await getRequesterId(req);
+  if (!requesterId) return new Response(JSON.stringify({ error: "Sign in required" }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
 
   const jobRes = await fetch(
     `${SUPABASE_URL}/rest/v1/rpc/get_gd_claim_status`,
     {
       method: "POST",
-      headers: sbHeaders(),
+      headers: sbHeaders(req),
       body: JSON.stringify({ p_job_id: jobId }),
     }
   );
   if (!jobRes.ok) {
     return new Response(JSON.stringify({ error: "lookup failed" }), {
       status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      headers: { ...corsHeaders, "Content-Type": "application/json", "Cache-Control": "no-store" },
     });
   }
   const jobs = await jobRes.json();
   const job = Array.isArray(jobs) && jobs[0] ? jobs[0] : null;
   if (!job) {
     return new Response(JSON.stringify({ job: null, wallets: [] }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      headers: { ...corsHeaders, "Content-Type": "application/json", "Cache-Control": "no-store" },
     });
   }
 
@@ -91,7 +92,7 @@ Deno.serve(async (req) => {
       `${SUPABASE_URL}/rest/v1/rpc/get_gd_claim_wallets`,
       {
         method: "POST",
-        headers: sbHeaders(),
+        headers: sbHeaders(req),
         body: JSON.stringify({ p_job_id: jobId, p_requester: requesterId }),
       }
     );
@@ -99,6 +100,6 @@ Deno.serve(async (req) => {
   }
 
   return new Response(JSON.stringify({ job, wallets }), {
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    headers: { ...corsHeaders, "Content-Type": "application/json", "Cache-Control": "no-store" },
   });
 });

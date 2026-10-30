@@ -1,4 +1,6 @@
 # Architecture rules
+- Scope every history/status read to a verified session owner at the endpoint and SQL boundary; caller-supplied IDs locate rows but never authorize them, and ownerless legacy jobs stay inaccessible.
+- Share dashboard feature entries between home and the services drawer so all public tools stay discoverable without exposing the private workspace URL.
 - Keep the npm lockfile synchronized with package.json and React-compatible dependency peers so external hosts can install without bypassing dependency checks; use NITRO_PRESET=node-server for Render while preserving Lovable's managed deployment target.
 - Keep owner-only daily gas retry locking and row selection in a tested helper behind an authenticated server function; preserve schedules and terminal successful wallets.
 - Share receipt and current-period claim evidence across both existing claim workers; zero entitlement and missing transfers never prove a prior claim.

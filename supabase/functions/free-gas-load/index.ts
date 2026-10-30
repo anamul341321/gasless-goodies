@@ -1,3 +1,4 @@
+import { historyUser, historyDenied } from "../_shared/historyAuth.ts";
 // Free public gas loader for non-VIP users.
 // Limits: max 2 wallet loads per day per IP (UTC date).
 // Reuses the gas_load_jobs/queue/worker pipeline so processing keeps
@@ -45,6 +46,9 @@ Deno.serve(async (req) => {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
+
+  const requester = await historyUser(req);
+  if (!requester) return historyDenied(corsHeaders);
 
   // Check global enabled flag
   try {
@@ -185,6 +189,7 @@ Deno.serve(async (req) => {
     method: "POST",
     headers: { Prefer: "return=representation" },
     body: JSON.stringify({
+      owner_user_id: requester.id,
       total: allowed.length,
       delay_ms: 3000,
       status: "pending",

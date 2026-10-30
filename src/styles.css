@@ -604,3 +604,7 @@
   button:not(:disabled):hover { box-shadow: 0 6px 18px -10px color-mix(in oklab, var(--primary) 55%, transparent); }
   main, [data-page] { animation: fade-up-in 0.4s ease-out both; }
 }
+
+/* Bengali copy remains legible at every screen size. */
+body { font-family: "Noto Sans Bengali", sans-serif; letter-spacing: 0; }
+h1, h2, h3, button, a, label { letter-spacing: 0; }

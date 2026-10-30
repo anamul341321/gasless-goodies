@@ -1,3 +1,4 @@
+import { historyUser, historyDenied } from "../_shared/historyAuth.ts";
 // Instant job queue submitter.
 // Validates wallets, creates a job + queue rows, returns the job_id immediately.
 // The actual faucet calls are processed by gas-loader-worker (cron-driven).
@@ -28,6 +29,9 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
+
+  const requester = await historyUser(req);
+  if (!requester) return historyDenied(corsHeaders);
 
   const adminPassword = Deno.env.get("ADMIN_PASSWORD")?.trim();
   const provided = req.headers.get("x-admin-password")?.trim();
@@ -121,6 +125,7 @@ Deno.serve(async (req) => {
     method: "POST",
     headers: { Prefer: "return=representation" },
     body: JSON.stringify({
+      owner_user_id: requester.id,
       total: valid.length,
       delay_ms: delayMs,
       status: "pending",

@@ -1,3 +1,4 @@
+import { ownsJob, historyDenied } from "../_shared/historyAuth.ts";
 // Cancels an active gas-load job. Marks the job 'completed' (with finished_at)
 // and converts every still-pending/processing wallet to 'failed' with a clear
 // error message. The worker will skip cancelled jobs naturally.
@@ -48,6 +49,8 @@ Deno.serve(async (req) => {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
+
+  if (!await ownsJob(req, "gas_load_jobs", jobId)) return historyDenied(corsHeaders, 404);
 
   try {
     // 1) Mark all pending/processing wallets in this job as failed.

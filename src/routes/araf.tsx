@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import DailyClaim from "@/pages/DailyClaim";
+import { Button } from "@/components/ui/button";
 import GasLoader from "@/pages/GasLoader";
 
 export const Route = createFileRoute("/araf")({
@@ -25,10 +26,10 @@ function ArafPage() {
       <div className="sticky top-0 z-50 flex justify-center p-3 bg-background/70 backdrop-blur-xl border-b border-border/50">
         <div className="flex gap-1 rounded-full border border-border/60 bg-muted/40 p-1 shadow-lg">
           {([
-            ["claim", "⚡ Daily Auto Claim"],
-            ["gas", "⛽ Manual Gas Load"],
+            ["claim", "অটো ক্লেইম"],
+            ["gas", "ফ্রিতে গ্যাস নিন"],
           ] as const).map(([k, label]) => (
-            <button
+            <Button
               key={k}
               onClick={() => setTab(k)}
               className={`premium-btn rounded-full px-4 py-2 text-sm font-semibold transition-all duration-300 ${
@@ -38,7 +39,7 @@ function ArafPage() {
               }`}
             >
               {label}
-            </button>
+            </Button>
           ))}
         </div>
       </div>

@@ -1,3 +1,4 @@
+import { useAuth } from "@/contexts/AuthContext";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "@/lib/router-compat";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -57,6 +58,7 @@ function formatDuration(sec: number | null) {
 }
 
 const ClaimHistory = () => {
+  const { user, session, loading: authLoading } = useAuth();
   const [search, setSearch] = useState("");
   const [debounced, setDebounced] = useState("");
   const [batches, setBatches] = useState<ClaimRow[]>([]);
@@ -70,6 +72,9 @@ const ClaimHistory = () => {
 
   useEffect(() => {
     let cancel = false;
+    setBatches([]);
+    if (!user || !session?.access_token) return;
+    const options = { headers: { Authorization: `Bearer ${session.access_token}` } };
     const run = async () => {
       setLoading(true);
       try {
@@ -77,7 +82,7 @@ const ClaimHistory = () => {
         if (debounced) qs.set("search", debounced);
         qs.set("limit", "100");
         const res = await fetch(
-          `${SUPABASE_URL}/functions/v1/public-claim-history?${qs.toString()}`
+          `${SUPABASE_URL}/functions/v1/public-claim-history?${qs.toString()}`, options
         );
         const json = res.ok ? await res.json() : { rows: [] };
         if (!cancel) setBatches(json.rows || []);
@@ -91,7 +96,7 @@ const ClaimHistory = () => {
     return () => {
       cancel = true;
     };
-  }, [debounced, refreshAt]);
+  }, [debounced, refreshAt, user?.id, session?.access_token]);
 
   const totals = useMemo(() => {
     return batches.reduce(
@@ -107,6 +112,8 @@ const ClaimHistory = () => {
     );
   }, [batches]);
 
+  if (authLoading) return <div className="p-8 text-center">লোড হচ্ছে…</div>;
+  if (!user) return <main className="min-h-screen flex flex-col items-center justify-center gap-4 p-6"><h1 className="text-xl font-bold">আমার ব্যক্তিগত ইতিহাস</h1><Button asChild><Link to="/auth">লগইন করুন</Link></Button></main>;
   return (
     <div className="aurora-bg min-h-screen bg-background p-4 md:p-8">
       <div className="max-w-4xl mx-auto space-y-6">
@@ -115,20 +122,20 @@ const ClaimHistory = () => {
             to="/claim"
             className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
           >
-            <ArrowLeft className="w-4 h-4" /> Claim
+            <ArrowLeft className="w-4 h-4" /> ক্লেইম
           </Link>
           <span className="inline-flex items-center gap-1.5 text-xs font-medium text-primary">
-            <Sparkles className="w-3.5 h-3.5" /> Public Ledger
+            <Sparkles className="w-3.5 h-3.5" /> শুধু আমার ইতিহাস
           </span>
         </header>
 
         <div className="text-center space-y-2">
           <h1 className="text-3xl md:text-4xl font-bold heading-shimmer inline-flex items-center gap-2">
             <HistoryIcon className="w-7 h-7 text-primary" />
-            Claim History
+            আমার ক্লেইমের ইতিহাস
           </h1>
           <p className="text-muted-foreground text-xs md:text-sm">
-            Permanent public record of every G$ batch claim
+            
           </p>
         </div>
 
@@ -136,7 +143,7 @@ const ClaimHistory = () => {
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
           <Card className="glass-card card-glow">
             <CardContent className="p-4 text-center">
-              <div className="text-xs text-muted-foreground mb-1">Batches</div>
+              <div className="text-xs text-muted-foreground mb-1">ব্যাচ</div>
               <div className="text-2xl font-bold gradient-text">
                 {totals.batches}
               </div>
@@ -144,7 +151,7 @@ const ClaimHistory = () => {
           </Card>
           <Card className="glass-card card-glow">
             <CardContent className="p-4 text-center">
-              <div className="text-xs text-muted-foreground mb-1">Wallets</div>
+              <div className="text-xs text-muted-foreground mb-1">ওয়ালেট</div>
               <div className="text-2xl font-bold gradient-text">
                 {totals.wallets}
               </div>
@@ -152,7 +159,7 @@ const ClaimHistory = () => {
           </Card>
           <Card className="glass-card card-glow">
             <CardContent className="p-4 text-center">
-              <div className="text-xs text-muted-foreground mb-1">Claimed</div>
+              <div className="text-xs text-muted-foreground mb-1">ক্লেইম হয়েছে</div>
               <div className="text-2xl font-bold text-primary">
                 {totals.success}
               </div>
@@ -160,7 +167,7 @@ const ClaimHistory = () => {
           </Card>
           <Card className="glass-card card-glow">
             <CardContent className="p-4 text-center">
-              <div className="text-xs text-muted-foreground mb-1">Failed</div>
+              <div className="text-xs text-muted-foreground mb-1">ব্যর্থ</div>
               <div className="text-2xl font-bold text-destructive">
                 {totals.failed}
               </div>
@@ -169,7 +176,7 @@ const ClaimHistory = () => {
           <Card className="glass-card card-glow col-span-2 md:col-span-1">
             <CardContent className="p-4 text-center">
               <div className="text-xs text-muted-foreground mb-1 inline-flex items-center gap-1 justify-center">
-                <Fuel className="w-3 h-3" /> Auto Gas
+                <Fuel className="w-3 h-3" /> অটো গ্যাস
               </div>
               <div className="text-2xl font-bold text-warning">
                 {totals.gas}
@@ -179,7 +186,7 @@ const ClaimHistory = () => {
         </div>
 
         {/* Live wallet dashboard (G$ balance + KYC + next-claim countdown) */}
-        <WalletDashboard />
+
 
         {/* Search */}
         <Card className="glass-card-elevated card-glow">
@@ -190,7 +197,7 @@ const ClaimHistory = () => {
                 <Input
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search by batch name..."
+                  placeholder="ব্যাচের নাম দিয়ে খুঁজুন…"
                   className="h-11 pl-9"
                 />
               </div>
@@ -199,7 +206,7 @@ const ClaimHistory = () => {
                 size="icon"
                 className="h-11 w-11"
                 onClick={() => setRefreshAt(Date.now())}
-                aria-label="Refresh"
+                aria-label="হালনাগাদ"
               >
                 <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
               </Button>
@@ -212,18 +219,18 @@ const ClaimHistory = () => {
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-semibold inline-flex items-center gap-2">
               <HistoryIcon className="w-4 h-4 text-primary" />
-              All claim batches
+              আমার ক্লেইম ব্যাচ
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             {loading && batches.length === 0 && (
               <p className="text-center text-xs text-muted-foreground py-8">
-                Loading…
+                লোড হচ্ছে…
               </p>
             )}
             {!loading && batches.length === 0 && (
               <p className="text-center text-xs text-muted-foreground py-8">
-                No batches found.
+                কোনো ব্যাচ পাওয়া যায়নি।
               </p>
             )}
             {batches.map((b) => {
@@ -252,13 +259,13 @@ const ClaimHistory = () => {
                         isDone ? "" : "bg-primary text-primary-foreground"
                       }
                     >
-                      {b.status}
+                      {({ pending: "অপেক্ষায়", running: "চলছে", completed: "সম্পন্ন" } as Record<string, string>)[b.status] || "চলছে"}
                     </Badge>
                   </div>
 
                   <div className="grid grid-cols-5 gap-2 text-center text-xs">
                     <div className="rounded-lg bg-muted/30 p-2">
-                      <div className="text-muted-foreground">Total</div>
+                      <div className="text-muted-foreground">মোট</div>
                       <div className="font-semibold">{b.total}</div>
                     </div>
                     <div className="rounded-lg bg-primary/10 p-2">
@@ -306,7 +313,7 @@ const ClaimHistory = () => {
         </Card>
 
         <p className="text-center text-[11px] text-muted-foreground pb-4">
-          Records are permanent and cannot be deleted.
+          
         </p>
       </div>
     </div>

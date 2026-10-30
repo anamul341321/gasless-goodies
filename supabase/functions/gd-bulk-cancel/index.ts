@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { ownsJob, historyDenied } from "../_shared/historyAuth.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -18,6 +19,7 @@ Deno.serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     const jobId = String(body?.job_id || "").trim();
     if (!/^[0-9a-fA-F-]{36}$/.test(jobId)) return json({ error: "Invalid job_id" }, 400);
+    if (!await ownsJob(req, "gd_bulk_jobs", jobId)) return historyDenied(corsHeaders, 404);
 
     const sb = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } });
     const now = new Date().toISOString();

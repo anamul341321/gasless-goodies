@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
-import RedirectHome from "@/pages/RedirectHome";
-
-// Old public route silently redirects home
+import Farmer from "@/pages/Farmer";
+import { appHead } from "@/lib/route-head";
 export const Route = createFileRoute("/farmer")({
-  component: RedirectHome,
+  head: () => appHead("G$ পাঠানো ও CELO সংগ্রহ", "Celo ও XDC সুবিধা, নিজের অ্যাকাউন্ট ও ব্যক্তিগত ফলাফল।"),
+  component: Farmer,
 });

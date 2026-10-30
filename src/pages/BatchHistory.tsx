@@ -1,3 +1,4 @@
+import { useAuth } from "@/contexts/AuthContext";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "@/lib/router-compat";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -65,6 +66,7 @@ function formatDuration(sec: number | null) {
 }
 
 const BatchHistory = () => {
+  const { user, session, loading: authLoading } = useAuth();
   const [search, setSearch] = useState("");
   const [debounced, setDebounced] = useState("");
   const [batches, setBatches] = useState<BatchRow[]>([]);
@@ -79,6 +81,10 @@ const BatchHistory = () => {
 
   useEffect(() => {
     let cancel = false;
+    setBatches([]);
+    setSummary([]);
+    if (!user || !session?.access_token) return;
+    const options = { headers: { Authorization: `Bearer ${session.access_token}` } };
     const run = async () => {
       setLoading(true);
       try {
@@ -87,10 +93,10 @@ const BatchHistory = () => {
         qs.set("limit", "100");
         const [listRes, sumRes] = await Promise.all([
           fetch(
-            `${SUPABASE_URL}/functions/v1/public-batch-history?${qs.toString()}`
+            `${SUPABASE_URL}/functions/v1/public-batch-history?${qs.toString()}`, options
           ),
           fetch(
-            `${SUPABASE_URL}/functions/v1/public-batch-history?${qs.toString()}&mode=summary`
+            `${SUPABASE_URL}/functions/v1/public-batch-history?${qs.toString()}&mode=summary`, options
           ),
         ]);
         const listJson = listRes.ok ? await listRes.json() : { rows: [] };
@@ -109,7 +115,7 @@ const BatchHistory = () => {
     return () => {
       cancel = true;
     };
-  }, [debounced, refreshAt]);
+  }, [debounced, refreshAt, user?.id, session?.access_token]);
 
   const totals = useMemo(() => {
     return summary.reduce(
@@ -124,6 +130,8 @@ const BatchHistory = () => {
     );
   }, [summary]);
 
+  if (authLoading) return <div className="p-8 text-center">লোড হচ্ছে…</div>;
+  if (!user) return <main className="min-h-screen flex flex-col items-center justify-center gap-4 p-6"><h1 className="text-xl font-bold">আমার ব্যক্তিগত ইতিহাস</h1><Button asChild><Link to="/auth">লগইন করুন</Link></Button></main>;
   return (
     <div className="aurora-bg min-h-screen bg-background p-4 md:p-8">
       <div className="max-w-4xl mx-auto space-y-6">
@@ -132,21 +140,20 @@ const BatchHistory = () => {
             to="/gas-loader"
             className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
           >
-            <ArrowLeft className="w-4 h-4" /> Gas Loader
+            <ArrowLeft className="w-4 h-4" /> গ্যাস নিন
           </Link>
           <span className="inline-flex items-center gap-1.5 text-xs font-medium text-primary">
-            <Sparkles className="w-3.5 h-3.5" /> Public Ledger
+            <Sparkles className="w-3.5 h-3.5" /> শুধু আমার ইতিহাস
           </span>
         </header>
 
         <div className="text-center space-y-2">
           <h1 className="text-3xl md:text-4xl font-bold heading-shimmer inline-flex items-center gap-2">
             <HistoryIcon className="w-7 h-7 text-primary" />
-            Batch History
+            আমার গ্যাসের ইতিহাস
           </h1>
           <p className="text-muted-foreground text-xs md:text-sm">
-            Permanent public record · search by name to see total wallets
-            loaded
+            
           </p>
         </div>
 
@@ -154,7 +161,7 @@ const BatchHistory = () => {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <Card className="glass-card card-glow">
             <CardContent className="p-4 text-center">
-              <div className="text-xs text-muted-foreground mb-1">Batches</div>
+              <div className="text-xs text-muted-foreground mb-1">ব্যাচ</div>
               <div className="text-2xl font-bold gradient-text">
                 {totals.batches}
               </div>
@@ -162,7 +169,7 @@ const BatchHistory = () => {
           </Card>
           <Card className="glass-card card-glow">
             <CardContent className="p-4 text-center">
-              <div className="text-xs text-muted-foreground mb-1">Wallets</div>
+              <div className="text-xs text-muted-foreground mb-1">ওয়ালেট</div>
               <div className="text-2xl font-bold gradient-text">
                 {totals.wallets}
               </div>
@@ -170,7 +177,7 @@ const BatchHistory = () => {
           </Card>
           <Card className="glass-card card-glow">
             <CardContent className="p-4 text-center">
-              <div className="text-xs text-muted-foreground mb-1">Success</div>
+              <div className="text-xs text-muted-foreground mb-1">সফল</div>
               <div className="text-2xl font-bold text-primary">
                 {totals.success}
               </div>
@@ -178,7 +185,7 @@ const BatchHistory = () => {
           </Card>
           <Card className="glass-card card-glow">
             <CardContent className="p-4 text-center">
-              <div className="text-xs text-muted-foreground mb-1">Failed</div>
+              <div className="text-xs text-muted-foreground mb-1">ব্যর্থ</div>
               <div className="text-2xl font-bold text-destructive">
                 {totals.failed}
               </div>
@@ -195,7 +202,7 @@ const BatchHistory = () => {
                 <Input
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search by name..."
+                  placeholder="ব্যাচের নাম দিয়ে খুঁজুন…"
                   className="h-11 pl-9"
                 />
               </div>
@@ -204,7 +211,7 @@ const BatchHistory = () => {
                 size="icon"
                 className="h-11 w-11"
                 onClick={() => setRefreshAt(Date.now())}
-                aria-label="Refresh"
+                aria-label="হালনাগাদ"
               >
                 <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
               </Button>
@@ -218,7 +225,7 @@ const BatchHistory = () => {
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-semibold inline-flex items-center gap-2">
                 <Layers className="w-4 h-4 text-primary" />
-                {debounced ? `Results for "${debounced}"` : "Top names"}
+                {debounced ? `Results for "${debounced}"` : "আমার ব্যাচগুলো"}
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
@@ -233,7 +240,7 @@ const BatchHistory = () => {
                     </div>
                     <div className="text-[11px] text-muted-foreground inline-flex items-center gap-1">
                       <Calendar className="w-3 h-3" />
-                      Last: {formatDateTime(row.last_batch_at)}
+                      সর্বশেষ: {formatDateTime(row.last_batch_at)}
                     </div>
                   </div>
                   <div className="flex items-center gap-2 text-xs flex-shrink-0">
@@ -255,18 +262,18 @@ const BatchHistory = () => {
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-semibold inline-flex items-center gap-2">
               <HistoryIcon className="w-4 h-4 text-primary" />
-              All batches
+              আমার সব ব্যাচ
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             {loading && batches.length === 0 && (
               <p className="text-center text-xs text-muted-foreground py-8">
-                Loading…
+                লোড হচ্ছে…
               </p>
             )}
             {!loading && batches.length === 0 && (
               <p className="text-center text-xs text-muted-foreground py-8">
-                No batches found.
+                কোনো ব্যাচ পাওয়া যায়নি।
               </p>
             )}
             {batches.map((b) => {
@@ -295,13 +302,13 @@ const BatchHistory = () => {
                         isDone ? "" : "bg-primary text-primary-foreground"
                       }
                     >
-                      {b.status}
+                      {({ pending: "অপেক্ষায়", running: "চলছে", completed: "সম্পন্ন" } as Record<string, string>)[b.status] || "চলছে"}
                     </Badge>
                   </div>
 
                   <div className="grid grid-cols-4 gap-2 text-center text-xs">
                     <div className="rounded-lg bg-muted/30 p-2">
-                      <div className="text-muted-foreground">Total</div>
+                      <div className="text-muted-foreground">মোট</div>
                       <div className="font-semibold">{b.total}</div>
                     </div>
                     <div className="rounded-lg bg-primary/10 p-2">
@@ -341,7 +348,7 @@ const BatchHistory = () => {
         </Card>
 
         <p className="text-center text-[11px] text-muted-foreground pb-4">
-          Records are permanent and cannot be deleted.
+          
         </p>
       </div>
     </div>

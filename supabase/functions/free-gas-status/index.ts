@@ -1,3 +1,4 @@
+import { historyUser, historyDenied } from "../_shared/historyAuth.ts";
 // Public status endpoint for free gas loader.
 // Returns current job progress + today's IP usage.
 
@@ -38,6 +39,8 @@ function getClientIp(req: Request): string {
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
+  const requester = await historyUser(req);
+  if (!requester) return historyDenied(corsHeaders);
   const ip = getClientIp(req);
 
   let body: any = {};
@@ -69,13 +72,13 @@ Deno.serve(async (req) => {
   let job: any = null;
   let wallets: any[] = [];
   if (jobId && /^[0-9a-f-]{36}$/i.test(jobId)) {
-    const jr = await sb(`/rest/v1/gas_load_jobs?id=eq.${jobId}&select=id,total,done,failed,status,batch_name,created_at,finished_at`);
+    const jr = await sb(`/rest/v1/gas_load_jobs?id=eq.${jobId}&owner_user_id=eq.${requester.id}&select=id,total,done,failed,status,batch_name,created_at,finished_at`);
     if (jr.ok) {
       const rows = await jr.json();
       // Only return job if it was a free batch (batch_name starts with "free-")
       if (Array.isArray(rows) && rows[0] && typeof rows[0].batch_name === "string" && rows[0].batch_name.startsWith("free-")) {
         job = rows[0];
-        const wr = await sb(`/rest/v1/gas_load_queue?job_id=eq.${jobId}&select=wallet_address,status,tx_hash,error_message,processed_at&order=created_at.asc`);
+        const wr = await sb(`/rest/v1/gas_load_queue?job_id=eq.${jobId}&owner_user_id=eq.${requester.id}&select=wallet_address,status,tx_hash,error_message,processed_at&order=created_at.asc`);
         if (wr.ok) wallets = await wr.json();
       }
     }

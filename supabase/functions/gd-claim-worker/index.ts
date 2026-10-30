@@ -320,10 +320,15 @@ async function triggerGasRequest(jobId: string, network: GDNetwork): Promise<str
   const rows = await q.json();
   if (!Array.isArray(rows) || rows.length === 0) return null;
 
+  const parentRes = await fetch(`${SUPABASE_URL}/rest/v1/gd_claim_jobs?id=eq.${jobId}&select=owner_user_id`, { headers: sbHeaders() });
+  const parents = parentRes.ok ? await parentRes.json() : [];
+  const ownerUserId = parents[0]?.owner_user_id ?? null;
+
   const jobIns = await fetch(`${SUPABASE_URL}/rest/v1/gas_load_jobs`, {
     method: "POST",
     headers: sbHeaders({ Prefer: "return=representation" }),
     body: JSON.stringify({
+      owner_user_id: ownerUserId,
       total: rows.length,
       delay_ms: 3000,
       status: "pending",

@@ -47,6 +47,7 @@ Deno.serve(async (req) => {
 
   // Identify the caller (optional). Logged-in users get their batch linked.
   const user = await getUserFromAuthHeader(req.headers.get("Authorization"));
+  if (!user) return new Response(JSON.stringify({ error: "Sign in required" }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
 
   let body: any;
   try {

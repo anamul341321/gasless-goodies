@@ -33,11 +33,9 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { property: "og:type", content: "website" },
       { property: "og:title", content: SITE_TITLE },
       { property: "og:description", content: SITE_DESCRIPTION },
-      { property: "og:image", content: SOCIAL_IMAGE },
       { name: "twitter:card", content: "summary_large_image" },
       { name: "twitter:title", content: SITE_TITLE },
       { name: "twitter:description", content: SITE_DESCRIPTION },
-      { name: "twitter:image", content: SOCIAL_IMAGE },
     ],
     links: [
       { rel: "stylesheet", href: appCss },
@@ -45,7 +43,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
       {
         rel: "stylesheet",
-        href: "https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap",
+        href: "https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Noto+Sans+Bengali:wght@400;500;600;700&display=swap",
       },
       { rel: "icon", href: "/favicon.ico" },
     ],
@@ -58,7 +56,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 
 function RootShell({ children }: { children: ReactNode }) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="bn" suppressHydrationWarning>
       <head>
         <HeadContent />
       </head>
@@ -98,9 +96,9 @@ function RootErrorComponent({ error, reset }: import("@tanstack/react-router").E
   return (
     <div className="min-h-screen bg-background text-foreground flex items-center justify-center p-6">
       <div className="glass-card max-w-md w-full p-8 text-center space-y-4">
-        <h1 className="text-xl font-bold">This page didn't load</h1>
+        <h1 className="text-xl font-bold">পাতাটি খোলা যায়নি</h1>
         <p className="text-muted-foreground text-sm">
-          Something went wrong. You can try again or head back home.
+          আবার চেষ্টা করুন অথবা ড্যাশবোর্ডে ফিরুন।
         </p>
         <div className="flex items-center justify-center gap-3">
           <button
@@ -110,13 +108,13 @@ function RootErrorComponent({ error, reset }: import("@tanstack/react-router").E
               reset();
             }}
           >
-            Try again
+            আবার চেষ্টা করুন
           </button>
           <a
             href="/"
             className="border border-border px-4 py-2 rounded-lg font-medium text-foreground"
           >
-            Go home
+            ড্যাশবোর্ডে ফিরুন
           </a>
         </div>
       </div>
