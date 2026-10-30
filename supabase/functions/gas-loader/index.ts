@@ -84,7 +84,7 @@ Deno.serve(async (req) => {
   );
   const batchName: string =
     typeof body?.batch_name === "string" ? body.batch_name.trim() : "";
-  const network: "celo" | "xdc" = body?.network === "xdc" ? "xdc" : "celo";
+  const network: "celo" | "xdc" | "fuse" = body?.network === "xdc" || body?.network === "fuse" ? body.network : "celo";
 
   if (!batchName || batchName.length < 1 || batchName.length > 80) {
     return new Response(

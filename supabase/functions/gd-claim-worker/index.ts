@@ -238,7 +238,7 @@ async function claimOne(row: QueueRow): Promise<{
         if (balance < required) {
           return {
             status: "failed_gas",
-            error: `insufficient ${cfg.label === "XDC" ? "XDC" : "CELO"} for gas: has ${formatGasNeed(balance)}, needs about ${formatGasNeed(required)}`,
+            error: `insufficient ${cfg.label === "XDC" ? "XDC" : cfg.label === "Fuse" ? "FUSE" : "CELO"} for gas: has ${formatGasNeed(balance)}, needs about ${formatGasNeed(required)}`,
           };
         }
       }

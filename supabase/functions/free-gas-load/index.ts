@@ -182,7 +182,7 @@ Deno.serve(async (req) => {
     );
   }
 
-  const network: "celo" | "xdc" = body?.network === "xdc" ? "xdc" : "celo";
+  const network: "celo" | "xdc" | "fuse" = body?.network === "xdc" || body?.network === "fuse" ? body.network : "celo";
 
   // Create a job
   const jobRes = await sb("/rest/v1/gas_load_jobs", {
