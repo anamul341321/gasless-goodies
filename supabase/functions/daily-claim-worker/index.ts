@@ -434,6 +434,8 @@ async function runPhase1(runId: string, network: GDNetwork, deadline: number) {
 }
 
 async function runGasRequesting(runId: string, network: GDNetwork, _deadline: number) {
+  const { data: parentRun } = await admin.from("daily_claim_runs").select("owner_user_id").eq("id", runId).maybeSingle();
+  if (!parentRun?.owner_user_id) return;
   const { data: needGas } = await admin
     .from("daily_claim_run_items")
     .select("id, wallet_address")
@@ -456,6 +458,7 @@ async function runGasRequesting(runId: string, network: GDNetwork, _deadline: nu
 
     if (!jobId) {
       const jobRes = await admin.from("gas_load_jobs").insert({
+        owner_user_id: parentRun.owner_user_id,
         total: needGas.length,
         delay_ms: 3000,
         status: "pending",
