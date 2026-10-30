@@ -11,6 +11,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { decryptKey } from "../_shared/dailyCrypto.ts";
 import { GD_NETWORKS, resolveNetwork, type GDNetwork } from "../_shared/gdNetworks.ts";
 import { isTransient, recoverStalledRetry } from "./recovery.ts";
+import { CLAIM_EVIDENCE_ABI, receivedGd, verifyPriorClaim } from "../_shared/claimEvidence.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -22,6 +23,7 @@ const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const admin = createClient(SUPABASE_URL, SERVICE_KEY);
 
 const UBI_ABI = [
+  ...CLAIM_EVIDENCE_ABI,
   "function claim() returns (uint256)",
   "function checkEntitlement(address member) view returns (uint256)",
   "function checkEntitlement() view returns (uint256)",
@@ -131,7 +133,9 @@ async function claimOne(privateKey: string, network: GDNetwork): Promise<ClaimRe
 
     const ent = await readEntitlement(ubi, addr);
     if (typeof ent.amount === "bigint") {
-      if (ent.amount === 0n) return { status: "already_claimed", error: "no entitlement (already claimed today)" };
+      if (ent.amount === 0n && await verifyPriorClaim(ubi, provider, addr)) {
+        return { status: "already_claimed", error: "Verified claim in current on-chain period" };
+      }
     }
 
     let tx;
@@ -159,7 +163,7 @@ async function claimOne(privateKey: string, network: GDNetwork): Promise<ClaimRe
       const msg = (e?.shortMessage || e?.reason || e?.message || "claim revert").slice(0, 240);
       if (cls === "gas") return { status: "failed_gas", error: msg };
       if (cls === "kyc") return { status: "failed_kyc", error: msg };
-      if (cls === "already") return { status: "already_claimed", error: msg };
+      if (cls === "already" && await verifyPriorClaim(ubi, provider, addr)) return { status: "already_claimed", error: "Verified claim in current on-chain period" };
       return { status: "failed_other", error: msg };
     }
     try {
@@ -168,17 +172,9 @@ async function claimOne(privateKey: string, network: GDNetwork): Promise<ClaimRe
         // Strict verification: the tx only counts as a real claim when the G$
         // token emitted Transfer(to = wallet) with a non-zero amount. A mined
         // tx alone is NOT proof — GoodDollar's claim() can be a silent no-op.
-        const logs = (receipt.logs || []) as any[];
-        const padded = "0x" + "0".repeat(24) + addr.slice(2).toLowerCase();
-        const received = logs.some((l) => {
-          const topics: string[] = (l.topics || []).map((t: string) => String(t).toLowerCase());
-          if (String(l.address || "").toLowerCase() !== cfg.gdTokenAddress.toLowerCase()) return false;
-          if (topics[0] !== TRANSFER_TOPIC) return false;
-          if (topics[2] !== padded) return false;
-          try { return BigInt(l.data || "0x0") > 0n; } catch { return false; }
-        });
+        const received = receivedGd(receipt.logs || [], addr, cfg.gdTokenAddress);
         if (received) return { status: "success", txHash: tx.hash };
-        return { status: "already_claimed", txHash: tx.hash, error: "claim no-op (no G$ received)" };
+        return { status: "failed_other", txHash: tx.hash, error: "Claim unconfirmed: no verified G$ transfer received" };
       }
       return { status: "failed_other", txHash: tx.hash, error: "tx reverted" };
 
@@ -190,7 +186,6 @@ async function claimOne(privateKey: string, network: GDNetwork): Promise<ClaimRe
     const msg = (e?.message || String(e)).slice(0, 240);
     if (cls === "gas") return { status: "failed_gas", error: msg };
     if (cls === "kyc") return { status: "failed_kyc", error: msg };
-    if (cls === "already") return { status: "already_claimed", error: msg };
     return { status: "failed_other", error: msg };
   }
 }
