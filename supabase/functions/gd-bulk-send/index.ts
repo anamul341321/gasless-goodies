@@ -1,3 +1,4 @@
+import { historyUser, historyDenied } from "../_shared/historyAuth.ts";
 // Bulk-send G$ on Celo — async job system.
 // Creates a DB job, returns job_id immediately, processes recipients in the
 // background using EdgeRuntime.waitUntil so the client can close the browser.
@@ -61,6 +62,9 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
   if (req.method !== "POST") return json({ error: "method not allowed" }, 405);
 
+  const requester = await historyUser(req);
+  if (!requester) return historyDenied(corsHeaders);
+
   try {
     const body = await req.json();
     let senderKeyRaw = String(body?.sender_key || "").trim();
@@ -97,6 +101,7 @@ Deno.serve(async (req) => {
     const { data: jobRow, error: jobErr } = await sb
       .from("gd_bulk_jobs")
       .insert({
+        owner_user_id: requester.id,
         sender_address: senderAddress.toLowerCase(),
         sender_key_encrypted: senderKeyRaw, // protected by RLS deny + service-role only
         amount_per_recipient: amountStr,

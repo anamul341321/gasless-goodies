@@ -1,3 +1,4 @@
+import { historyUser, historyDenied } from "../_shared/historyAuth.ts";
 // Public read-only endpoint for G$ claim batch history (counts only).
 // No private keys, no wallet addresses — just per-batch summary stats.
 
@@ -11,11 +12,11 @@ const corsHeaders = {
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
-function sbHeaders() {
+function sbHeaders(req: Request) {
   return {
     "Content-Type": "application/json",
-    apikey: SUPABASE_SERVICE_ROLE_KEY,
-    Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+    apikey: Deno.env.get("SUPABASE_ANON_KEY") || "",
+    Authorization: req.headers.get("Authorization") || "",
   };
 }
 
@@ -23,6 +24,8 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
+
+  if (!await historyUser(req)) return historyDenied(corsHeaders);
 
   try {
     const url = new URL(req.url);
@@ -36,7 +39,7 @@ Deno.serve(async (req) => {
       `${SUPABASE_URL}/rest/v1/rpc/get_public_gd_claim_history`,
       {
         method: "POST",
-        headers: sbHeaders(),
+        headers: sbHeaders(req),
         body: JSON.stringify({
           search_name: search,
           page_limit: limit,
@@ -51,21 +54,21 @@ Deno.serve(async (req) => {
         JSON.stringify({ error: "lookup failed", detail: text }),
         {
           status: 500,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          headers: { ...corsHeaders, "Content-Type": "application/json", "Cache-Control": "no-store" },
         }
       );
     }
 
     const rows = await res.json();
     return new Response(JSON.stringify({ rows }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      headers: { ...corsHeaders, "Content-Type": "application/json", "Cache-Control": "no-store" },
     });
   } catch (e: any) {
     return new Response(
       JSON.stringify({ error: e?.message || String(e) }),
       {
         status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...corsHeaders, "Content-Type": "application/json", "Cache-Control": "no-store" },
       }
     );
   }

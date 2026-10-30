@@ -1,3 +1,4 @@
+import { historyUser, historyDenied } from "../_shared/historyAuth.ts";
 // VIP user submits a gas-load batch.
 // Verifies: (1) wallet has an active membership, (2) submitted addresses are
 // in the user's locked_wallets list (across any of their active memberships).
@@ -40,6 +41,9 @@ Deno.serve(async (req) => {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
+
+  const requester = await historyUser(req);
+  if (!requester) return historyDenied(corsHeaders);
 
   // Global toggle (admin can switch off)
   try {
@@ -193,6 +197,7 @@ Deno.serve(async (req) => {
     method: "POST",
     headers: { Prefer: "return=representation" },
     body: JSON.stringify({
+      owner_user_id: requester.id,
       total: allowed.length,
       delay_ms: delayMs,
       status: "pending",

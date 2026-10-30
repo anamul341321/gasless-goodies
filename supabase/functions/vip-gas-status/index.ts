@@ -1,3 +1,4 @@
+import { historyUser, historyDenied } from "../_shared/historyAuth.ts";
 // VIP user polls status of their own gas-load job.
 // Uses security-definer functions so the user only sees their own data.
 
@@ -11,13 +12,13 @@ const corsHeaders = {
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
-async function rpc(fn: string, args: Record<string, unknown>) {
+async function rpc(req: Request, fn: string, args: Record<string, unknown>) {
   const r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${fn}`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      apikey: SUPABASE_SERVICE_ROLE_KEY,
-      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+      apikey: Deno.env.get("SUPABASE_ANON_KEY") || "",
+      Authorization: req.headers.get("Authorization") || "",
     },
     body: JSON.stringify(args),
   });
@@ -35,6 +36,9 @@ Deno.serve(async (req) => {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
+
+  const requester = await historyUser(req);
+  if (!requester) return historyDenied(corsHeaders);
 
   let body: any;
   try {
@@ -54,11 +58,15 @@ Deno.serve(async (req) => {
     });
   }
 
+  const profileRes = await fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${requester.id}&select=wallet_address`, { headers: { apikey: SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` } });
+  const profiles = profileRes.ok ? await profileRes.json() : [];
+  if (profiles[0]?.wallet_address?.toLowerCase() !== userWallet.toLowerCase()) return historyDenied(corsHeaders, 404);
+
   const action: string = typeof body?.action === "string" ? body.action : "status";
 
   try {
     if (action === "recent") {
-      const jobs = await rpc("get_vip_recent_jobs", { p_wallet: userWallet });
+      const jobs = await rpc(req, "get_vip_recent_jobs", { p_wallet: userWallet });
       return new Response(JSON.stringify({ jobs }), {
         status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -121,14 +129,14 @@ Deno.serve(async (req) => {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
-    const job = await rpc("get_vip_job_status", { p_wallet: userWallet, p_job_id: jobId });
+    const job = await rpc(req, "get_vip_job_status", { p_wallet: userWallet, p_job_id: jobId });
     if (!Array.isArray(job) || job.length === 0) {
       return new Response(JSON.stringify({ job: null, wallets: [] }), {
         status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
-    const wallets = await rpc("get_vip_job_wallets", { p_wallet: userWallet, p_job_id: jobId });
+    const wallets = await rpc(req, "get_vip_job_wallets", { p_wallet: userWallet, p_job_id: jobId });
     return new Response(
       JSON.stringify({ job: job[0], wallets }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },

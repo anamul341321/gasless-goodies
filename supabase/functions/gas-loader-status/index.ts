@@ -1,3 +1,4 @@
+import { historyUser, historyDenied } from "../_shared/historyAuth.ts";
 // Returns the current state of a gas-load job + its wallet rows.
 // Used by the admin GasLoader page to poll progress (works even after the
 // browser tab/screen has been closed and reopened).
@@ -25,12 +26,15 @@ Deno.serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  const requester = await historyUser(req);
+  if (!requester) return historyDenied(corsHeaders);
+
   const adminPassword = Deno.env.get("ADMIN_PASSWORD")?.trim();
   const provided = req.headers.get("x-admin-password")?.trim();
   if (false && (!adminPassword || provided !== adminPassword)) {
     return new Response(JSON.stringify({ error: "unauthorized" }), {
       status: 401,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      headers: { ...corsHeaders, "Content-Type": "application/json", "Cache-Control": "no-store" },
     });
   }
 
@@ -53,7 +57,7 @@ Deno.serve(async (req) => {
   let targetJobId = jobId as string | null;
   if (!targetJobId) {
     const listRes = await fetch(
-      `${SUPABASE_URL}/rest/v1/gas_load_jobs?select=id&order=created_at.desc&limit=1`,
+      `${SUPABASE_URL}/rest/v1/gas_load_jobs?owner_user_id=eq.${requester.id}&select=id&order=created_at.desc&limit=1`,
       { headers: sbHeaders() }
     );
     if (listRes.ok) {
@@ -64,12 +68,12 @@ Deno.serve(async (req) => {
 
   if (!targetJobId) {
     return new Response(JSON.stringify({ job: null, wallets: [] }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      headers: { ...corsHeaders, "Content-Type": "application/json", "Cache-Control": "no-store" },
     });
   }
 
   const jobRes = await fetch(
-    `${SUPABASE_URL}/rest/v1/gas_load_jobs?id=eq.${targetJobId}&select=*`,
+    `${SUPABASE_URL}/rest/v1/gas_load_jobs?id=eq.${encodeURIComponent(targetJobId)}&owner_user_id=eq.${requester.id}&select=id,total,done,failed,status,delay_ms,batch_name,network,created_at,finished_at`,
     { headers: sbHeaders() }
   );
   const jobs = jobRes.ok ? await jobRes.json() : [];
@@ -84,7 +88,7 @@ Deno.serve(async (req) => {
     while (true) {
       const to = from + PAGE - 1;
       const wRes = await fetch(
-        `${SUPABASE_URL}/rest/v1/gas_load_queue?job_id=eq.${targetJobId}&select=wallet_address,status,tx_hash,proxy_ip,error_message,attempts,processed_at&order=created_at.asc`,
+        `${SUPABASE_URL}/rest/v1/gas_load_queue?job_id=eq.${targetJobId}&select=wallet_address,status,tx_hash,error_message,processed_at&order=created_at.asc`,
         { headers: { ...sbHeaders(), Range: `${from}-${to}`, "Range-Unit": "items" } }
       );
       if (!wRes.ok) break;
@@ -98,6 +102,6 @@ Deno.serve(async (req) => {
   }
 
   return new Response(JSON.stringify({ job, wallets }), {
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    headers: { ...corsHeaders, "Content-Type": "application/json", "Cache-Control": "no-store" },
   });
 });
