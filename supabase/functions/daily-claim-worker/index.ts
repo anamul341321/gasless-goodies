@@ -144,9 +144,11 @@ async function claimOne(privateKey: string, network: GDNetwork): Promise<ClaimRe
       const estimatedGas = BigInt(await (ubi as any).claim.estimateGas());
       const reported = feeData.gasPrice ?? feeData.maxFeePerGas ?? null;
       const gasUnitPrice = reported && reported > 0n ? reported : null;
-      const gasLimit = (estimatedGas * 120n) / 100n;
+      let gasLimit = (estimatedGas * 120n) / 100n;
       if (gasUnitPrice) {
         const balance = await provider.getBalance(addr);
+        // Tight wallets: fall back to a 5% margin when the 20% one doesn't fit.
+        if (balance < gasLimit * gasUnitPrice) gasLimit = (estimatedGas * 105n) / 100n;
         const required = gasLimit * gasUnitPrice;
         if (balance < required) {
           const nativeLabel = network === "xdc" ? "XDC" : network === "fuse" ? "FUSE" : "CELO";
