@@ -28,6 +28,7 @@
 import { Wallet, JsonRpcProvider, Contract, formatEther } from "npm:ethers@6.13.4";
 import { GD_NETWORKS, type GDNetwork, resolveNetwork } from "../_shared/gdNetworks.ts";
 import { CLAIM_EVIDENCE_ABI, receivedGd, verifyPriorClaim } from "../_shared/claimEvidence.ts";
+import { readClaimQueue, summarizeClaimQueue } from "../_shared/manualClaimAggregate.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -315,13 +316,11 @@ async function finalize(row: QueueRow, result: Awaited<ReturnType<typeof claimOn
 
 async function triggerGasRequest(jobId: string, network: GDNetwork): Promise<string | null> {
   // Pull wallets that failed for gas reasons (status set to failed_gas earlier)
-  const q = await fetch(
-    `${SUPABASE_URL}/rest/v1/gd_claim_queue?job_id=eq.${jobId}&status=eq.failed_gas&select=wallet_address&limit=5000`,
-    { headers: sbHeaders() }
+  const rows = await readClaimQueue<{ wallet_address: string }>(
+    `${SUPABASE_URL}/rest/v1/gd_claim_queue?job_id=eq.${jobId}&status=eq.failed_gas&select=wallet_address`,
+    sbHeaders(),
   );
-  if (!q.ok) return null;
-  const rows = await q.json();
-  if (!Array.isArray(rows) || rows.length === 0) return null;
+  if (rows.length === 0) return null;
 
   const parentRes = await fetch(`${SUPABASE_URL}/rest/v1/gd_claim_jobs?id=eq.${jobId}&select=owner_user_id`, { headers: sbHeaders() });
   const parents = parentRes.ok ? await parentRes.json() : [];
@@ -369,21 +368,11 @@ async function triggerGasRequest(jobId: string, network: GDNetwork): Promise<str
 }
 
 async function refreshJobAggregate(jobId: string) {
-  const aggRes = await fetch(
-    `${SUPABASE_URL}/rest/v1/gd_claim_queue?job_id=eq.${jobId}&select=status&limit=5000`,
-    { headers: sbHeaders() }
+  const all = await readClaimQueue<{ status: string }>(
+    `${SUPABASE_URL}/rest/v1/gd_claim_queue?job_id=eq.${jobId}&select=status`,
+    sbHeaders(),
   );
-  if (!aggRes.ok) return;
-  const all = await aggRes.json();
-  let done = 0, failed = 0, needsGas = 0, activeRemaining = 0;
-  for (const r of all || []) {
-    if (r.status === "success") done++;
-    else if (r.status === "failed_gas") { failed++; needsGas++; }
-    else if (r.status === "already_claimed") failed++;
-    else if (r.status === "failed_kyc" || r.status === "failed") failed++;
-    if (r.status === "pending" || r.status === "claiming") activeRemaining++;
-  }
-  const allDone = activeRemaining === 0 && (all?.length ?? 0) > 0;
+  const { done, failed, needsGas, allDone } = summarizeClaimQueue(all);
 
   // Read current job state to decide gas-recovery flow
   let gasPhase = "none";

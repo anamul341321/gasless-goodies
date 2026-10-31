@@ -1,4 +1,5 @@
 # Tasks
+- [x] Repair manual claim counters and gas-recovery selection truncated at 1,000 rows; reconcile existing totals. Deployed worker, 19 tests pass, authenticated account page confirms 3,895 total / 3,858 success / 37 other results.
 - [x] Verify Fuse supports 5,000 uploaded wallets; repair current-run pagination, stale detail caching, 500-row display cutoff and wallet-list action. Fifteen tests pass; populated browser fixture reaches wallet 5,000 and refreshes 1,000→5,000 results; status endpoint deployed.
 - [ ] Verify a real 5,000-wallet Fuse run end-to-end — blocked: available signed-in account has no claim groups or saved wallets; no real claims submitted.
 - [x] Increase G$ collection to up to 200 globally leased wallets across separate six-slot callbacks; preserve stop, recovery and active-only scheduling; regression tests and installed SQL limits checked. Real throughput remains unverified without requesting-user login and publication.
