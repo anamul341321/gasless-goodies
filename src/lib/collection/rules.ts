@@ -6,7 +6,7 @@ export const COLLECTION_CALLBACK_SLOTS = 6;
 export const COLLECTION_CALLBACK_COUNT = Math.ceil(COLLECTION_PARALLEL_LIMIT / COLLECTION_CALLBACK_SLOTS);
 export const COLLECTION_NETWORKS = {
  celo: { chainId: 42220, rpc: 'https://forno.celo.org', rpcs: ['https://forno.celo.org', 'https://rpc.ankr.com/celo'], token: '0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A', explorer: 'https://celoscan.io/tx/' },
- xdc: { chainId: 50, rpc: 'https://rpc.xinfin.network', rpcs: ['https://rpc.xinfin.network', 'https://erpc.xdcrpc.com', 'https://rpc.ankr.com/xdc', 'https://erpc.xinfin.network'], token: '0xEC2136843a983885AebF2feB3931F73A8eBEe50c', explorer: 'https://xdcscan.com/tx/' },
+ xdc: { chainId: 50, rpc: 'https://erpc.xdcrpc.com', rpcs: ['https://erpc.xdcrpc.com', 'https://rpc.ankr.com/xdc', 'https://xdc.public-rpc.com'], token: '0xEC2136843a983885AebF2feB3931F73A8eBEe50c', explorer: 'https://xdcscan.com/tx/' },
 } as const;
 /** Rotate network endpoints across retries so one dead public endpoint cannot fail a whole batch. */
 export function collectionRpc(network: { rpcs: readonly string[] }, attempt: number) {

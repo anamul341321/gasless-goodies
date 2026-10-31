@@ -34,7 +34,7 @@ describe('G$ collection rules',()=>{
  });
  it('moves XDC retries off a failed network endpoint',()=>{
   const xdc=COLLECTION_NETWORKS.xdc;
-  expect(collectionRpc(xdc,1)).toBe('https://rpc.xinfin.network');
+  expect(collectionRpc(xdc,1)).toBe('https://erpc.xdcrpc.com');
   expect(collectionRpc(xdc,2)).not.toBe(collectionRpc(xdc,1));
   expect(collectionRpc(xdc,3)).not.toBe(collectionRpc(xdc,2));
  });
