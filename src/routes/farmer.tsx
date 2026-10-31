@@ -2,6 +2,6 @@ import { createFileRoute } from "@tanstack/react-router";
 import Farmer from "@/pages/Farmer";
 import { appHead } from "@/lib/route-head";
 export const Route = createFileRoute("/farmer")({
-  head: () => appHead("G$ পাঠানো ও CELO সংগ্রহ", "Celo ও XDC সুবিধা, নিজের অ্যাকাউন্ট ও ব্যক্তিগত ফলাফল।"),
+  head: () => appHead("CELO পাঠানো ও সংগ্রহ", "নিজের মূল ওয়ালেট থেকে বহু ঠিকানায় সমান CELO পাঠান এবং ব্যক্তিগত ফলাফল দেখুন।"),
   component: Farmer,
 });
