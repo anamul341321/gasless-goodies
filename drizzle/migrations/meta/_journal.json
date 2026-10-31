@@ -71,6 +71,13 @@
       "when": 1793437721062,
       "tag": "0009_verify_collection_owner_quotas",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1793450187382,
+      "tag": "0010_celo_native_batch_send",
+      "breakpoints": true
     }
   ]
 }

@@ -47,6 +47,101 @@ export type Database = {
         }
         Relationships: []
       }
+      celo_batch_chunks: {
+        Row: {
+          attempts: number
+          error_message: string | null
+          id: string
+          job_id: string
+          owner_user_id: string
+          position: number
+          recipients: Json
+          signed_tx: string | null
+          status: string
+          tx_hash: string | null
+        }
+        Insert: {
+          attempts?: number
+          error_message?: string | null
+          id?: string
+          job_id: string
+          owner_user_id: string
+          position: number
+          recipients: Json
+          signed_tx?: string | null
+          status?: string
+          tx_hash?: string | null
+        }
+        Update: {
+          attempts?: number
+          error_message?: string | null
+          id?: string
+          job_id?: string
+          owner_user_id?: string
+          position?: number
+          recipients?: Json
+          signed_tx?: string | null
+          status?: string
+          tx_hash?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "celo_batch_chunks_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "celo_batch_jobs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      celo_batch_jobs: {
+        Row: {
+          amount: string
+          client_id: string
+          created_at: string
+          encrypted_key: string | null
+          finished_at: string | null
+          id: string
+          last_error: string | null
+          lease_id: string | null
+          lease_until: string | null
+          owner_user_id: string
+          sender_address: string
+          status: string
+          total: number
+        }
+        Insert: {
+          amount: string
+          client_id: string
+          created_at?: string
+          encrypted_key?: string | null
+          finished_at?: string | null
+          id?: string
+          last_error?: string | null
+          lease_id?: string | null
+          lease_until?: string | null
+          owner_user_id: string
+          sender_address: string
+          status?: string
+          total: number
+        }
+        Update: {
+          amount?: string
+          client_id?: string
+          created_at?: string
+          encrypted_key?: string | null
+          finished_at?: string | null
+          id?: string
+          last_error?: string | null
+          lease_id?: string | null
+          lease_until?: string | null
+          owner_user_id?: string
+          sender_address?: string
+          status?: string
+          total?: number
+        }
+        Relationships: []
+      }
       celo_sweep_jobs: {
         Row: {
           created_at: string
@@ -1270,8 +1365,23 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      create_celo_batch: {
+        Args: {
+          p_amount: string
+          p_client: string
+          p_key: string
+          p_owner: string
+          p_recipients: Json
+          p_sender: string
+        }
+        Returns: string
+      }
       delete_my_failed_key: {
         Args: { p_job_id: string; p_wallet_address: string }
+        Returns: boolean
+      }
+      finish_celo_batch: {
+        Args: { p_job: string; p_lease: string }
         Returns: boolean
       }
       gd_collection_owner_slots: {
@@ -1465,6 +1575,30 @@ export type Database = {
           total: number
         }[]
       }
+      reserve_celo_batch: {
+        Args: never
+        Returns: {
+          amount: string
+          client_id: string
+          created_at: string
+          encrypted_key: string | null
+          finished_at: string | null
+          id: string
+          last_error: string | null
+          lease_id: string | null
+          lease_until: string | null
+          owner_user_id: string
+          sender_address: string
+          status: string
+          total: number
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "celo_batch_jobs"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
       reserve_gd_collection_items: {
         Args: { p_limit?: number }
         Returns: {
@@ -1491,10 +1625,16 @@ export type Database = {
           isSetofReturn: true
         }
       }
+      stop_celo_batch: { Args: { p_job: string }; Returns: boolean }
       stop_gd_collection: { Args: { p_job: string }; Returns: boolean }
+      tick_celo_batch: { Args: never; Returns: undefined }
       tick_gd_collection: { Args: never; Returns: undefined }
       verify_gd_collection_callback: {
         Args: { p_token: string }
+        Returns: boolean
+      }
+      write_celo_chunk: {
+        Args: { p_chunk: string; p_job: string; p_lease: string; p_patch: Json }
         Returns: boolean
       }
     }
