@@ -1,4 +1,5 @@
 # Architecture rules
+- Daily current-result reads use stable ordered pagination that advances by received rows; detail caches are versioned by run progress so open results and key-copy lists refresh after further claims.
 - G$ collection uses encrypted owner-only database queues, atomic globally capped leased reservations split across six-slot secret-authenticated callbacks, and persist-before-broadcast signed transactions; recovery must never create a second transfer, and stopping cancels only unsent work.
 - Scope every history/status read to a verified session owner at the endpoint and SQL boundary; caller-supplied IDs locate rows but never authorize them, and ownerless legacy jobs stay inaccessible.
 - Share dashboard feature entries between home and the services drawer so all public tools stay discoverable without exposing the private workspace URL.
