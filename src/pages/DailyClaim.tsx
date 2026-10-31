@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
+import { dailyResultVersion } from "@/lib/daily-claim-results";
 
 type Network = "celo" | "xdc" | "fuse";
 
@@ -172,7 +173,8 @@ export default function DailyClaim() {
   const [openGroupSuccess, setOpenGroupSuccess] = useState<Record<string, boolean>>({});
   const [detailByGroup, setDetailByGroup] = useState<Record<string, GroupDetail>>({});
   const [detailLoading, setDetailLoading] = useState<Record<string, boolean>>({});
-  const [loadedKinds, setLoadedKinds] = useState<Record<string, boolean>>({});
+  const [loadedKinds, setLoadedKinds] = useState<Record<string, string>>({});
+  const [resultLimits, setResultLimits] = useState<Record<string, number>>({});
 
   const [editingGroup, setEditingGroup] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState<Partial<Group>>({});
@@ -206,7 +208,7 @@ export default function DailyClaim() {
     if (!user) return;
     setWalletsLoading(true);
     try {
-      const res = await supabase.functions.invoke("daily-claim-wallets");
+      const res = await supabase.functions.invoke("daily-claim-wallets?action=list");
       if (res.data?.wallets) setWallets(res.data.wallets);
     } finally {
       setWalletsLoading(false);
@@ -234,6 +236,9 @@ export default function DailyClaim() {
   // Per-group detail (per-wallet rows + failed keys) — on demand only.
   async function loadDetail(groupId: string, kind: "items" | "failed" | "success" | "all" = "all") {
     const loadKey = `${groupId}:${kind}`;
+    const group = groups.find((g) => g.id === groupId);
+    if (!group) return;
+    const version = dailyResultVersion(group);
     setDetailLoading((s) => ({ ...s, [groupId]: true, [loadKey]: true }));
     try {
       const { data, error } = await supabase.functions.invoke("daily-claim-status", {
@@ -251,7 +256,7 @@ export default function DailyClaim() {
           },
         };
       });
-      setLoadedKinds((s) => ({ ...s, [loadKey]: true }));
+      setLoadedKinds((s) => ({ ...s, [loadKey]: version }));
     } catch (e) {
       toast({ title: "লোড করা যায়নি", description: (e as Error).message, variant: "destructive" });
     } finally {
@@ -261,9 +266,19 @@ export default function DailyClaim() {
 
   function ensureDetail(groupId: string, kind: "items" | "failed" | "success" | "all" = "all") {
     const loadKey = `${groupId}:${kind}`;
-    if (!loadedKinds[loadKey] && !detailLoading[loadKey]) loadDetail(groupId, kind);
+    const group = groups.find((g) => g.id === groupId);
+    if (group && loadedKinds[loadKey] !== dailyResultVersion(group) && !detailLoading[loadKey]) loadDetail(groupId, kind);
   }
 
+  useEffect(() => {
+    for (const g of groups) {
+      if (openGroupRuns[g.id]) ensureDetail(g.id, "items");
+      if (openGroupFailed[g.id]) ensureDetail(g.id, "failed");
+      if (openGroupSuccess[g.id]) ensureDetail(g.id, "success");
+    }
+    // Refresh open result boxes when the current run changes, not on every tick.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [groups]);
 
   useEffect(() => {
     if (!user) return;
@@ -412,7 +427,7 @@ export default function DailyClaim() {
   function copyFailed(g: Group) {
     const keys = detailByGroup[g.id]?.failed_keys || [];
     const loadKey = `${g.id}:failed`;
-    if (!loadedKinds[loadKey] && !detailLoading[loadKey]) {
+    if (loadedKinds[loadKey] !== dailyResultVersion(g) || detailLoading[loadKey]) {
       ensureDetail(g.id, "failed");
       toast({ title: "কী লোড হচ্ছে", description: "লোড শেষ হলে আবার কপি করুন" });
       return;
@@ -424,7 +439,7 @@ export default function DailyClaim() {
   function copySuccess(g: Group) {
     const keys = detailByGroup[g.id]?.success_keys || [];
     const loadKey = `${g.id}:success`;
-    if (!loadedKinds[loadKey] && !detailLoading[loadKey]) {
+    if (loadedKinds[loadKey] !== dailyResultVersion(g) || detailLoading[loadKey]) {
       ensureDetail(g.id, "success");
       toast({ title: "সফল কী লোড হচ্ছে", description: "লোড শেষ হলে আবার কপি করুন" });
       return;
@@ -843,14 +858,16 @@ export default function DailyClaim() {
                                 {openGroupRuns[g.id] && (
                                   <div className="space-y-1 max-h-72 overflow-y-auto text-xs">
                                     {detailLoading[g.id] && <p className="text-muted-foreground py-2 text-center">লোড হচ্ছে…</p>}
-                                    {(detailByGroup[g.id]?.items || []).slice(0, 500).map((it) => (
+                                    {(detailByGroup[g.id]?.items || []).slice(0, resultLimits[g.id] ?? 200).map((it) => (
                                       <div key={it.wallet_address} className="flex items-center gap-2 p-2 rounded-md hover:bg-muted/40">
                                         <span className="font-mono flex-1">{shortAddr(it.wallet_address)}</span>
                                         <Badge variant="outline" className={statusColor(it.final_status)}>{statusInfo(it.final_status).label}</Badge>
                                       </div>
                                     ))}
-                                    {(detailByGroup[g.id]?.items.length || 0) > 500 && (
-                                      <p className="text-center text-muted-foreground py-1">প্রথম ৫০০টি দেখানো হচ্ছে (মোট {detailByGroup[g.id]?.items.length})</p>
+                                    {(detailByGroup[g.id]?.items.length || 0) > (resultLimits[g.id] ?? 200) && (
+                                      <Button variant="outline" size="sm" className="w-full" onClick={() => setResultLimits((s) => ({ ...s, [g.id]: (s[g.id] ?? 200) + 200 }))}>
+                                        আরও ২০০টি দেখুন · মোট {detailByGroup[g.id]?.items.length}
+                                      </Button>
                                     )}
                                   </div>
                                 )}

@@ -8,6 +8,7 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { decryptKey } from "../_shared/dailyCrypto.ts";
+import { readAllPages } from "../_shared/pagination.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -121,27 +122,18 @@ async function breakdownForRun(runId: string, ownerUserId: string) {
 
 
 async function pagedItems(runId: string, ownerUserId: string, select: string, apply?: (q: any) => any) {
-  const out: any[] = [];
-  const PAGE = 1000;
-  let from = 0;
-  while (true) {
+  return readAllPages<any>(async (from, to) => {
     let q = admin
       .from("daily_claim_run_items")
       .select(select)
       .eq("run_id", runId)
       .eq("owner_user_id", ownerUserId)
       .order("wallet_address", { ascending: true })
-      .range(from, from + PAGE - 1);
+      .order("id", { ascending: true })
+      .range(from, to);
     if (apply) q = apply(q);
-    const { data: rows, error } = await q;
-    if (error) throw error;
-    const page = (rows || []) as any[];
-    out.push(...page);
-    if (page.length < PAGE) break;
-    from += PAGE;
-    if (from > 20000) break;
-  }
-  return out;
+    return await q;
+  });
 }
 
 async function itemsForRun(runId: string, ownerUserId: string) {
@@ -191,23 +183,16 @@ async function successKeysForRun(runId: string, ownerUserId: string) {
   }
   for (const [key] of grouped.entries()) {
     const [, network] = key.split(":");
-    const PAGE = 1000;
-    let from = 0;
-    while (true) {
-      const { data: saved } = await admin
+    const saved = await readAllPages<any>(async (from, to) => await admin
         .from("daily_claim_wallets")
         .select("wallet_address, encrypted_key")
         .eq("owner_user_id", ownerUserId)
         .eq("network", network)
-        .range(from, from + PAGE - 1);
-      const page = saved || [];
-      for (const s of page) {
+        .order("id", { ascending: true })
+        .range(from, to));
+      for (const s of saved) {
         if (s.encrypted_key) savedKeyByWallet.set(String(s.wallet_address).toLowerCase(), s.encrypted_key);
       }
-      if (page.length < PAGE) break;
-      from += PAGE;
-      if (from > 20000) break;
-    }
   }
 
   const success_keys: any[] = [];
@@ -273,25 +258,18 @@ Deno.serve(async (req) => {
     // ---- Light mode ----
     const walletCounts: Record<string, number> = { celo: 0, xdc: 0, fuse: 0 };
     const perGroupCount = new Map<string, number>();
-    const PAGE = 1000;
-    let from = 0;
-    while (true) {
-      const { data: page, error: pErr } = await admin
+    const wallets = await readAllPages<any>(async (from, to) => await admin
         .from("daily_claim_wallets")
         .select("network, is_active, group_id")
         .eq("owner_user_id", user.id)
-        .range(from, from + PAGE - 1);
-      if (pErr) throw pErr;
-      const rows = page || [];
-      for (const w of rows) {
+        .order("id", { ascending: true })
+        .range(from, to));
+      for (const w of wallets) {
         if (!w.is_active) continue;
         const net = w.network || "celo";
         walletCounts[net] = (walletCounts[net] || 0) + 1;
         if (w.group_id) perGroupCount.set(w.group_id, (perGroupCount.get(w.group_id) || 0) + 1);
       }
-      if (rows.length < PAGE) break;
-      from += PAGE;
-    }
 
     const { data: groups } = await admin
       .from("daily_claim_groups")
