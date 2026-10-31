@@ -64,6 +64,13 @@
       "when": 1793437651175,
       "tag": "0008_gd_collection_owner_fair_fast",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1793437721062,
+      "tag": "0009_verify_collection_owner_quotas",
+      "breakpoints": true
     }
   ]
 }
