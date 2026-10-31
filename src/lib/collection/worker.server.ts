@@ -63,7 +63,7 @@ export async function processCollectionWave() {
    }
    await update({status:'success',error_message:null,signed_tx:null,encrypted_key:null,lease_until:null});
   } catch (error) {
-   const message = String(error instanceof Error ? error.message : '');
+   const message = String(error instanceof Error ? error.message : ''); if (process.env.COLLECT_DEBUG) console.log('collect error', row.attempts, message.slice(0,200));
    if (prepared) { await update({status:'confirming',error_message:'নেটওয়ার্কের নিশ্চিত ফলাফলের অপেক্ষা',lease_until:new Date(Date.now()+60000).toISOString()}); }
    else {
     const gasFailure = /insufficient funds|gas required|intrinsic gas/i.test(message);
