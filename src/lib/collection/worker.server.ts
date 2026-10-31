@@ -1,5 +1,5 @@
-import { Contract, Interface, JsonRpcProvider, Wallet, formatUnits, keccak256, id } from 'ethers';
-import { COLLECTION_CALLBACK_SLOTS, COLLECTION_NETWORKS, transferProven } from './rules';
+import { Contract, Interface, JsonRpcProvider, Transaction, Wallet, formatUnits, keccak256, id } from 'ethers';
+import { COLLECTION_CALLBACK_SLOTS, COLLECTION_NETWORKS, collectionRpc, signedTransferSuperseded, transferProven } from './rules';
 import { decryptCollectionKey } from './crypto.server';
 import { supabaseAdmin } from '@/integrations/supabase/client.server';
 const ABI = ['function balanceOf(address) view returns(uint256)','function decimals() view returns(uint8)','function transfer(address,uint256) returns(bool)'];
@@ -10,7 +10,7 @@ export async function processCollectionWave() {
   const { data: job } = await supabaseAdmin.from('gd_collection_jobs').select('network,receiver,status').eq('id',row.job_id).single();
   if (!job || !(job.network in COLLECTION_NETWORKS)) return;
   const network = COLLECTION_NETWORKS[job.network as keyof typeof COLLECTION_NETWORKS];
-  const provider = new JsonRpcProvider(network.rpc, network.chainId, { staticNetwork: true, batchMaxCount: 1 });
+  const provider = new JsonRpcProvider(collectionRpc(network, row.attempts), network.chainId, { staticNetwork: true, batchMaxCount: 1 });
   const update = async (patch: Record<string, unknown>) => {
    const { data: written,error: writeError } = await supabaseAdmin.from('gd_collection_items').update({...patch,updated_at:new Date().toISOString()}).eq('id',row.id).eq('lease_id',row.lease_id ?? '').select('id').maybeSingle();
    if (writeError || !written) throw new Error('Lease lost');
@@ -42,12 +42,22 @@ export async function processCollectionWave() {
    if (!receipt) {
     try { await provider.broadcastTransaction(raw); } catch (broadcastError) {
      // Receipt/known transaction is authoritative; do not create a replacement transfer.
-     if (!(await provider.getTransaction(hash))) throw broadcastError;
+     if (!(await provider.getTransaction(hash))) {
+      const signed = Transaction.from(raw);
+      const confirmedNonce = await provider.getTransactionCount(signed.from ?? row.wallet_address, 'latest');
+      // Re-check after reading the nonce so a just-mined transfer is never mislabelled.
+      const late = await provider.getTransactionReceipt(hash);
+      if (!late && signedTransferSuperseded(signed.nonce, confirmedNonce, false)) {
+       await update({status:'failed',error_message:'এই লেনদেন আর হবে না — একই ওয়ালেট থেকে অন্য লেনদেন আগে হয়ে গেছে',signed_tx:null,encrypted_key:null,lease_until:null});
+       return;
+      }
+      if (!late) throw broadcastError;
+     }
     }
     receipt = await provider.getTransactionReceipt(hash);
    }
    if (!receipt) { await update({status:'confirming',lease_until:new Date(Date.now()+30000).toISOString()}); return; }
-   const decoded = new Interface(ABI).decodeFunctionData('transfer', (await provider.getTransaction(hash))?.data ?? '0x');
+   const decoded = new Interface(ABI).decodeFunctionData('transfer', Transaction.from(raw).data);
    if (receipt.status !== 1 || !transferProven(receipt.logs,network.token,row.wallet_address,job.receiver,BigInt(decoded[1]),id('Transfer(address,address,uint256)'))) {
     await update({status:'failed',error_message:'লেনদেনে G$ পৌঁছানোর প্রমাণ পাওয়া যায়নি',signed_tx:null,encrypted_key:null,lease_until:null}); return;
    }

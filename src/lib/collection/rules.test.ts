@@ -1,6 +1,6 @@
 import { describe,it,expect } from 'vitest';
 import { id, zeroPadValue, toBeHex, Wallet } from 'ethers';
-import { COLLECTION_NETWORKS, COLLECTION_PARALLEL_LIMIT, COLLECTION_CALLBACK_SLOTS, COLLECTION_CALLBACK_COUNT,parseCollectionKeys,receiverAddress,transferProven } from './rules';
+import { COLLECTION_NETWORKS, COLLECTION_PARALLEL_LIMIT, COLLECTION_CALLBACK_SLOTS, COLLECTION_CALLBACK_COUNT,parseCollectionKeys,receiverAddress,transferProven,collectionRpc,signedTransferSuperseded } from './rules';
 describe('G$ collection rules',()=>{
  it('splits 200 parallel wallets across runtime-safe callback slots',()=>{
   expect(COLLECTION_PARALLEL_LIMIT).toBe(200);
@@ -26,5 +26,16 @@ describe('G$ collection rules',()=>{
   expect(transferProven([log],log.address,sender,receiver,500n,topic)).toBe(true);
   expect(transferProven([],log.address,sender,receiver,500n,topic)).toBe(false);
   expect(transferProven([log],log.address,sender,receiver,501n,topic)).toBe(false);
+ });
+ it('ends a stored transfer only when its nonce is used and the network does not know it',()=>{
+  expect(signedTransferSuperseded(33,34,false)).toBe(true);
+  expect(signedTransferSuperseded(33,33,false)).toBe(false);
+  expect(signedTransferSuperseded(33,34,true)).toBe(false);
+ });
+ it('moves XDC retries off a failed network endpoint',()=>{
+  const xdc=COLLECTION_NETWORKS.xdc;
+  expect(collectionRpc(xdc,1)).toBe('https://rpc.xinfin.network');
+  expect(collectionRpc(xdc,2)).not.toBe(collectionRpc(xdc,1));
+  expect(collectionRpc(xdc,3)).not.toBe(collectionRpc(xdc,2));
  });
 });
