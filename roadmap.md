@@ -1,4 +1,5 @@
 # Tasks
+- [ ] Replace G$ bulk send with native CELO sending to 1,000+ addresses; exact equal amounts, private sender key, fee/balance checks, owner-only results and safe transaction recovery.
 - [x] Replace monopolized collection slots with least-active-owner reservations, up to 200 per owner and 1,000 shared safety ceiling, fair quotas for more owners, and active-only 15-second dispatch. Applied SQL; four live quota assertions and ten regression tests pass; authenticated collection page opens without runtime errors. Multi-owner real-transfer throughput remains unmeasured.
 - [x] Repair manual claim counters and gas-recovery selection truncated at 1,000 rows; reconcile existing totals. Deployed worker, 19 tests pass, authenticated account page confirms 3,895 total / 3,858 success / 37 other results.
 - [x] Verify Fuse supports 5,000 uploaded wallets; repair current-run pagination, stale detail caching, 500-row display cutoff and wallet-list action. Fifteen tests pass; populated browser fixture reaches wallet 5,000 and refreshes 1,000→5,000 results; status endpoint deployed.
