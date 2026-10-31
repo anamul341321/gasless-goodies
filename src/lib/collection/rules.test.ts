@@ -1,17 +1,21 @@
 import { describe,it,expect } from 'vitest';
 import { id, zeroPadValue, toBeHex, Wallet } from 'ethers';
-import { COLLECTION_NETWORKS, COLLECTION_PARALLEL_LIMIT, COLLECTION_CALLBACK_SLOTS, COLLECTION_CALLBACK_COUNT,parseCollectionKeys,receiverAddress,transferProven,collectionRpc,signedTransferSuperseded } from './rules';
+import { COLLECTION_NETWORKS, COLLECTION_OWNER_PARALLEL_LIMIT, COLLECTION_PARALLEL_LIMIT, COLLECTION_CALLBACK_SLOTS, COLLECTION_CALLBACK_COUNT,parseCollectionKeys,receiverAddress,transferProven,collectionRpc,signedTransferSuperseded } from './rules';
 describe('G$ collection rules',()=>{
- it('splits 200 parallel wallets across runtime-safe callback slots',()=>{
-  expect(COLLECTION_PARALLEL_LIMIT).toBe(200);
+ it('keeps per-owner capacity separate from the shared safety ceiling',()=>{
+  expect(COLLECTION_OWNER_PARALLEL_LIMIT).toBe(200);
+  expect(COLLECTION_PARALLEL_LIMIT).toBe(1000);
   expect(COLLECTION_CALLBACK_SLOTS).toBe(6);
-  expect(COLLECTION_CALLBACK_COUNT).toBe(34);
-  expect(COLLECTION_CALLBACK_COUNT*COLLECTION_CALLBACK_SLOTS).toBeGreaterThanOrEqual(200);
-  expect((COLLECTION_CALLBACK_COUNT-1)*COLLECTION_CALLBACK_SLOTS).toBeLessThan(200);
+  expect(COLLECTION_CALLBACK_COUNT).toBe(167);
+  expect(COLLECTION_CALLBACK_COUNT*COLLECTION_CALLBACK_SLOTS).toBeGreaterThanOrEqual(1000);
+  expect((COLLECTION_CALLBACK_COUNT-1)*COLLECTION_CALLBACK_SLOTS).toBeLessThan(1000);
  });
- it('accepts more than 4,000 unique wallets without truncation',()=>{
-  const keys=Array.from({length:4001},(_,i)=>toBeHex(i+1,32));
-  expect(parseCollectionKeys(keys.join('\n'))).toHaveLength(4001);
+ it('accepts 10,000 unique wallets for each user without truncation',()=>{
+  const keys=Array.from({length:10000},(_,i)=>toBeHex(i+1,32));
+  expect(parseCollectionKeys(keys.join('\n'))).toHaveLength(10000);
+ },20000);
+ it('rejects a batch above 10,000 without silently dropping wallets',()=>{
+  expect(()=>parseCollectionKeys(Array.from({length:10001},(_,i)=>toBeHex(i+1,32)).join('\n'))).toThrow();
  });
  it('deduplicates repeated keys to prevent duplicate transfers',()=>{const key=toBeHex(1,32);expect(parseCollectionKeys(`${key}\n${key}`)).toHaveLength(1)});
  it('supports both requested networks and their G$ token contracts',()=>{

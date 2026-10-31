@@ -1,7 +1,8 @@
 import { Wallet, getAddress, ZeroAddress } from 'ethers';
 export const MAX_COLLECTION_KEYS = 10000;
 export const UPLOAD_CHUNK = 200;
-export const COLLECTION_PARALLEL_LIMIT = 200;
+export const COLLECTION_OWNER_PARALLEL_LIMIT = 200;
+export const COLLECTION_PARALLEL_LIMIT = 1000;
 export const COLLECTION_CALLBACK_SLOTS = 6;
 export const COLLECTION_CALLBACK_COUNT = Math.ceil(COLLECTION_PARALLEL_LIMIT / COLLECTION_CALLBACK_SLOTS);
 export const COLLECTION_NETWORKS = {
