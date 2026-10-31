@@ -78,6 +78,13 @@
       "when": 1793450187382,
       "tag": "0010_celo_native_batch_send",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1793450327608,
+      "tag": "0011_celo_batch_restrict_functions_fast_continue",
+      "breakpoints": true
     }
   ]
 }

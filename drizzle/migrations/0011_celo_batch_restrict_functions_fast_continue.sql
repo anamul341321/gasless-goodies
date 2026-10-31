@@ -1,0 +1,9 @@
+REVOKE ALL ON FUNCTION public.create_celo_batch(uuid,uuid,text,text,text,jsonb),public.reserve_celo_batch(),public.write_celo_chunk(uuid,uuid,uuid,jsonb),public.finish_celo_batch(uuid,uuid),public.tick_celo_batch(),public.wake_celo_batch() FROM anon,authenticated;
+REVOKE ALL ON FUNCTION public.stop_celo_batch(uuid) FROM anon;
+GRANT EXECUTE ON FUNCTION public.create_celo_batch(uuid,uuid,text,text,text,jsonb),public.reserve_celo_batch(),public.write_celo_chunk(uuid,uuid,uuid,jsonb),public.finish_celo_batch(uuid,uuid),public.tick_celo_batch() TO service_role;
+CREATE OR REPLACE FUNCTION public.finish_celo_batch(p_job uuid,p_lease uuid) RETURNS boolean LANGUAGE plpgsql SECURITY DEFINER SET search_path=public AS $$ DECLARE j public.celo_batch_jobs; remaining boolean; confirming boolean; BEGIN
+ SELECT * INTO j FROM public.celo_batch_jobs WHERE id=p_job AND lease_id=p_lease FOR UPDATE; IF j.id IS NULL THEN RETURN false; END IF;
+ IF j.status='stopping' THEN UPDATE public.celo_batch_chunks SET status='cancelled' WHERE job_id=p_job AND status='pending' AND signed_tx IS NULL; END IF;
+ SELECT EXISTS(SELECT 1 FROM public.celo_batch_chunks WHERE job_id=p_job AND status IN ('pending','confirming')), EXISTS(SELECT 1 FROM public.celo_batch_chunks WHERE job_id=p_job AND status='confirming') INTO remaining,confirming;
+ UPDATE public.celo_batch_jobs SET status=CASE WHEN remaining THEN status WHEN status='stopping' THEN 'stopped' ELSE 'completed' END,encrypted_key=CASE WHEN remaining THEN encrypted_key ELSE NULL END,finished_at=CASE WHEN remaining THEN NULL ELSE now() END,lease_until=CASE WHEN NOT remaining THEN NULL WHEN confirming THEN now()+interval '10 seconds' ELSE now() END,lease_id=NULL WHERE id=p_job;
+ IF remaining AND NOT confirming THEN PERFORM public.tick_celo_batch(); END IF; RETURN true; END; $$;
