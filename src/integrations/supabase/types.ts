@@ -1274,6 +1274,10 @@ export type Database = {
         Args: { p_job_id: string; p_wallet_address: string }
         Returns: boolean
       }
+      gd_collection_owner_slots: {
+        Args: { p_active: number; p_owners: number }
+        Returns: number
+      }
       gd_collection_summary: { Args: { p_job: string }; Returns: Json }
       get_daily_claim_fingerprint: { Args: never; Returns: string }
       get_free_gas_count_today: {
