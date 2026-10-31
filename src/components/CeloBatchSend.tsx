@@ -22,7 +22,14 @@ export default function CeloBatchSend(){
  let recipients:string[]=[];let inputError='';let total='0';
  try{if(addresses.trim())recipients=celoRecipients(addresses);total=celoTotal(amount,recipients.length);}catch(e){inputError=e instanceof Error?e.message:'তথ্য সঠিক নয়';}
  const refresh=async()=>{try{setResult(await statusFn({data:{}}));}catch(e){setError(e instanceof Error?e.message:'ফলাফল দেখা যাচ্ছে না');}};
- useEffect(()=>{if(!user)return;void refresh();const timer=setInterval(()=>void refresh(),5000);return()=>clearInterval(timer);},[user?.id]);
+ useEffect(()=>{
+  setResult(null);setQuote(null);setKey('');setClientId('');setPage(0);setError('');
+  if(!user)return;
+  let cancelled=false;
+  const read=async()=>{try{const next=await statusFn({data:{}});if(!cancelled)setResult(next);}catch(e){if(!cancelled)setError(e instanceof Error?e.message:'ফলাফল দেখা যাচ্ছে না');}};
+  void read();const timer=setInterval(()=>void read(),5000);
+  return()=>{cancelled=true;clearInterval(timer);};
+ },[user?.id]);
  const changed=()=>{setQuote(null);setClientId('');setError('');};
  const check=async()=>{
   setBusy(true);setError('');try{const q=await quoteFn({data:{key,recipients,amount}});setQuote(q);setClientId(crypto.randomUUID());}catch(e){setError(e instanceof Error?e.message:'খরচ জানা যায়নি');}finally{setBusy(false);}
