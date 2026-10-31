@@ -33,6 +33,7 @@ import { Route as AdminIndexRouteImport } from './routes/admin/index'
 import { Route as AdminBatchHistoryRouteImport } from './routes/admin/batch-history'
 import { Route as AdminGasLoaderRouteImport } from './routes/admin/gas-loader'
 import { Route as DotlovableOauthConsentRouteImport } from './routes/[.]lovable.oauth.consent'
+import { Route as ApiPublicHooksCeloBatchRouteImport } from './routes/api/public/hooks/celo-batch'
 import { Route as ApiPublicHooksGdCollectionRouteImport } from './routes/api/public/hooks/gd-collection'
 
 const IndexRoute = IndexRouteImport.update({
@@ -156,6 +157,11 @@ const DotlovableOauthConsentRoute = DotlovableOauthConsentRouteImport.update({
   path: '/.lovable/oauth/consent',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicHooksCeloBatchRoute = ApiPublicHooksCeloBatchRouteImport.update({
+  id: '/api/public/hooks/celo-batch',
+  path: '/api/public/hooks/celo-batch',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiPublicHooksGdCollectionRoute =
   ApiPublicHooksGdCollectionRouteImport.update({
     id: '/api/public/hooks/gd-collection',
@@ -188,6 +194,7 @@ export interface FileRoutesByFullPath {
   '/admin/gas-loader': typeof AdminGasLoaderRoute
   '/admin/': typeof AdminIndexRoute
   '/.lovable/oauth/consent': typeof DotlovableOauthConsentRoute
+  '/api/public/hooks/celo-batch': typeof ApiPublicHooksCeloBatchRoute
   '/api/public/hooks/gd-collection': typeof ApiPublicHooksGdCollectionRoute
 }
 export interface FileRoutesByTo {
@@ -215,6 +222,7 @@ export interface FileRoutesByTo {
   '/admin/gas-loader': typeof AdminGasLoaderRoute
   '/admin': typeof AdminIndexRoute
   '/.lovable/oauth/consent': typeof DotlovableOauthConsentRoute
+  '/api/public/hooks/celo-batch': typeof ApiPublicHooksCeloBatchRoute
   '/api/public/hooks/gd-collection': typeof ApiPublicHooksGdCollectionRoute
 }
 export interface FileRoutesById {
@@ -243,6 +251,7 @@ export interface FileRoutesById {
   '/admin/gas-loader': typeof AdminGasLoaderRoute
   '/admin/': typeof AdminIndexRoute
   '/.lovable/oauth/consent': typeof DotlovableOauthConsentRoute
+  '/api/public/hooks/celo-batch': typeof ApiPublicHooksCeloBatchRoute
   '/api/public/hooks/gd-collection': typeof ApiPublicHooksGdCollectionRoute
 }
 export interface FileRouteTypes {
@@ -272,6 +281,7 @@ export interface FileRouteTypes {
     | '/admin/gas-loader'
     | '/admin/'
     | '/.lovable/oauth/consent'
+    | '/api/public/hooks/celo-batch'
     | '/api/public/hooks/gd-collection'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -299,6 +309,7 @@ export interface FileRouteTypes {
     | '/admin/gas-loader'
     | '/admin'
     | '/.lovable/oauth/consent'
+    | '/api/public/hooks/celo-batch'
     | '/api/public/hooks/gd-collection'
   id:
     | '__root__'
@@ -326,6 +337,7 @@ export interface FileRouteTypes {
     | '/admin/gas-loader'
     | '/admin/'
     | '/.lovable/oauth/consent'
+    | '/api/public/hooks/celo-batch'
     | '/api/public/hooks/gd-collection'
   fileRoutesById: FileRoutesById
 }
@@ -354,6 +366,7 @@ export interface RootRouteChildren {
   AdminGasLoaderRoute: typeof AdminGasLoaderRoute
   AdminIndexRoute: typeof AdminIndexRoute
   DotlovableOauthConsentRoute: typeof DotlovableOauthConsentRoute
+  ApiPublicHooksCeloBatchRoute: typeof ApiPublicHooksCeloBatchRoute
   ApiPublicHooksGdCollectionRoute: typeof ApiPublicHooksGdCollectionRoute
 }
 
@@ -527,6 +540,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DotlovableOauthConsentRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/hooks/celo-batch': {
+      id: '/api/public/hooks/celo-batch'
+      path: '/api/public/hooks/celo-batch'
+      fullPath: '/api/public/hooks/celo-batch'
+      preLoaderRoute: typeof ApiPublicHooksCeloBatchRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/hooks/gd-collection': {
       id: '/api/public/hooks/gd-collection'
       path: '/api/public/hooks/gd-collection'
@@ -563,6 +583,7 @@ const rootRouteChildren: RootRouteChildren = {
   AdminGasLoaderRoute: AdminGasLoaderRoute,
   AdminIndexRoute: AdminIndexRoute,
   DotlovableOauthConsentRoute: DotlovableOauthConsentRoute,
+  ApiPublicHooksCeloBatchRoute: ApiPublicHooksCeloBatchRoute,
   ApiPublicHooksGdCollectionRoute: ApiPublicHooksGdCollectionRoute,
 }
 export const routeTree = rootRouteImport
