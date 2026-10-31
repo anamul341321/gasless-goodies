@@ -1,4 +1,5 @@
 # Tasks
+- [ ] Replace monopolized collection slots with owner-fair reservations and faster sustained callbacks; preserve 10,000-wallet uploads, six-slot requests and signed-transfer safety.
 - [x] Repair manual claim counters and gas-recovery selection truncated at 1,000 rows; reconcile existing totals. Deployed worker, 19 tests pass, authenticated account page confirms 3,895 total / 3,858 success / 37 other results.
 - [x] Verify Fuse supports 5,000 uploaded wallets; repair current-run pagination, stale detail caching, 500-row display cutoff and wallet-list action. Fifteen tests pass; populated browser fixture reaches wallet 5,000 and refreshes 1,000→5,000 results; status endpoint deployed.
 - [ ] Verify a real 5,000-wallet Fuse run end-to-end — blocked: available signed-in account has no claim groups or saved wallets; no real claims submitted.
