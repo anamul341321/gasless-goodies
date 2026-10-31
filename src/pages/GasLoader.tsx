@@ -99,14 +99,18 @@ const GasLoader = () => {
   const [invalid, setInvalid] = useState<string[]>([]);
   const [delaySec, setDelaySec] = useState(3);
   const [batchName, setBatchName] = useState("");
-  const [network, setNetwork] = useState<"celo" | "xdc" | "fuse">(
-    () => (localStorage.getItem("gl_network") as "celo" | "xdc" | "fuse") || "celo"
-  );
+  const [network, setNetwork] = useState<"celo" | "xdc" | "fuse">("celo");
+  const [networkLoaded, setNetworkLoaded] = useState(false);
   const [loaderEnabled, setLoaderEnabled] = useState<boolean>(true);
 
   useEffect(() => {
-    localStorage.setItem("gl_network", network);
-  }, [network]);
+    const saved = localStorage.getItem("gl_network");
+    if (saved === "celo" || saved === "xdc" || saved === "fuse") setNetwork(saved);
+    setNetworkLoaded(true);
+  }, []);
+  useEffect(() => {
+    if (networkLoaded) localStorage.setItem("gl_network", network);
+  }, [network, networkLoaded]);
 
 
   // Active server-side job state
