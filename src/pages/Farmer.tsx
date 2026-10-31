@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, Navigate } from "@/lib/router-compat";
 import {
-  ArrowLeft, Loader2, Square, Sparkles, Send, ExternalLink, Search, Wallet as WalletIcon, Copy, Gift, Fuel,
+  ArrowLeft, Loader2, Square, Sparkles, Send, ExternalLink, Search, Wallet as WalletIcon, Copy,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,6 +13,7 @@ import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import GasLoader from "./GasLoader";
+import CeloBatchSend from "@/components/CeloBatchSend";
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
 
@@ -86,147 +87,6 @@ export default function Farmer() {
     await navigator.clipboard.writeText(addrs);
     toast({ title: "ঠিকানা কপি হয়েছে" });
   };
-
-  // ----- Bulk Send G$ state (async job system) -----
-  const [bulkSenderKey, setBulkSenderKey] = useState("");
-  const [bulkRecipients, setBulkRecipients] = useState("");
-  const [bulkAmount, setBulkAmount] = useState("0.5");
-  const [bulkSubmitting, setBulkSubmitting] = useState(false);
-  const [bulkCancelling, setBulkCancelling] = useState(false);
-  const [bulkJobId, setBulkJobId] = useState<string | null>(null);
-  const [bulkJob, setBulkJob] = useState<any>(null);
-  const [bulkRecipientsStatus, setBulkRecipientsStatus] = useState<any[]>([]);
-
-  useEffect(() => {
-    setBulkJob(null); setBulkRecipientsStatus([]); setSweepSummary(null); setSweepResults(null); setSweepProgress(null);
-    setBulkJobId(user ? localStorage.getItem(`gd_bulk_job_id:${user.id}`) : null);
-  }, [user?.id]);
-
-  // Poll job status — only depends on bulkJobId; uses local var for stop condition
-  useEffect(() => {
-    if (!bulkJobId || !session?.access_token) return;
-    let cancelled = false;
-    let stopped = false;
-    const fetchStatus = async () => {
-      try {
-        const res = await fetch(
-          `${SUPABASE_URL}/functions/v1/gd-bulk-status?job_id=${bulkJobId}`,
-          { headers: { apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string, Authorization: `Bearer ${session?.access_token || ""}` } }
-        );
-        const json = await res.json();
-        if (cancelled) return;
-        if (res.ok && json?.ok) {
-          setBulkJob(json.job);
-          setBulkRecipientsStatus(json.recipients || []);
-          const s = json.job?.status;
-          if (s === "completed" || s === "failed" || s === "stopped") {
-            stopped = true;
-          }
-        }
-      } catch {}
-    };
-    fetchStatus();
-    const iv = setInterval(() => {
-      if (stopped) return;
-      fetchStatus();
-    }, 4000);
-    return () => { cancelled = true; clearInterval(iv); };
-  }, [bulkJobId, session?.access_token]);
-
-  const clearBulkJob = () => {
-    setBulkJobId(null);
-    setBulkJob(null);
-    setBulkRecipientsStatus([]);
-    try { localStorage.removeItem(`gd_bulk_job_id:${user?.id || "signed-out"}`); } catch {}
-  };
-
-  const cancelBulkJob = async () => {
-    if (!bulkJobId || bulkCancelling) return;
-    if (!confirm("বন্ধ করুন this bulk send job? Pending wallets will be skipped; any transaction already submitted on-chain cannot be cancelled.")) return;
-    setBulkCancelling(true);
-    try {
-      const res = await fetch(`${SUPABASE_URL}/functions/v1/gd-bulk-cancel`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string,
-          Authorization: `Bearer ${session?.access_token || ""}`,
-        },
-        body: JSON.stringify({ job_id: bulkJobId }),
-      });
-      const json = await res.json();
-      if (!res.ok) {
-        toast({ title: "Cancel failed", description: json?.error || `HTTP ${res.status}`, variant: "destructive" });
-      } else {
-        toast({ title: "Bulk send stopped", description: `${json.skipped || 0} pending wallets skipped.` });
-        setBulkJob((prev: any) => prev ? { ...prev, status: "stopped", skipped: json.skipped, sent: json.sent, failed: json.failed, last_error: "Cancelled by user" } : prev);
-      }
-    } catch (e: any) {
-      toast({ title: "সংযোগের সমস্যা", description: e?.message || String(e), variant: "destructive" });
-    } finally {
-      setBulkCancelling(false);
-    }
-  };
-
-  const runBulkSend = async () => {
-    let key = bulkSenderKey.trim();
-    if (/^[a-fA-F0-9]{64}$/.test(key)) key = "0x" + key;
-    if (!/^0x[a-fA-F0-9]{64}$/.test(key)) {
-      toast({ title: "প্রেরকের কী ভুল", variant: "destructive" });
-      return;
-    }
-    const recipients = bulkRecipients
-      .split(/[\s,;\n]+/)
-      .map(r => r.trim())
-      .filter(r => /^0x[a-fA-F0-9]{40}$/.test(r));
-    if (recipients.length === 0) {
-      toast({ title: "সঠিক প্রাপকের ঠিকানা দিন", variant: "destructive" });
-      return;
-    }
-    if (recipients.length > 5000) {
-      toast({ title: "একবারে সর্বোচ্চ ৫০০০ জন প্রাপক", variant: "destructive" });
-      return;
-    }
-    const amt = Number(bulkAmount);
-    if (!Number.isFinite(amt) || amt <= 0) {
-      toast({ title: "সঠিক পরিমাণ দিন", variant: "destructive" });
-      return;
-    }
-    const total = (amt * recipients.length).toFixed(4);
-    if (!confirm(`Send ${amt} G$ to ${recipients.length} wallets?\n\nTotal: ${total} G$\n\nRuns on our servers — safe to close the browser.`)) return;
-
-    setBulkSubmitting(true);
-    try {
-      const res = await fetch(`${SUPABASE_URL}/functions/v1/gd-bulk-send`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string,
-          Authorization: `Bearer ${session?.access_token || ""}`,
-        },
-        body: JSON.stringify({ sender_key: key, recipients, amount: bulkAmount }),
-      });
-      const json = await res.json();
-      if (!res.ok) {
-        toast({ title: "Submit failed", description: json?.error || `HTTP ${res.status}`, variant: "destructive" });
-      } else {
-        try { localStorage.setItem(`gd_bulk_job_id:${user?.id || "signed-out"}`, json.job_id); } catch {}
-        setBulkJobId(json.job_id);
-        setBulkJob(null);
-        setBulkRecipientsStatus([]);
-        setBulkSenderKey("");
-        toast({
-          title: "G$ পাঠানো শুরু হয়েছে",
-          description: json.message || `${json.total} queued. Safe to close browser.`,
-        });
-      }
-    } catch (e: any) {
-      toast({ title: "সংযোগের সমস্যা", description: e?.message || String(e), variant: "destructive" });
-    } finally {
-      setBulkSubmitting(false);
-    }
-  };
-
 
   // Resume any running sweep job on mount, then keep polling
   useEffect(() => {
@@ -349,14 +209,14 @@ export default function Farmer() {
             <ArrowLeft className="size-4" /> ড্যাশবোর্ড
           </Link>
           <Badge variant="outline" className="gap-1">
-            <Sparkles className="size-3" /> G$ ও CELO সুবিধা
+            <Sparkles className="size-3" /> CELO সুবিধা
           </Badge>
         </div>
 
         <Tabs defaultValue="bulksend" className="space-y-4">
           <TabsList className="w-full grid grid-cols-4">
             <TabsTrigger value="gasloader">গ্যাস নিন</TabsTrigger>
-            <TabsTrigger value="bulksend">G$ পাঠান</TabsTrigger>
+            <TabsTrigger value="bulksend">CELO পাঠান</TabsTrigger>
             <TabsTrigger value="sweeper">CELO সংগ্রহ</TabsTrigger>
             <TabsTrigger value="check">ব্যালেন্স</TabsTrigger>
           </TabsList>
@@ -368,184 +228,9 @@ export default function Farmer() {
             </div>
           </TabsContent>
 
-          {/* ============ BULK SEND G$ TAB ============ */}
           <TabsContent value="bulksend" className="space-y-4">
-            <Card className="glass-card-elevated">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-lg">
-                  <Gift className="size-5" /> একসাথে G$ পাঠান
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <p className="text-xs text-muted-foreground">
-                  
-                </p>
-
-                <div>
-                  <label className="text-xs font-medium text-muted-foreground mb-1 block">
-                    প্রেরকের প্রাইভেট কী (G$ ও CELO থাকতে হবে)
-                  </label>
-                  <Input
-                    type="password"
-                    value={bulkSenderKey}
-                    onChange={e => setBulkSenderKey(e.target.value)}
-                    placeholder="0x..."
-                    className="font-mono text-xs"
-                    disabled={bulkSubmitting}
-                  />
-                </div>
-
-                <div>
-                  <label className="text-xs font-medium text-muted-foreground mb-1 block">
-                    প্রতি ওয়ালেটে G$ এর পরিমাণ
-                  </label>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    value={bulkAmount}
-                    onChange={e => setBulkAmount(e.target.value)}
-                    className="font-mono text-xs"
-                    disabled={bulkSubmitting}
-                  />
-                </div>
-
-                <div>
-                  <label className="text-xs font-medium text-muted-foreground mb-1 block">
-                    প্রতি লাইনে একটি প্রাপকের ঠিকানা
-                  </label>
-                  <Textarea
-                    value={bulkRecipients}
-                    onChange={e => setBulkRecipients(e.target.value)}
-                    placeholder="0xabc...&#10;0xdef...&#10;0x123..."
-                    rows={8}
-                    className="font-mono text-xs"
-                    disabled={bulkSubmitting}
-                  />
-                  <p className="text-[11px] text-muted-foreground mt-1">
-                    {(() => {
-                      const count = bulkRecipients
-                        .split(/[\s,;\n]+/)
-                        .map(r => r.trim())
-                        .filter(r => /^0x[a-fA-F0-9]{40}$/.test(r)).length;
-                      const amt = Number(bulkAmount) || 0;
-                      return `${count} valid recipient${count === 1 ? "" : "s"} · total ${(count * amt).toFixed(4)} G$`;
-                    })()}
-                  </p>
-                </div>
-
-                <Button onClick={runBulkSend} disabled={bulkSubmitting} className="w-full">
-                  {bulkSubmitting ? <Loader2 className="size-4 animate-spin" /> : <Gift className="size-4" />}
-                  {bulkSubmitting ? "অনুরোধ যাচ্ছে…" : "G$ পাঠান"}
-                </Button>
-                <p className="text-[11px] text-muted-foreground -mt-1">
-                  
-                </p>
-
-                {bulkJobId && bulkJob && (
-                  <div className="space-y-3 pt-3 border-t border-border">
-                    <div className="flex items-center justify-between">
-                      <div className="text-xs">
-                        <span className="text-muted-foreground">Job: </span>
-                        <span className="font-mono">{String(bulkJobId).slice(0, 8)}…</span>
-                        <Badge
-                          variant={
-                            bulkJob.status === "completed" ? "default"
-                            : bulkJob.status === "failed" ? "destructive"
-                            : "secondary"
-                          }
-                          className="ml-2 text-[10px]"
-                        >
-                          {bulkJob.status}
-                        </Badge>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        {(bulkJob.status === "pending" || bulkJob.status === "processing") && (
-                          <Button size="sm" variant="destructive" onClick={cancelBulkJob} disabled={bulkCancelling}>
-                            {bulkCancelling ? <Loader2 className="size-3 animate-spin" /> : <Square className="size-3" />}
-                            বন্ধ করুন
-                          </Button>
-                        )}
-                        {(bulkJob.status === "completed" || bulkJob.status === "failed" || bulkJob.status === "stopped") && (
-                          <Button size="sm" variant="ghost" onClick={clearBulkJob}>
-                            মুছুন
-                          </Button>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-4 gap-2 text-center">
-                      <div className="p-2 rounded bg-muted/40 border border-border">
-                        <p className="text-lg font-bold">{bulkJob.total}</p>
-                        <p className="text-[10px] text-muted-foreground uppercase">মোট</p>
-                      </div>
-                      <div className="p-2 rounded bg-primary/10 border border-primary/20">
-                        <p className="text-lg font-bold text-primary">{bulkJob.sent}</p>
-                        <p className="text-[10px] text-muted-foreground uppercase">পাঠানো হয়েছে</p>
-                      </div>
-                      <div className="p-2 rounded bg-destructive/10 border border-destructive/20">
-                        <p className="text-lg font-bold text-destructive">{bulkJob.failed}</p>
-                        <p className="text-[10px] text-muted-foreground uppercase">ব্যর্থ</p>
-                      </div>
-                      <div className="p-2 rounded bg-muted/40 border border-border">
-                        <p className="text-lg font-bold">{bulkJob.skipped || 0}</p>
-                        <p className="text-[10px] text-muted-foreground uppercase">বাদ</p>
-                      </div>
-                    </div>
-
-                    {bulkJob.last_error && (
-                      <div className="p-2 rounded bg-destructive/10 border border-destructive/20 text-[11px] text-destructive break-words">
-                        {bulkJob.last_error}
-                      </div>
-                    )}
-
-                    {bulkJob.approve_tx && (
-                      <div className="p-2 rounded bg-muted/40 border border-border text-xs">
-                        <span className="text-muted-foreground">অনুমতির লেনদেন: </span>
-                        <a
-                          href={`https://celoscan.io/tx/${bulkJob.approve_tx}`}
-                          target="_blank" rel="noreferrer"
-                          className="text-primary hover:underline inline-flex items-center gap-1"
-                        >
-                          <ExternalLink className="size-3" /> দেখুন
-                        </a>
-                      </div>
-                    )}
-
-                    {bulkRecipientsStatus.length > 0 && (
-                      <div className="space-y-1 max-h-72 overflow-y-auto">
-                        {bulkRecipientsStatus.slice(0, 200).map((r, i) => (
-                          <div key={i} className="flex items-center justify-between gap-2 px-2 py-1 rounded bg-muted/30 text-[11px] font-mono">
-                            <span className="truncate">{r.wallet_address.slice(0, 10)}…{r.wallet_address.slice(-6)}</span>
-                            {r.status === "sent" && r.tx_hash ? (
-                              <a
-                                href={`https://celoscan.io/tx/${r.tx_hash}`}
-                                target="_blank" rel="noreferrer"
-                                className="text-primary hover:underline inline-flex items-center gap-1 flex-shrink-0"
-                              >
-                                <ExternalLink className="size-3" /> পাঠানো হয়েছে
-                              </a>
-                            ) : r.status === "failed" ? (
-                              <Badge variant="destructive" className="text-[10px]">ব্যর্থ</Badge>
-                            ) : (
-                              <Badge variant="secondary" className="text-[10px]">{r.status}</Badge>
-                            )}
-                          </div>
-                        ))}
-                        {bulkRecipientsStatus.length > 200 && (
-                          <p className="text-[10px] text-muted-foreground text-center pt-1">
-                            প্রথম ২০০টি দেখানো হচ্ছে, মোট {bulkRecipientsStatus.length}
-                          </p>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-              </CardContent>
-            </Card>
+            <CeloBatchSend />
           </TabsContent>
-
 
           <TabsContent value="sweeper" className="space-y-4">
             <Card className="glass-card-elevated">
