@@ -25,3 +25,10 @@ export function canAffordSelfTopUp(balance: bigint | null, gasLimit: bigint, gas
   if (balance === null || gasLimit <= 0n || gasPrice <= 0n) return false;
   return balance >= selfTopUpGasLimit(gasLimit) * gasPrice;
 }
+
+// GoodDollar answered {ok:1} and sent nothing: by its own rule the wallet
+// already has enough gas. Retrying with another IP cannot change that answer.
+export const ENOUGH_GAS_PREFIX = "ENOUGH_GAS:";
+export function isEnoughGasNote(message?: string | null): boolean {
+  return (message || "").startsWith(ENOUGH_GAS_PREFIX);
+}

@@ -1,8 +1,8 @@
 // Background worker that processes pending gas_load_queue rows.
 // Runs on a cron schedule (every minute) AND can be kicked by gas-loader on submit.
 // Single-instance guarded by PG advisory lock to prevent overlap.
-import { canAffordSelfTopUp, faucetRejection, hasGasIncrease, selfTopUpGasLimit } from "./verification.ts";
-import { Wallet, JsonRpcProvider, Contract } from "npm:ethers@6.13.4";
+import { canAffordSelfTopUp, ENOUGH_GAS_PREFIX, faucetRejection, hasGasIncrease, selfTopUpGasLimit } from "./verification.ts";
+import { Wallet, JsonRpcProvider, Contract, getAddress } from "npm:ethers@6.13.4";
 import { decryptKey } from "../_shared/dailyCrypto.ts";
 
 // GoodDollar faucet contracts. When a wallet already holds enough native coin
@@ -35,9 +35,9 @@ const RPC_URLS: Record<Network, string> = { celo: CELO_RPC_URL, xdc: XDC_RPC_URL
 const NATIVE_LABEL: Record<Network, string> = { celo: "CELO", xdc: "XDC", fuse: "FUSE" };
 const WEBSHARE_HOST = "p.webshare.io";
 const WEBSHARE_PORT = "80";
-const BALANCE_VERIFY_ATTEMPTS = 16;
-const BALANCE_VERIFY_DELAY_MS = 2_000;
-const PARALLEL_LANES = 5;
+const BALANCE_VERIFY_ATTEMPTS = 10;
+const BALANCE_VERIFY_DELAY_MS = 1_500;
+const PARALLEL_LANES = 10;
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const WS_USERNAME = Deno.env.get("WEBSHARE_PROXY_USERNAME") ?? "";
@@ -178,11 +178,14 @@ function isTerminalFaucetError(error?: string | null): boolean {
 }
 
 async function findStoredKey(account: string): Promise<string | null> {
-  const addr = encodeURIComponent(account);
+  let checksum = account;
+  try { checksum = getAddress(account.toLowerCase()); } catch (_) { /* keep raw */ }
+  const forms = Array.from(new Set([account, account.toLowerCase(), checksum]))
+    .map((a) => `"${a}"`).join(",");
   for (const table of ["daily_claim_wallets", "daily_claim_run_items"]) {
     try {
       const res = await fetch(
-        `${SUPABASE_URL}/rest/v1/${table}?select=encrypted_key&wallet_address=ilike.${addr}&encrypted_key=not.is.null&order=created_at.desc&limit=1`,
+        `${SUPABASE_URL}/rest/v1/${table}?select=encrypted_key&wallet_address=in.(${encodeURIComponent(forms)})&encrypted_key=not.is.null&order=created_at.desc&limit=1`,
         { headers: sbHeaders() },
       );
       if (!res.ok) continue;
@@ -342,7 +345,7 @@ async function callFaucet(
         ok: false,
         ip,
         txHash: txHash || undefined,
-        error: `Gas delivery not confirmed: GoodDollar replied ${text.slice(0, 200)}, but ${nativeLabel} balance did not increase (before=${confirmation.before ?? "unknown"}, after=${confirmation.after ?? "unknown"})${selfNote}`,
+        error: `${ENOUGH_GAS_PREFIX} Gas delivery not confirmed: GoodDollar replied ${text.slice(0, 200)}, but ${nativeLabel} balance did not increase (before=${confirmation.before ?? "unknown"}, after=${confirmation.after ?? "unknown"})${selfNote}`,
       };
     }
 
@@ -564,7 +567,7 @@ async function finalizeWallet(
       if (retryRound < maxRetries) {
         // Reset all failed queue rows back to pending — fresh IP next attempt
         await fetch(
-          `${SUPABASE_URL}/rest/v1/gas_load_queue?job_id=eq.${jobId}&status=eq.failed`,
+          `${SUPABASE_URL}/rest/v1/gas_load_queue?job_id=eq.${jobId}&status=eq.failed&error_message=not.like.${encodeURIComponent(ENOUGH_GAS_PREFIX)}*`,
           {
             method: "PATCH",
             headers: sbHeaders({ Prefer: "return=minimal" }),
