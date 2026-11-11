@@ -35,8 +35,9 @@ const RPC_URLS: Record<Network, string> = { celo: CELO_RPC_URL, xdc: XDC_RPC_URL
 const NATIVE_LABEL: Record<Network, string> = { celo: "CELO", xdc: "XDC", fuse: "FUSE" };
 const WEBSHARE_HOST = "p.webshare.io";
 const WEBSHARE_PORT = "80";
-const BALANCE_VERIFY_ATTEMPTS = 8;
-const BALANCE_VERIFY_DELAY_MS = 4_000;
+const BALANCE_VERIFY_ATTEMPTS = 16;
+const BALANCE_VERIFY_DELAY_MS = 2_000;
+const PARALLEL_LANES = 5;
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const WS_USERNAME = Deno.env.get("WEBSHARE_PROXY_USERNAME") ?? "";
@@ -642,26 +643,28 @@ async function processOneWallet(item: {
 async function processLoop(): Promise<{ processed: number; remaining: boolean }> {
   const startedAt = Date.now();
   let processed = 0;
-  let lastDelay = 0;
-
-  while (Date.now() - startedAt < WORKER_TIME_BUDGET_MS) {
-    // Honor user-set delay BETWEEN wallets (e.g., 3000ms = one request every 3s).
-    if (lastDelay > 0) {
-      await new Promise((r) => setTimeout(r, lastDelay));
-      if (Date.now() - startedAt >= WORKER_TIME_BUDGET_MS) break;
+  // Several wallets run at once; each lane still honors the user's delay.
+  const lane = async () => {
+    let lastDelay = 0;
+    let misses = 0;
+    while (Date.now() - startedAt < WORKER_TIME_BUDGET_MS) {
+      if (lastDelay > 0) {
+        await new Promise((r) => setTimeout(r, lastDelay));
+        if (Date.now() - startedAt >= WORKER_TIME_BUDGET_MS) break;
+      }
+      const item = await claimNextWallet();
+      if (!item) {
+        if (++misses >= 3) return;
+        lastDelay = 300;
+        continue;
+      }
+      misses = 0;
+      await processOneWallet(item);
+      processed += 1;
+      lastDelay = item.delay_ms;
     }
-
-    const item = await claimNextWallet();
-    if (!item) {
-      // No more pending work
-      return { processed, remaining: false };
-    }
-
-    await processOneWallet(item);
-
-    processed += 1;
-    lastDelay = item.delay_ms; // user-controlled delay until next request
-  }
+  };
+  await Promise.all(Array.from({ length: PARALLEL_LANES }, lane));
 
   // Time budget exhausted; check if more pending exists
   const pendCheck = await fetch(
