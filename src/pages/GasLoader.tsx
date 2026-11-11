@@ -240,9 +240,17 @@ const GasLoader = () => {
     () => wallets.filter((w) => w.status === "success").length,
     [wallets]
   );
-  const failedCount = useMemo(
-    () => wallets.filter((w) => w.status === "failed").length,
+  // GoodDollar sent nothing because the wallet already has enough gas.
+  const enoughCount = useMemo(
+    () =>
+      wallets.filter(
+        (w) => w.status === "failed" && (w.error_message || "").startsWith("ENOUGH_GAS:")
+      ).length,
     [wallets]
+  );
+  const failedCount = useMemo(
+    () => wallets.filter((w) => w.status === "failed").length - enoughCount,
+    [wallets, enoughCount]
   );
   const pendingCount = useMemo(
     () =>
@@ -460,7 +468,7 @@ const GasLoader = () => {
                 </span>
               </div>
               <Progress value={progressPct} />
-              <div className="grid grid-cols-3 gap-2 text-center text-xs">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-xs">
                 <div className="rounded-lg bg-muted/30 p-2">
                   <div className="text-muted-foreground">গ্যাস এসেছে</div>
                   <div className="font-semibold text-foreground">
@@ -468,9 +476,13 @@ const GasLoader = () => {
                   </div>
                 </div>
                 <div className="rounded-lg bg-muted/30 p-2">
+                  <div className="text-muted-foreground">আগে থেকেই গ্যাস আছে</div>
+                  <div className="font-semibold text-foreground">{enoughCount}</div>
+                </div>
+                <div className="rounded-lg bg-muted/30 p-2">
                   <div className="text-muted-foreground">ব্যর্থ</div>
                   <div className="font-semibold text-foreground">
-                    {failedCount || job.failed}
+                    {wallets.length ? failedCount : job.failed}
                   </div>
                 </div>
                 <div className="rounded-lg bg-muted/30 p-2">
