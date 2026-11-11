@@ -553,7 +553,16 @@ async function finalizeWallet(
   // Auto-retry ALL failed wallets with a fresh proxy/IP. The faucet often
   // returns "insufficient funds" or "balance did not increase" intermittently
   // on a per-IP basis, so every failure deserves at least one retry attempt.
+  let retryable = 0;
   if (allDone && failed > 0) {
+    const r = await fetch(
+      `${SUPABASE_URL}/rest/v1/gas_load_queue?job_id=eq.${jobId}&status=eq.failed&error_message=not.like.${encodeURIComponent(ENOUGH_GAS_PREFIX)}*&select=id`,
+      { method: "HEAD", headers: sbHeaders({ Prefer: "count=exact" }) },
+    );
+    const m = (r.headers.get("content-range") || "").match(/\/(\d+)$/);
+    retryable = m ? parseInt(m[1], 10) || 0 : 0;
+  }
+  if (allDone && retryable > 0) {
     const jobInfoRes = await fetch(
       `${SUPABASE_URL}/rest/v1/gas_load_jobs?id=eq.${jobId}&select=retry_round,max_retries`,
       { headers: sbHeaders() }
