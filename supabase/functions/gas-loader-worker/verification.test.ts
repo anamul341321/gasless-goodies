@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canAffordSelfTopUp, faucetRejection, hasGasIncrease } from "./verification";
+import { canAffordSelfTopUp, ENOUGH_GAS_PREFIX, faucetRejection, hasGasIncrease, isEnoughGasNote } from "./verification";
 
 describe("gas delivery evidence", () => {
   it("does not treat a plain faucet acknowledgement as gas delivery", () => {
@@ -32,5 +32,10 @@ describe("gas delivery evidence", () => {
   it("does not self-call when the wallet cannot pay the faucet call", () => {
     expect(canAffordSelfTopUp(18_272_877_264_280_166n, 128_804n, 202_500_000_000n)).toBe(false);
     expect(canAffordSelfTopUp(null, 128_804n, 202_500_000_000n)).toBe(false);
+  });
+  it("marks GoodDollar's no-send answer as already-enough-gas, not a retryable failure", () => {
+    expect(isEnoughGasNote(`${ENOUGH_GAS_PREFIX} Gas delivery not confirmed`)).toBe(true);
+    expect(isEnoughGasNote("HTTP 500: proxy error")).toBe(false);
+    expect(isEnoughGasNote(null)).toBe(false);
   });
 });
