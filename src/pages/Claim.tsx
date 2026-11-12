@@ -16,6 +16,8 @@ import {
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
+import { ManualClaimGasStatus } from "@/components/ManualClaimGasStatus";
+import { manualClaimStage, type ManualGasPhase } from "@/lib/manual-claim-phase";
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
 const POLL_INTERVAL_MS = 4000;
@@ -49,6 +51,7 @@ type Job = {
   failed: number;
   needs_gas: number;
   status: JobStatus;
+  gas_phase?: ManualGasPhase;
   network?: ClaimNetwork;
   created_at: string;
   finished_at: string | null;
@@ -429,6 +432,8 @@ const Claim = () => {
   const progressPct = total ? Math.round((processed / total) * 100) : 0;
   const isJobActive = !!job && (job.status === "pending" || job.status === "running");
   const isJobDone = !!job && job.status === "completed";
+  const claimStage = manualClaimStage(job?.status || "pending", job?.gas_phase);
+  const stageLabel = claimStage === "requesting" ? "গ্যাসের অনুরোধ চলছে" : claimStage === "waiting_retry" ? "আবার ক্লেমের অপেক্ষা" : claimStage === "retrying" ? "আবার ক্লেম হচ্ছে" : statusBn(job?.status || "pending");
 
   const jobNetwork: ClaimNetwork = (job?.network as ClaimNetwork) || "celo";
   const explorer = (tx: string) => `${NETWORK_META[jobNetwork].explorerTx}${tx}`;
@@ -502,14 +507,14 @@ const Claim = () => {
                 </div>
               </div>
               <div className="flex flex-col items-end gap-1">
-                <Badge variant={isJobActive ? "default" : "secondary"}>{statusBn(job.status)}</Badge>
+                <Badge variant={isJobActive ? "default" : "secondary"} className="whitespace-normal text-center">{stageLabel}</Badge>
                 <Badge variant="outline" className="text-[10px]">{NETWORK_META[jobNetwork].label}</Badge>
               </div>
             </CardHeader>
             <CardContent className="space-y-3">
               <div className="flex items-center justify-between text-xs">
                 <span className="text-muted-foreground">
-                  {processed} / {total} টি সম্পন্ন
+                  {processed} / {total} টি {isJobActive ? "যাচাই হয়েছে" : "সম্পন্ন"}
                 </span>
                 <span className="font-mono text-foreground">{progressPct}%</span>
               </div>
@@ -532,6 +537,8 @@ const Claim = () => {
                   <div className="font-semibold text-foreground">{notWhitelistedCount}</div>
                 </div>
               </div>
+
+              <ManualClaimGasStatus status={job.status} gasPhase={job.gas_phase} needsGas={needsGasCount || job.needs_gas} />
 
               {/* Total G$ summary — auto-shown when batch completes */}
               {isJobDone && (
@@ -608,7 +615,7 @@ const Claim = () => {
                       <span className="flex items-center gap-2 shrink-0">
                         {w.status === "waiting_gas" && (
                           <span className="inline-flex items-center gap-1 text-warning">
-                            <Fuel className="w-3 h-3" /> gas {w.gas_requests}
+                            <Fuel className="w-3 h-3" /> গ্যাসের অনুরোধ {w.gas_requests}
                           </span>
                         )}
                         <Badge

@@ -1,4 +1,5 @@
 # Architecture rules
+- Manual claim gas progress is presented from the existing owner-scoped job gas_phase; faucet-job completion never implies delivered gas or completed claims, keeping UI changes separate from worker behavior.
 - Native CELO batch sends use a verified payable Disperse contract in 75-recipient chunks, exact wei arithmetic, encrypted sender keys and one active leased batch per sender; persist signed transactions before broadcast and recover only the same hash, so ambiguous responses cannot pay twice. Owners can read only safe job fields and their own recipients; encrypted keys and signed transactions remain service-only.
 - Manual claim counters and gas-recovery wallet selection use stable full-queue pagination; never finalize from a capped page, and never persist partial totals after a read failure.
 - Daily current-result reads use stable ordered pagination that advances by received rows; detail caches are versioned by run progress so open results and key-copy lists refresh after further claims.
