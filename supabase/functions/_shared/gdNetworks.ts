@@ -46,6 +46,9 @@ export const GD_NETWORKS: Record<GDNetwork, GDNetworkConfig> = {
       "https://erpc.xinfin.network",
       "https://rpc.xinfin.network",
       "https://rpc1.xinfin.network",
+      "https://rpc.ankr.com/xdc",
+      "https://erpc.xdcrpc.com",
+      "https://xdc.public-rpc.com",
     ],
 
     identityAddress: "0x27a4a02C9ed591E1a86e2e5D05870292c34622C9",

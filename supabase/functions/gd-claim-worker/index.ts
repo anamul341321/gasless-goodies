@@ -63,15 +63,25 @@ function sbHeaders(extra: Record<string, string> = {}) {
   };
 }
 
-// Cache one provider per network across invocations
-const providers: Partial<Record<GDNetwork, JsonRpcProvider>> = {};
+// Rotate over several RPC endpoints: a single public node (XDC especially)
+// regularly answers 500/520/503, which used to fail whole claims.
+const providerPools: Partial<Record<GDNetwork, JsonRpcProvider[]>> = {};
+let rpcCursor = 0;
 function providerFor(net: GDNetwork): JsonRpcProvider {
-  const existing = providers[net];
-  if (existing) return existing;
-  const cfg = GD_NETWORKS[net];
-  const p = new JsonRpcProvider(cfg.rpc, cfg.chainId);
-  providers[net] = p;
-  return p;
+  let pool = providerPools[net];
+  if (!pool) {
+    const cfg = GD_NETWORKS[net];
+    const urls = cfg.rpcs && cfg.rpcs.length > 0 ? cfg.rpcs : [cfg.rpc];
+    pool = urls.map((u) => new JsonRpcProvider(u, cfg.chainId, { staticNetwork: true, batchMaxCount: 1 }));
+    providerPools[net] = pool;
+  }
+  return pool[rpcCursor++ % pool.length];
+}
+
+/** Network-node hiccups (not wallet problems) that are safe to retry on another node. */
+export function isTransientRpcError(msg?: string | null): boolean {
+  const m = (msg || "").toLowerCase();
+  return /server response (5\d\d|429)|bad gateway|service unavailable|internal server error|timeout|timed out|missing response|network error|econnreset|socket hang up|failed to detect network|could not coalesce/.test(m);
 }
 
 type QueueRow = {
@@ -187,7 +197,7 @@ async function pickPendingBatch(): Promise<QueueRow[]> {
   return winners;
 }
 
-async function claimOne(row: QueueRow): Promise<{
+async function claimOnce(row: QueueRow): Promise<{
   status: "success" | "failed_gas" | "failed_kyc" | "already_claimed" | "failed";
   txHash?: string;
   error?: string;
@@ -294,6 +304,18 @@ async function claimOne(row: QueueRow): Promise<{
     if (cls === "kyc") return { status: "failed_kyc", error: msg };
     return { status: "failed", error: msg };
   }
+}
+
+// Retry on a different node when the failure is a node hiccup. A retry after a
+// broadcast is safe: the contract refuses a second claim in the same period and
+// the prior claim is then verified on-chain.
+async function claimOne(row: QueueRow): Promise<Awaited<ReturnType<typeof claimOnce>>> {
+  let res = await claimOnce(row);
+  for (let i = 0; i < 3 && res.status === "failed" && isTransientRpcError(res.error); i++) {
+    await new Promise((r) => setTimeout(r, 1500 * (i + 1)));
+    res = await claimOnce(row);
+  }
+  return res;
 }
 
 async function finalize(row: QueueRow, result: Awaited<ReturnType<typeof claimOne>>) {
