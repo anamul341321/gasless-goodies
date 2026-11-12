@@ -210,13 +210,11 @@ async function claimOnce(row: QueueRow): Promise<{
     const identity = new Contract(cfg.identityAddress, IDENTITY_ABI, provider);
     const addr = (await signer.getAddress()).toLowerCase();
 
-    // Run independent pre-flight reads in parallel to cut RPC roundtrips
-    const [whitelistedRes, entitlement, feeDataRes, estimatedGasRes, balanceRes] = await Promise.allSettled([
+    // Phase 1: cheap eligibility reads only. Already-claimed / not-whitelisted
+    // wallets bail out here without paying for fee/estimate/balance roundtrips.
+    const [whitelistedRes, entitlement] = await Promise.allSettled([
       identity.isWhitelisted(addr),
       readEntitlement(ubi, addr),
-      provider.getFeeData(),
-      (ubi as any).claim.estimateGas(),
-      provider.getBalance(addr),
     ]);
 
     if (whitelistedRes.status === "fulfilled" && whitelistedRes.value === false) {
@@ -225,8 +223,10 @@ async function claimOnce(row: QueueRow): Promise<{
 
     if (entitlement.status === "fulfilled") {
       const ent = entitlement.value;
-      if (typeof ent.amount === "bigint" && ent.amount === 0n && await verifyPriorClaim(ubi, provider, addr)) {
-        return { status: "already_claimed", error: "Verified claim in current on-chain period" };
+      // Entitlement 0 means nothing to claim this period (already claimed or no
+      // UBI) — skip fast, no extra verification roundtrips, no gas spent.
+      if (typeof ent.amount === "bigint" && ent.amount === 0n) {
+        return { status: "already_claimed", error: "Already claimed in current on-chain period" };
       }
       if (ent.error) {
         const cls = classifyError(ent.error);
@@ -235,6 +235,13 @@ async function claimOnce(row: QueueRow): Promise<{
         if (cls === "kyc") return { status: "failed_kyc", error: msg };
       }
     }
+
+    // Phase 2: only wallets with something to claim pay for these reads.
+    const [feeDataRes, estimatedGasRes, balanceRes] = await Promise.allSettled([
+      provider.getFeeData(),
+      (ubi as any).claim.estimateGas(),
+      provider.getBalance(addr),
+    ]);
 
     let tx;
     try {

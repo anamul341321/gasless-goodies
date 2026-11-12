@@ -133,8 +133,10 @@ async function claimOne(privateKey: string, network: GDNetwork): Promise<ClaimRe
 
     const ent = await readEntitlement(ubi, addr);
     if (typeof ent.amount === "bigint") {
-      if (ent.amount === 0n && await verifyPriorClaim(ubi, provider, addr)) {
-        return { status: "already_claimed", error: "Verified claim in current on-chain period" };
+      // Entitlement 0 means nothing to claim this period — skip fast without
+      // extra verification roundtrips or gas spend.
+      if (ent.amount === 0n) {
+        return { status: "already_claimed", error: "Already claimed in current on-chain period" };
       }
     }
 
