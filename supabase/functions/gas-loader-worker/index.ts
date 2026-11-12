@@ -32,19 +32,34 @@ const XDC_RPC_URL = "https://rpc.xinfin.network";
 type Network = "celo" | "xdc" | "fuse";
 const CHAIN_IDS: Record<Network, number> = { celo: 42220, xdc: 50, fuse: 122 };
 const RPC_URLS: Record<Network, string> = { celo: CELO_RPC_URL, xdc: XDC_RPC_URL, fuse: "https://rpc.fuse.io" };
+// Several public endpoints per network: one endpoint alone rate-limits when
+// many wallets are checked at once, which made gas loading slow.
+const RPC_POOLS: Record<Network, string[]> = {
+  celo: [CELO_RPC_URL, "https://rpc.ankr.com/celo", "https://celo.drpc.org"],
+  xdc: ["https://rpc.ankr.com/xdc", "https://erpc.xinfin.network", XDC_RPC_URL],
+  fuse: ["https://rpc.fuse.io", "https://fuse.drpc.org"],
+};
+let rpcCursor = 0;
+function pickRpc(network: Network): string {
+  const pool = RPC_POOLS[network];
+  return pool[(rpcCursor++) % pool.length];
+}
+const RPC_TIMEOUT_MS = 6_000;
+const SELF_TOPUP_BUDGET_MS = 25_000;
+const FAUCET_REQUEST_TIMEOUT_MS = 30_000;
 const NATIVE_LABEL: Record<Network, string> = { celo: "CELO", xdc: "XDC", fuse: "FUSE" };
 const WEBSHARE_HOST = "p.webshare.io";
 const WEBSHARE_PORT = "80";
 const BALANCE_VERIFY_ATTEMPTS = 10;
 const BALANCE_VERIFY_DELAY_MS = 1_500;
-const PARALLEL_LANES = 10;
+const PARALLEL_LANES = 15;
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const WS_USERNAME = Deno.env.get("WEBSHARE_PROXY_USERNAME") ?? "";
 const WS_PASSWORD = Deno.env.get("WEBSHARE_PROXY_PASSWORD") ?? "";
 
 // Per worker invocation budget — must stay well under 150s edge timeout.
-const WORKER_TIME_BUDGET_MS = 110_000;
+const WORKER_TIME_BUDGET_MS = 65_000;
 const STALE_PROCESSING_MINUTES = 3;
 // Re-trigger ourselves if more work remains so processing keeps flowing
 // even between cron ticks.
@@ -67,24 +82,23 @@ function buildProxyUrl(): string | null {
 }
 
 async function getNativeBalanceWei(address: string, network: Network): Promise<bigint | null> {
-  try {
-    const res = await fetch(RPC_URLS[network], {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        jsonrpc: "2.0",
-        id: 1,
-        method: "eth_getBalance",
-        params: [address, "latest"],
-      }),
-    });
-    const json = await res.json();
-    if (!res.ok || json?.error || typeof json?.result !== "string") return null;
-    return BigInt(json.result);
-  } catch (e) {
-    console.error("balance check failed", e);
-    return null;
+  const pool = RPC_POOLS[network];
+  for (let i = 0; i < pool.length; i++) {
+    const url = pickRpc(network);
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "eth_getBalance", params: [address, "latest"] }),
+        signal: AbortSignal.timeout(RPC_TIMEOUT_MS),
+      });
+      const json = await res.json();
+      if (res.ok && !json?.error && typeof json?.result === "string") return BigInt(json.result);
+    } catch (e) {
+      console.warn("balance check failed", url, String((e as any)?.message || e).slice(0, 80));
+    }
   }
+  return null;
 }
 
 async function waitForBalanceIncrease(
@@ -117,7 +131,7 @@ async function findIncomingTxHash(
   lookback = 25,
 ): Promise<string | null> {
   try {
-    const rpc = RPC_URLS[network];
+    const rpc = pickRpc(network);
     const head = await fetch(rpc, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -209,7 +223,7 @@ async function selfTopUp(
   const pk = await findStoredKey(account);
   if (!pk) return null;
   try {
-    const provider = new JsonRpcProvider(RPC_URLS[network], CHAIN_IDS[network], { staticNetwork: true, batchMaxCount: 1 });
+    const provider = new JsonRpcProvider(pickRpc(network), CHAIN_IDS[network], { staticNetwork: true, batchMaxCount: 1 });
     const signer = new Wallet(pk, provider);
     if (signer.address.toLowerCase() !== account.toLowerCase()) return null;
     const faucet = new Contract(FAUCET_ADDRESSES[network], FAUCET_ABI, signer);
@@ -220,7 +234,7 @@ async function selfTopUp(
     const gasPrice = fee.gasPrice ?? fee.maxFeePerGas ?? 0n;
     if (!canAffordSelfTopUp(before, gas, gasPrice)) return null;
     const tx = await faucet.topWallet(account, { gasLimit: selfTopUpGasLimit(gas), gasPrice });
-    const receipt = await tx.wait(1, 60_000);
+    const receipt = await tx.wait(1, 20_000);
     if (!receipt || receipt.status !== 1) return { ok: false, txHash: tx.hash, error: "Self faucet call reverted" };
     const after = await getNativeBalanceWei(account, network);
     if (!hasGasIncrease(before, after)) {
@@ -253,23 +267,19 @@ async function callFaucet(
   }
 
   const fetchOpts = (extra: RequestInit = {}): RequestInit => ({
+    signal,
     ...extra,
     // @ts-ignore - non-standard but accepted by Deno
     ...(client ? { client } : {}),
-    signal,
   });
 
   try {
-    let ip: string | undefined;
-    try {
-      const ipRes = await fetch("https://api.ipify.org?format=json", fetchOpts());
-      if (ipRes.ok) {
-        const j = await ipRes.json();
-        ip = j.ip;
-      }
-    } catch (_) {
-      // ignore
-    }
+    // Proxy IP lookup is only for the history log; never let it slow gas down.
+    const ipPromise: Promise<string | undefined> = fetch("https://api.ipify.org?format=json", {
+      // @ts-ignore - non-standard but accepted by Deno
+      ...(client ? { client } : {}),
+      signal: AbortSignal.timeout(4_000),
+    }).then(async (r) => (r.ok ? (await r.json())?.ip : undefined)).catch(() => undefined);
 
     const beforeBalance = await getNativeBalanceWei(account, network);
     const chainId = CHAIN_IDS[network];
@@ -278,15 +288,25 @@ async function callFaucet(
     // GoodDollar only sends gas itself to near-empty wallets; wallets that can
     // pay for the faucet call get {ok:1} and nothing. When we hold the wallet's
     // key, let it call the faucet directly first.
-    const self = await selfTopUp(account, network, beforeBalance);
+    // Bound the wallet's own faucet call so a slow or rate-limited network
+    // never eats the time needed for the GoodDollar server request.
+    const self = await Promise.race([
+      selfTopUp(account, network, beforeBalance),
+      new Promise<{ ok: false; error: string }>((r) =>
+        setTimeout(() => r({ ok: false, error: "Self faucet call timed out" }), SELF_TOPUP_BUDGET_MS)
+      ),
+    ]);
+    const ip = await ipPromise;
     if (self?.ok) return { ok: true, ip, txHash: self.txHash };
     const selfNote = self?.error ? ` | ${self.error}` : "";
 
     // Otherwise ask the GoodDollar server; it decides whether gas is sufficient.
 
+    const faucetSignal = AbortSignal.any([signal, AbortSignal.timeout(FAUCET_REQUEST_TIMEOUT_MS)]);
     const res = await fetch(
       GD_FAUCET_URL,
       fetchOpts({
+        signal: faucetSignal,
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -632,7 +652,8 @@ async function processOneWallet(item: {
   network: Network;
 }) {
   const ac = new AbortController();
-  const t = setTimeout(() => ac.abort(), 45_000);
+  // Whole-wallet safety net; the faucet request itself has its own timer.
+  const t = setTimeout(() => ac.abort(), 90_000);
   let result: { ok: boolean; txHash?: string; error?: string; ip?: string };
   try {
     // No app-imposed cooldown: GoodDollar decides whether to accept requests.
