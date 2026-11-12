@@ -49,9 +49,14 @@ const IDENTITY_ABI = ["function isWhitelisted(address account) view returns (boo
 
 const WORKER_TRIGGER_URL = `${SUPABASE_URL}/functions/v1/gd-claim-worker`;
 
-const BATCH_SIZE = 40;              // wallets per parallel wave
-const RECEIPT_TIMEOUT_MS = 45_000;  // wait at most 45s for each receipt
-const WORKER_TIME_BUDGET_MS = 110_000;
+const BATCH_SIZE = 40;              // wallets fetched per refill
+const CONCURRENCY = 40;             // independent claim lanes (no wave barrier)
+const READ_TIMEOUT_MS = 10_000;     // hard cap for every RPC read
+const SEND_TIMEOUT_MS = 15_000;     // hard cap for broadcasting a claim
+const RECEIPT_TIMEOUT_MS = 25_000;  // first receipt wait
+const WORKER_TIME_BUDGET_MS = 120_000;
+const PICK_STOP_MS = 55_000;        // stop taking new wallets this long before the budget ends
+const AGGREGATE_EVERY_MS = 4_000;   // keep the visible job counters fresh
 const STALE_CLAIMING_MINUTES = 3;
 
 function sbHeaders(extra: Record<string, string> = {}) {
@@ -130,6 +135,15 @@ async function readEntitlement(ubi: Contract, address: string): Promise<{ amount
   }
 }
 
+/** Never let one hanging node stall a wallet (and the whole worker). */
+export function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  let t: ReturnType<typeof setTimeout> | undefined;
+  return Promise.race([
+    p,
+    new Promise<never>((_, rej) => { t = setTimeout(() => rej(new Error(`${label} timeout`)), ms); }),
+  ]).finally(() => clearTimeout(t));
+}
+
 function formatGasNeed(wei: bigint): string {
   return Number(formatEther(wei)).toFixed(6).replace(/0+$/, "").replace(/\.$/, "");
 }
@@ -197,7 +211,7 @@ async function pickPendingBatch(): Promise<QueueRow[]> {
   return winners;
 }
 
-async function claimOnce(row: QueueRow): Promise<{
+async function claimOnce(row: QueueRow, deadline: number): Promise<{
   status: "success" | "failed_gas" | "failed_kyc" | "already_claimed" | "failed";
   txHash?: string;
   error?: string;
@@ -213,8 +227,8 @@ async function claimOnce(row: QueueRow): Promise<{
     // Phase 1: cheap eligibility reads only. Already-claimed / not-whitelisted
     // wallets bail out here without paying for fee/estimate/balance roundtrips.
     const [whitelistedRes, entitlement] = await Promise.allSettled([
-      identity.isWhitelisted(addr),
-      readEntitlement(ubi, addr),
+      withTimeout(identity.isWhitelisted(addr), READ_TIMEOUT_MS, "whitelist read"),
+      withTimeout(readEntitlement(ubi, addr), READ_TIMEOUT_MS, "entitlement read"),
     ]);
 
     if (whitelistedRes.status === "fulfilled" && whitelistedRes.value === false) {
@@ -238,9 +252,9 @@ async function claimOnce(row: QueueRow): Promise<{
 
     // Phase 2: only wallets with something to claim pay for these reads.
     const [feeDataRes, estimatedGasRes, balanceRes] = await Promise.allSettled([
-      provider.getFeeData(),
-      (ubi as any).claim.estimateGas(),
-      provider.getBalance(addr),
+      withTimeout(provider.getFeeData(), READ_TIMEOUT_MS, "fee read"),
+      withTimeout((ubi as any).claim.estimateGas(), READ_TIMEOUT_MS, "gas estimate"),
+      withTimeout(provider.getBalance(addr), READ_TIMEOUT_MS, "balance read"),
     ]);
 
     let tx;
@@ -264,10 +278,10 @@ async function claimOnce(row: QueueRow): Promise<{
         }
       }
 
-      tx = await (ubi as any).claim({
+      tx = await withTimeout((ubi as any).claim({
         gasLimit,
         ...(feeData.gasPrice ? { gasPrice: feeData.gasPrice } : {}),
-      });
+      }), SEND_TIMEOUT_MS, "claim send");
     } catch (e: any) {
       const cls = classifyError(e);
       const msg = (e?.shortMessage || e?.reason || e?.message || "claim revert").slice(0, 240);
@@ -286,16 +300,17 @@ async function claimOnce(row: QueueRow): Promise<{
     };
 
     try {
-      const receipt = await tx.wait(1, RECEIPT_TIMEOUT_MS);
+      const firstWait = Math.max(5_000, Math.min(RECEIPT_TIMEOUT_MS, deadline - Date.now() - 8_000));
+      const receipt = await tx.wait(1, firstWait);
       return classifyReceipt(receipt);
     } catch (e: any) {
       // Receipt poll timed out — but tx was sent. Poll receipt directly a few more times.
       const isTimeout = (e?.code === "TIMEOUT") || /timeout/i.test(e?.message || "");
       if (isTimeout && tx?.hash) {
-        for (let i = 0; i < 6; i++) {
-          await new Promise((r) => setTimeout(r, 5000));
+        while (Date.now() + 4_000 < deadline) {
+          await new Promise((r) => setTimeout(r, 3000));
           try {
-            const r = await provider.getTransactionReceipt(tx.hash);
+            const r = await withTimeout(providerFor(row.network).getTransactionReceipt(tx.hash), READ_TIMEOUT_MS, "receipt read");
             if (r) return classifyReceipt(r);
           } catch {}
         }
@@ -316,11 +331,15 @@ async function claimOnce(row: QueueRow): Promise<{
 // Retry on a different node when the failure is a node hiccup. A retry after a
 // broadcast is safe: the contract refuses a second claim in the same period and
 // the prior claim is then verified on-chain.
-async function claimOne(row: QueueRow): Promise<Awaited<ReturnType<typeof claimOnce>>> {
-  let res = await claimOnce(row);
-  for (let i = 0; i < 3 && res.status === "failed" && isTransientRpcError(res.error); i++) {
-    await new Promise((r) => setTimeout(r, 1500 * (i + 1)));
-    res = await claimOnce(row);
+async function claimOne(row: QueueRow, deadline: number): Promise<Awaited<ReturnType<typeof claimOnce>>> {
+  let res = await claimOnce(row, deadline);
+  for (
+    let i = 0;
+    i < 3 && res.status === "failed" && isTransientRpcError(res.error) && Date.now() + 45_000 < deadline;
+    i++
+  ) {
+    await new Promise((r) => setTimeout(r, 1000 * (i + 1)));
+    res = await claimOnce(row, deadline);
   }
   return res;
 }
@@ -464,27 +483,77 @@ async function refreshJobAggregate(jobId: string) {
   });
 }
 
-async function processWave(rows: QueueRow[]) {
-  const settled = await Promise.all(rows.map(async (r) => {
-    const res = await claimOne(r);
-    await finalize(r, res);
-    return r.job_id;
-  }));
-  const jobIds = [...new Set(settled)];
-  for (const jid of jobIds) await refreshJobAggregate(jid);
-}
-
+// Independent lanes: each wallet is finalized the moment it finishes, so one
+// slow wallet never holds back the rest, and counters refresh every few seconds.
 async function processLoop(): Promise<{ processed: number; remaining: boolean }> {
   const startedAt = Date.now();
+  const deadline = startedAt + WORKER_TIME_BUDGET_MS;
+  const pickUntil = deadline - PICK_STOP_MS;
   let processed = 0;
+  let buffer: QueueRow[] = [];
+  let exhausted = false;
+  let refill: Promise<void> | null = null;
+  const touched = new Set<string>();
+  let lastAggregate = 0;
+  let aggregating: Promise<void> | null = null;
 
-  while (Date.now() - startedAt < WORKER_TIME_BUDGET_MS) {
-    if (Date.now() - startedAt > WORKER_TIME_BUDGET_MS - RECEIPT_TIMEOUT_MS - 10_000) break;
-    const batch = await pickPendingBatch();
-    if (batch.length === 0) break;
-    await processWave(batch);
-    processed += batch.length;
+  const flushAggregates = async (force = false) => {
+    if (aggregating) { if (!force) return; await aggregating; }
+    if (!force && Date.now() - lastAggregate < AGGREGATE_EVERY_MS) return;
+    if (touched.size === 0) return;
+    lastAggregate = Date.now();
+    const ids = [...touched];
+    touched.clear();
+    aggregating = (async () => {
+      for (const jid of ids) {
+        try { await refreshJobAggregate(jid); } catch (e) { touched.add(jid); console.warn("aggregate failed", e); }
+      }
+    })();
+    try { await aggregating; } finally { aggregating = null; }
+  };
+
+  const next = async (): Promise<QueueRow | null> => {
+    while (true) {
+      if (Date.now() > pickUntil) return null;
+      const row = buffer.shift();
+      if (row) return row;
+      if (exhausted) return null;
+      if (!refill) {
+        refill = (async () => {
+          const rows = await pickPendingBatch();
+          if (rows.length === 0) exhausted = true;
+          buffer.push(...rows);
+        })().finally(() => { refill = null; });
+      }
+      await refill;
+    }
+  };
+
+  const lane = async () => {
+    while (true) {
+      const row = await next();
+      if (!row) return;
+      const res = await claimOne(row, deadline);
+      await finalize(row, res);
+      processed++;
+      touched.add(row.job_id);
+      flushAggregates().catch(() => {});
+    }
+  };
+
+  await Promise.all(Array.from({ length: CONCURRENCY }, () => lane()));
+
+  // Unstarted wallets picked into the buffer go back to the line immediately.
+  if (buffer.length > 0) {
+    const ids = buffer.map((r) => r.id);
+    await fetch(`${SUPABASE_URL}/rest/v1/gd_claim_queue?id=in.(${ids.join(",")})&status=eq.claiming`, {
+      method: "PATCH",
+      headers: sbHeaders({ Prefer: "return=minimal" }),
+      body: JSON.stringify({ status: "pending", updated_at: new Date().toISOString() }),
+    }).catch(() => {});
+    buffer = [];
   }
+  await flushAggregates(true);
 
   const remCheck = await fetch(
     `${SUPABASE_URL}/rest/v1/gd_claim_queue?or=(status.eq.pending,status.eq.claiming)&select=id&limit=1`,
